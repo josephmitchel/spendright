@@ -1,0 +1,16 @@
+import { getTableColumns } from 'drizzle-orm';
+import { NextResponse } from 'next/server';
+import { items } from '@/db/schema';
+import { db } from '@/lib/db';
+import { errorResponse } from '@/lib/errors';
+
+export async function GET() {
+  try {
+    // Exclude the encrypted access token from the response
+    const { accessToken: _accessToken, ...publicColumns } = getTableColumns(items);
+    const rows = await db.select(publicColumns).from(items);
+    return NextResponse.json({ items: rows });
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
