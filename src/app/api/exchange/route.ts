@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { accounts, items } from '@/db/schema';
+import { resolveCardId } from '@/lib/cards';
 import { encrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { errorResponse } from '@/lib/errors';
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
           account.balances.current != null ? String(account.balances.current) : null,
         balanceLimit: account.balances.limit != null ? String(account.balances.limit) : null,
         isoCurrencyCode: account.balances.iso_currency_code ?? null,
+        cardId: await resolveCardId(account.name ?? null),
       };
       await db
         .insert(accounts)

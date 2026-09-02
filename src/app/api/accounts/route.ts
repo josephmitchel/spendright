@@ -7,9 +7,13 @@ import { errorResponse } from '@/lib/errors';
 export async function GET(req: NextRequest) {
   try {
     const itemId = req.nextUrl.searchParams.get('itemId');
-    const rows = itemId
-      ? await db.select().from(accounts).where(eq(accounts.itemId, itemId))
-      : await db.select().from(accounts);
+    const accountId = req.nextUrl.searchParams.get('accountId');
+    const filter = accountId
+      ? eq(accounts.accountId, accountId)
+      : itemId
+        ? eq(accounts.itemId, itemId)
+        : undefined;
+    const rows = await db.select().from(accounts).where(filter);
     return NextResponse.json({ accounts: rows });
   } catch (err) {
     return errorResponse(err);

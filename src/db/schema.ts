@@ -2,13 +2,46 @@ import {
   boolean,
   date,
   index,
+  integer,
   jsonb,
   numeric,
   pgTable,
   serial,
   text,
   timestamp,
+  unique,
 } from 'drizzle-orm/pg-core';
+
+// Credit card definitions (seeded from src/db/cards.seed.ts).
+// `type` decides how `card_categories.rate` is interpreted:
+// cashback → percentage, points → point multiplier.
+export const cards = pgTable('cards', {
+  id: serial('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  issuer: text('issuer'),
+  type: text('type', { enum: ['cashback', 'points'] }).notNull(),
+  // Plaid account names that resolve to this card (case-insensitive exact match)
+  plaidAccountNames: jsonb('plaid_account_names').$type<string[]>().notNull().default([]),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const cardCategories = pgTable(
+  'card_categories',
+  {
+    id: serial('id').primaryKey(),
+    cardId: integer('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    // Cashback % for cashback cards, point multiplier for points cards
+    rate: numeric('rate').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique('card_categories_card_id_name_uq').on(table.cardId, table.name)],
+);
 
 export const items = pgTable('items', {
   id: serial('id').primaryKey(),
@@ -44,6 +77,8 @@ export const accounts = pgTable(
     balanceCurrent: numeric('balance_current'),
     balanceLimit: numeric('balance_limit'),
     isoCurrencyCode: text('iso_currency_code'),
+    // Auto-matched card definition (by Plaid account name)
+    cardId: integer('card_id').references(() => cards.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -68,6 +103,12 @@ export const transactions = pgTable(
     isoCurrencyCode: text('iso_currency_code'),
     category: text('category'),
     pending: boolean('pending'),
+    // User-selected card spending category and its rate at selection time.
+    // Not written by sync, so re-syncs preserve user choices.
+    cardCategoryId: integer('card_category_id').references(() => cardCategories.id, {
+      onDelete: 'set null',
+    }),
+    rewardRate: numeric('reward_rate'),
     // Full raw Plaid transaction payload
     plaidTransaction: jsonb('plaid_transaction').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -82,3 +123,5 @@ export const transactions = pgTable(
 export type ItemRow = typeof items.$inferSelect;
 export type AccountRow = typeof accounts.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;
+export type CardRow = typeof cards.$inferSelect;
+export type CardCategoryRow = typeof cardCategories.$inferSelect;

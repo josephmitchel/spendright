@@ -1,6 +1,6 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, getTableColumns } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
-import { transactions } from '@/db/schema';
+import { cardCategories, transactions } from '@/db/schema';
 import { db } from '@/lib/db';
 import { errorResponse } from '@/lib/errors';
 
@@ -18,8 +18,9 @@ export async function GET(req: NextRequest) {
     const offset = Number(req.nextUrl.searchParams.get('offset')) || 0;
 
     const rows = await db
-      .select()
+      .select({ ...getTableColumns(transactions), cardCategoryName: cardCategories.name })
       .from(transactions)
+      .leftJoin(cardCategories, eq(transactions.cardCategoryId, cardCategories.id))
       .where(eq(transactions.accountId, accountId))
       .orderBy(desc(transactions.date), desc(transactions.id))
       .limit(limit)
