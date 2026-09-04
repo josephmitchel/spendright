@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"# SpendRight design decisions (confirmed by the user — treat as authoritative context)\"; cat \"$CLAUDE_PROJECT_DIR\"/.claude/design/current/*.md 2>/dev/null || true",
+            "timeout": 10,
+            "statusMessage": "Loading design decisions"
+          }
+        ]
+      }
+    ]
+  }
+}
