@@ -43,6 +43,13 @@
       "when": 1788489211119,
       "tag": "0005_optimal_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788543565574,
+      "tag": "0006_fast_spyke",
+      "breakpoints": true
     }
   ]
 }

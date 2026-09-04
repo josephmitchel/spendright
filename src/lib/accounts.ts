@@ -1,6 +1,6 @@
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type { AccountBase } from 'plaid';
-import { accounts, cardCategories, transactions, type CardRow } from '@/db/schema';
+import { accounts, type CardRow } from '@/db/schema';
 import { matchCard } from '@/lib/cards';
 import type { db } from '@/lib/db';
 
@@ -9,8 +9,7 @@ import type { db } from '@/lib/db';
 // bad account can neither roll back its siblings nor take down the caller's
 // other work (syncItem used to do the whole sync, cursor included, in the one
 // transaction this ran in; see the note there). This module never opens its
-// own: the wipe below and the account write have to commit or fail together
-// (see the note inside).
+// own.
 export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function toAccountRow(plaidAccount: AccountBase, itemId: string, cardId: number | null) {
@@ -60,66 +59,20 @@ export async function upsertAccount(
   // not supported" on the next sync, not only on a re-link. Intended (decided
   // 2026-09-04): an account whose card is not known cannot be scored, and it
   // must not go on looking usable on the strength of a match that no longer
-  // holds. Nothing is destroyed by the demotion — the wipe below is skipped
-  // when cardId is null, and each transaction's recorded reward_rate is a
-  // snapshot either way — and the account comes back the moment cards.seed.ts
-  // covers the new name. Do not add a "keep the existing card_id" branch here.
+  // holds. Nothing is destroyed by the demotion — this function writes the
+  // accounts row and nothing else — and the account comes back the moment
+  // cards.seed.ts covers the new name. Do not add a "keep the existing
+  // card_id" branch here.
+  //
+  // And nothing else is the rule (decided 2026-09-04, replacing the card-move
+  // wipe that used to live here). An account's card is a fixed fact; a null
+  // match is a temporary naming mismatch and a match to a different card is
+  // not a scenario this app supports. Neither is a reason to clear a saved
+  // category or rate on the account's transactions: a categorization is a
+  // historical record, and no card-side change rewrites it. See the
+  // supported-account rule at the top of src/app/accounts/[accountId]/page.tsx.
   const cardId = matchCard(cardList, plaidAccount.name ?? null)?.id ?? null;
   const accountValues = toAccountRow(plaidAccount, itemId, cardId);
-
-  // A category link belonging to some other card is exactly what a move
-  // between cards leaves behind — including a move that passes through
-  // "no card", when a Plaid rename drops the match and a later link
-  // matches a different card. Keying off the links themselves rather
-  // than off the stored card_id catches both shapes; the same rule runs
-  // in scripts/seed-cards.ts. An account with no card clears nothing:
-  // Plaid account names change cosmetically, and a rename must not
-  // destroy the user's selections — the account is merely unsupported
-  // until the match comes back (see the supported-account rule at the
-  // top of src/app/accounts/[accountId]/page.tsx), and a card actually
-  // deleted from the seed already set-nulls those links by FK. Each
-  // recorded reward_rate stays either way: it is a snapshot of what that
-  // transaction earned. Credit categories are global, so they survive.
-  //
-  // The wipe is unconditional rather than gated on the card_id changing, and
-  // that is the point of keying off the links: a comparison against the stored
-  // card_id cannot see a stale link that the stored id agrees with. It costs
-  // one update per account per sync that normally matches nothing.
-  //
-  // Destructive, so it must not commit unless the card change that justifies
-  // it does too — hence the caller's transaction: otherwise a later failure
-  // leaves selections gone while the account still points at the old card.
-  //
-  // That transaction is per account and holds nothing else, which is what keeps
-  // the row locks this UPDATE takes short-lived. They overlap the ones the
-  // reconcile in scripts/seed-cards.ts takes, in a different order — a deadlock
-  // window that file calls narrowed, not cured — and running this inside
-  // syncItem's whole-sync transaction had widened it right back out, with the
-  // sync's cursor as the collateral. A 40P01 now aborts one account's upsert,
-  // which its caller catches and retries on the next sync.
-  if (cardId !== null) {
-    const wiped = await tx
-      .update(transactions)
-      .set({ cardCategoryId: null, updatedAt: sql`now()` })
-      .where(
-        and(
-          eq(transactions.accountId, plaidAccount.account_id),
-          inArray(
-            transactions.cardCategoryId,
-            tx
-              .select({ id: cardCategories.id })
-              .from(cardCategories)
-              .where(ne(cardCategories.cardId, cardId)),
-          ),
-        ),
-      )
-      .returning({ id: transactions.id });
-    if (wiped.length > 0) {
-      console.log(
-        `account "${plaidAccount.name}" changed card: cleared card categories on ${wiped.length} transaction(s) (rates kept)`,
-      );
-    }
-  }
 
   await tx
     .insert(accounts)

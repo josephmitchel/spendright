@@ -19,11 +19,18 @@ import { readJson } from '@/lib/http';
 //
 // The other half of the rule: unmatched is a temporary, unknown state — a
 // cosmetic Plaid account rename drops the match until the seed file catches up
-// — NOT an instruction to erase data. No writer may clear or drop a user's
-// saved category merely because the account's card_id is currently NULL; only
-// a match to a DIFFERENT card invalidates saved card categories. Selections
-// just go quiet behind this screen and come back intact once the account is
-// supported again.
+// — NOT an instruction to erase data. An account's card is a fixed fact, and
+// an account never legitimately starts matching a DIFFERENT card, so there is
+// no "card move" case and no writer may clear or drop a user's saved category
+// or rate on the strength of what the account currently matches (decided
+// 2026-09-04, retiring the card-move wipe). Selections just go quiet behind
+// this screen and come back intact once the account is supported again.
+//
+// The same principle on the card side: a categorization is a historical record
+// of the category and rate that existed when it was picked. Cards and
+// categories that leave the seed file are retired, never deleted (see
+// src/db/schema.ts), so old rows keep their links and this page shows the
+// name that was picked even when the picker no longer offers it.
 
 // Rows per page. The API's own default is 500 and its cap is 1000
 // (src/app/api/transactions/route.ts); the page size is this page's decision,
@@ -101,10 +108,11 @@ function CategorySelect({
   // Set while the category catalog could not be re-read — see the call site.
   disabled?: boolean;
 }) {
-  // A saved category the list can't offer — the account moved to another card,
-  // the category was renamed — still has to render as the current value or the
-  // select would show blank. It carries the same disabled placeholder
-  // treatment as 'none': visible as what is selected, never selectable again.
+  // A saved category the list can't offer — retired from the card's seed list,
+  // or renamed there — still has to render as the current value or the select
+  // would show blank. It carries the same disabled placeholder treatment as
+  // 'none': visible as what is selected, never selectable again. This is how
+  // a retired category keeps showing the name that was picked.
   const stale = value !== null && !options.some((option) => option.id === value);
   return (
     // The empty-value guard is insurance, not a live bug: both placeholders are
@@ -757,17 +765,13 @@ function AccountView({ accountId }: { accountId: string }) {
                           (selectedName ?? 'none')
                         )}
                       </td>
-                      {/* A rate with no category link is history the system
-                          deliberately keeps (see the reward_rate note in
-                          src/db/schema.ts and "(rates kept)" in
-                          scripts/seed-cards.ts), but the column header above is
-                          the CURRENT card's unit — "Cashback %" or
-                          "Multiplier". A 4x multiplier earned on a points card
-                          would read as 4% cashback once the account matches a
-                          cashback card. The row no longer records which card
-                          the rate came from, so an orphan whose category was
-                          merely dropped from this same card is indistinguishable
-                          from one left by a card move: the honest answer is to
+                      {/* A rate with no category link is legacy state: nothing
+                          severs a link any more (categories are retired, not
+                          deleted — src/db/schema.ts), so this branch only
+                          renders rows whose link was stripped before that
+                          rule, or by a delete made by hand. The rate is history
+                          the system keeps either way, and with no category to
+                          name the card it came from, the honest answer is to
                           keep showing the number and stop claiming the header's
                           unit applies to it. Marked rather than hidden — this
                           is the only place the user can see that history at

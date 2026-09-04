@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { items } from '@/db/schema';
 import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
-import { errorResponse } from '@/lib/errors';
+import { errorResponse, plaidErrorBody } from '@/lib/errors';
 import { itemRemove } from '@/lib/plaid';
 
 // Unauthenticated, like every route here, and this is the destructive one:
@@ -25,12 +25,14 @@ export async function DELETE(
       );
     }
 
+    // Plaid already forgetting the item is not a failure: the row is what is
+    // being removed, and it goes either way. Read through plaidErrorBody, the
+    // one shape check for Plaid errors (src/lib/errors.ts), rather than by
+    // hand.
     try {
       await itemRemove(decrypt(item.accessToken));
     } catch (err) {
-      const code = (err as { response?: { data?: { error_code?: string } } })?.response?.data
-        ?.error_code;
-      if (code !== 'ITEM_NOT_FOUND') throw err;
+      if (plaidErrorBody(err)?.error_code !== 'ITEM_NOT_FOUND') throw err;
     }
 
     await db.delete(items).where(eq(items.itemId, itemId));

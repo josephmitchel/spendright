@@ -7,11 +7,11 @@
 // it AFTER all of them — see scripts/load-env.ts for why.
 import './load-env';
 
-import { and, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
+import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
-import { accounts, cardCategories, cards, creditCategories, transactions } from '../src/db/schema';
+import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
 import { matchCard } from '../src/lib/cards';
 
 // A Plaid account name may appear on only one card: matchCard takes the first
@@ -101,40 +101,27 @@ async function main() {
   const rootDb = drizzle(pool);
 
   try {
-    // Backfill missing rates FIRST, while every category link this run may
-    // sever still exists. reward_rate is a snapshot of the rate when the
+    // Backfill missing rates. reward_rate is a snapshot of the rate when the
     // user picked the category, so this only fills gaps — editing a rate in
     // the seed file must NOT restate what past transactions already earned.
-    //
-    // Deliberately before the re-match wipe below, not after: a category
-    // dropped from the seed file is deleted inside the reconcile and the FK
-    // set-nulls its links, so a backfill running later would find nothing
-    // to read the rate from and that row would lose its rate for good.
-    // The cost of this order is that a link belonging to a card the account
-    // is moving AWAY from gets stamped before the wipe clears it — accepted,
-    // and consistent with the wipe keeping non-null rates as history: the
-    // user did pick that card's category and did earn that rate. Removing a
-    // category from the seed is routine; an account changing cards is not.
+    // Every link it reads through still exists, because the reconcile below
+    // retires categories rather than deleting them; the order between the two
+    // no longer matters for correctness, only for keeping this statement's
+    // locks out of the reconcile's transaction.
     //
     // Its OWN transaction, deliberately outside the reconcile below. Inside
     // it, this one statement locks every categorized transaction row and holds
-    // those locks through the upserts, deletes and per-account wipes — while
-    // syncItem's upsert loop (src/lib/sync.ts) locks transaction rows in
-    // Plaid's order. Two overlapping row sets locked in different orders is a
-    // deadlock, and Postgres resolves it by aborting one side with 40P01: the
-    // seed (rerunnable) or the sync (its cursor update lost, replaying into
-    // the same race). Splitting it costs no correctness — the ordering that
-    // matters is only that it runs BEFORE the deletes, and it is idempotent
-    // (`where reward_rate is null`), so a crash between the two statements
-    // just means the next run redoes it.
+    // those locks through the upserts and retirements — while syncItem's
+    // upsert loop (src/lib/sync.ts) locks transaction rows in Plaid's order.
+    // Two overlapping row sets locked in different orders is a deadlock, and
+    // Postgres resolves it by aborting one side with 40P01: the seed
+    // (rerunnable) or the sync (its cursor update lost, replaying into the
+    // same race). It is idempotent (`where reward_rate is null`), so a crash
+    // between the two statements just means the next run redoes it.
     //
-    // Narrowing, not a cure: the reconcile below still takes transactions-row
-    // locks three ways — the `on delete set null` cascade from the
-    // card_categories delete, the same cascade from the cards delete, and the
-    // per-account wipe's own update — so a seed running against a live sync can
-    // still deadlock. What the split removes is the version where a single
-    // statement had every categorized row locked for the whole reconcile, which
-    // made the overlap close to certain rather than incidental.
+    // With no deletes and no per-account wipe, the reconcile below touches no
+    // transactions rows at all, so the remaining overlap with a live sync is
+    // this statement alone.
     await rootDb.execute(sql`
       update transactions t
       set reward_rate = cc.rate
@@ -143,8 +130,18 @@ async function main() {
     `);
 
     // One transaction: the reconcile is a single consistent step, so a
-    // failure part-way through cannot leave deleted cards alongside stale
+    // failure part-way through cannot leave retired cards alongside stale
     // account matches.
+    //
+    // RETIRE, NEVER DELETE (decided 2026-09-04). A card, card category or
+    // credit category that has left the seed file gets `retired_at` stamped
+    // and stays in its table, so every transaction categorized with it keeps
+    // both the category link and the rate: a categorization is a historical
+    // record and a card-side change must not rewrite it. Deleting set-nulled
+    // the link on every old row by FK, which is exactly that rewrite. Retired
+    // rows are not offered (matchCard, GET /api/cards and PATCH all skip them),
+    // and re-adding the slug or name clears the stamp on the same row, so old
+    // links point at the revived row with nothing to migrate.
     await rootDb.transaction(async (tx) => {
       let categoryCount = 0;
 
@@ -156,12 +153,14 @@ async function main() {
           type: seed.type,
           plaidAccountNames: seed.plaidAccountNames,
         };
+        // `retiredAt: null` in the update set is what revives a card whose
+        // slug came back into the file.
         const [card] = await tx
           .insert(cards)
           .values(cardValues)
           .onConflictDoUpdate({
             target: cards.slug,
-            set: { ...cardValues, updatedAt: sql`now()` },
+            set: { ...cardValues, retiredAt: null, updatedAt: sql`now()` },
           })
           .returning();
 
@@ -176,112 +175,106 @@ async function main() {
             .values(categoryValues)
             .onConflictDoUpdate({
               target: [cardCategories.cardId, cardCategories.name],
-              set: { rate: categoryValues.rate, updatedAt: sql`now()` },
+              set: { rate: categoryValues.rate, retiredAt: null, updatedAt: sql`now()` },
             });
           categoryCount++;
         }
 
         // An empty seed list means "this card has no categories", so the
-        // filter is simply omitted and every category for the card goes. The
-        // credit-category and zombie-card deletes below use the same explicit
-        // shape rather than relying on how drizzle renders an empty array.
+        // filter is simply omitted and every category for the card is
+        // retired. The credit-category and card retirements below use the
+        // same explicit shape rather than relying on how drizzle renders an
+        // empty array. `retired_at is null` keeps the stamp at the moment the
+        // row first left the file rather than moving it on every run.
         const seedNames = seed.categories.map((c) => c.name);
-        const removed = await tx
-          .delete(cardCategories)
+        const retired = await tx
+          .update(cardCategories)
+          .set({ retiredAt: sql`now()`, updatedAt: sql`now()` })
           .where(
             and(
               eq(cardCategories.cardId, card.id),
+              isNull(cardCategories.retiredAt),
               seedNames.length > 0 ? notInArray(cardCategories.name, seedNames) : undefined,
             ),
           )
           .returning({ name: cardCategories.name });
-        if (removed.length > 0) {
+        if (retired.length > 0) {
           console.log(
-            `  ${seed.slug}: removed categories no longer in seed: ${removed.map((r) => r.name).join(', ')}`,
+            `  ${seed.slug}: retired categories no longer in seed: ${retired.map((r) => r.name).join(', ')}`,
           );
         }
       }
 
-      // Reconcile the global credit (inflow) categories: upsert by name, then
-      // delete removed ones — the FK set-nulls transactions.credit_category_id.
-      // No rate cleanup needed; credit assignments never write reward_rate.
-      // Guarded for the same reason as the deletes: an empty seed list means
-      // "no credit categories", and drizzle throws on values([]) rather than
-      // rendering an insert of no rows.
+      // Reconcile the global credit (inflow) categories: upsert by name (which
+      // also revives a retired one), then retire the ones no longer listed.
+      // Guarded for the same reason as the retirements: an empty seed list
+      // means "no credit categories", and drizzle throws on values([]) rather
+      // than rendering an insert of no rows.
       if (creditCategorySeeds.length > 0) {
         await tx
           .insert(creditCategories)
           .values(creditCategorySeeds.map((name) => ({ name })))
-          .onConflictDoNothing({ target: creditCategories.name });
+          .onConflictDoUpdate({
+            target: creditCategories.name,
+            set: { retiredAt: null, updatedAt: sql`now()` },
+          });
       }
-      const removedCredit = await tx
-        .delete(creditCategories)
+      const retiredCredit = await tx
+        .update(creditCategories)
+        .set({ retiredAt: sql`now()`, updatedAt: sql`now()` })
         .where(
-          creditCategorySeeds.length > 0
-            ? notInArray(creditCategories.name, creditCategorySeeds)
-            : undefined,
+          and(
+            isNull(creditCategories.retiredAt),
+            creditCategorySeeds.length > 0
+              ? notInArray(creditCategories.name, creditCategorySeeds)
+              : undefined,
+          ),
         )
         .returning({ name: creditCategories.name });
-      if (removedCredit.length > 0) {
+      if (retiredCredit.length > 0) {
         console.log(
-          `  removed credit categories no longer in seed: ${removedCredit.map((r) => r.name).join(', ')}`,
+          `  retired credit categories no longer in seed: ${retiredCredit.map((r) => r.name).join(', ')}`,
         );
       }
 
-      // Remove cards that are no longer in the seed file. Their categories
-      // cascade-delete, which set-nulls transactions.card_category_id while
-      // leaving each transaction's recorded reward_rate intact.
+      // Retire cards that are no longer in the seed file. Their categories are
+      // left as they are: matchCard skips a retired card, so no account keeps
+      // matching it and none of its categories can be picked, while every
+      // transaction that already carries one keeps it. Re-adding the slug
+      // revives the card and its still-listed categories together.
       const seedSlugs = cardSeeds.map((s) => s.slug);
-      const zombies = await tx
-        .delete(cards)
-        .where(seedSlugs.length > 0 ? notInArray(cards.slug, seedSlugs) : undefined)
+      const retiredCards = await tx
+        .update(cards)
+        .set({ retiredAt: sql`now()`, updatedAt: sql`now()` })
+        .where(
+          and(
+            isNull(cards.retiredAt),
+            seedSlugs.length > 0 ? notInArray(cards.slug, seedSlugs) : undefined,
+          ),
+        )
         .returning({ slug: cards.slug });
-      if (zombies.length > 0) {
-        console.log(`  removed cards no longer in seed: ${zombies.map((z) => z.slug).join(', ')}`);
+      if (retiredCards.length > 0) {
+        console.log(
+          `  retired cards no longer in seed: ${retiredCards.map((c) => c.slug).join(', ')}`,
+        );
       }
 
-      // Re-match every account to a card by Plaid account name, then clear any
-      // transaction whose category link belongs to a card that is not the
-      // account's. Keying off the links rather than off the stored card_id
-      // catches a move that passes through "no card" too — an issuer rename
-      // drops the match on one run, a later run matches a different card —
-      // which a card_id-to-card_id comparison misses in both steps, leaving
-      // the old card's categories and rates on the account's transactions.
-      // Each recorded reward_rate is kept: it is history. An account with no
-      // card clears nothing: it is an unsupported account until the seed file
-      // catches up with the rename (see the supported-account rule at the top
-      // of src/app/accounts/[accountId]/page.tsx), and a card actually deleted
-      // from the seed already set-nulls those links by FK. Credit category
-      // assignments are global, so they survive a card change either way.
+      // Re-match every account to a card by Plaid account name. That is ALL
+      // this loop does to an account: an account's card is a fixed fact, and a
+      // null match is only a temporary naming mismatch (the account is
+      // unsupported until the seed file lists the new name — see the
+      // supported-account rule at the top of
+      // src/app/accounts/[accountId]/page.tsx). Nothing here touches
+      // transactions: saved categories and rates are never cleared on the
+      // strength of what the account currently matches. matchCard skips
+      // retired cards, so an account whose card just left the file drops to
+      // "no card" here in the same transaction.
       const cardList = await tx.select().from(cards).orderBy(cards.id);
       const accountList = await tx.select().from(accounts);
       let matched = 0;
       for (const account of accountList) {
         const card = matchCard(cardList, account.name);
-        if (card) {
-          matched++;
-          const wiped = await tx
-            .update(transactions)
-            .set({ cardCategoryId: null, updatedAt: sql`now()` })
-            .where(
-              and(
-                eq(transactions.accountId, account.accountId),
-                inArray(
-                  transactions.cardCategoryId,
-                  tx
-                    .select({ id: cardCategories.id })
-                    .from(cardCategories)
-                    .where(ne(cardCategories.cardId, card.id)),
-                ),
-              ),
-            )
-            .returning({ id: transactions.id });
-          if (wiped.length > 0) {
-            console.log(
-              `  account "${account.name}": cleared card categories belonging to another card on ${wiped.length} transaction(s) (rates kept)`,
-            );
-          }
-        }
+        if (card) matched++;
         if ((card?.id ?? null) !== account.cardId) {
           await tx
             .update(accounts)
@@ -290,11 +283,6 @@ async function main() {
           console.log(`  account "${account.name}" -> ${card ? card.slug : 'no card'}`);
         }
       }
-
-      // No cleanup of rates whose category link was severed: reward_rate is a
-      // historical snapshot of what a transaction earned, so it outlives the
-      // category that produced it. A row with a rate and no category link is
-      // history, not garbage.
 
       console.log(
         `Seeded ${cardSeeds.length} card(s), ${categoryCount} categories, ` +

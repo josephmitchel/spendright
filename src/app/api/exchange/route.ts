@@ -150,10 +150,9 @@ export async function POST(req: NextRequest) {
     for (const account of plaidAccounts) {
       const label = account.name ?? account.account_id;
       try {
-        // One transaction per account, because upsertAccount's category clear
-        // is destructive and must not commit unless the card change that
-        // justifies it does too — and per ACCOUNT rather than one for all of
-        // them so a single bad account cannot roll back its siblings.
+        // One transaction per ACCOUNT rather than one for all of them, so a
+        // single bad account cannot roll back its siblings — the same shape
+        // syncItem uses.
         await db.transaction(async (tx) => {
           await upsertAccount(tx, account, itemId, cardList);
         });

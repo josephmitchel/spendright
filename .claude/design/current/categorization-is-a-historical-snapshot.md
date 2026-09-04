@@ -9,10 +9,10 @@ When a user categorizes a purchase as, say, Groceries at 6%, that pairing is a f
 
 Consequences:
 - Editing a rate in the seed applies to future picks only. The seed backfills missing rates but never overwrites one.
-- Removing a category from a card stops it being offered for new picks. It must not erase the category or the rate from transactions that already carry it.
-- The account page shows the historical category and rate as recorded. An "(unlinked)" marker is only acceptable as an interim rendering; the intended display is the category name that was picked.
+- Removing a category from a card retires it ([[categories-retired-not-deleted]]): it stops being offered for new picks, and every transaction that carries it keeps the link and the rate.
+- The account page shows the historical category and rate as recorded. The picker renders a retired category as its disabled selected option. The "(unlinked)" rate marker now only reaches rows whose link was stripped before retirement existed, or by a hand delete.
 - The pending-to-posted carry keeps both the category and the rate ([[pending-to-posted-carry]]).
 
-Known gap (2026-09-04): `card_categories` rows are deleted by the seed reconcile and the FK is `on delete set null`, so today a removed category is stripped from old transactions while only the rate survives. That violates this rule and should be flagged until fixed. The fix is implementation detail (snapshot the name on the row, or retire categories instead of deleting them) and is not decided here.
+Resolved 2026-09-04: the seed no longer deletes category or card rows, so the `on delete set null` FKs never fire on a catalog change.
 
 Related: [[no-category-clear]], [[seed-reconcile-is-destructive]], [[unmatched-is-temporary]].

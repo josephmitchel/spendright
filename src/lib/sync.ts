@@ -109,15 +109,11 @@ export async function syncItem(item: ItemRow, options?: SyncItemOptions): Promis
   // between the cardList read above and the insert leaves a dangling
   // accounts.card_id, the FK rejects it, and the whole sync — cursor included —
   // rolls back. That is the wedging failure upsertAccount was written to fix
-  // (see the note on it), just moved one level up. It also held the category
-  // wipe's row locks for the length of the entire sync, widening the deadlock
-  // window against the seed's reconcile that scripts/seed-cards.ts warns about.
+  // (see the note on it), just moved one level up.
   //
-  // Committing first is still correct for both things the transactions need:
-  // the foreign key (the account row exists before any row referencing it is
-  // inserted) and the carry read further down, which reads accounts.card_id to
-  // decide whether a pending row's card category is still valid and so must see
-  // THIS sync's matches, not the previous link's.
+  // Committing first is still correct for what the transactions need: the
+  // foreign key — the account row exists before any row referencing it is
+  // inserted.
   //
   // A failure is reported and skipped rather than thrown, exactly as
   // /api/exchange does it: that account's transactions are then skipped by the
@@ -238,45 +234,35 @@ export async function syncItem(item: ItemRow, options?: SyncItemOptions): Promis
         .where(inArray(transactions.transactionId, pendingIds))
         .for('update');
 
-      // A card category stops being carryable only when it belongs to a card
-      // that is NOT the account's — the account moved to a different card
-      // since the user categorized the pending row, so its categories no
-      // longer apply. An account matched to no card (card_id NULL) is an
-      // unsupported account, not a wrong one: the selection is preserved and
-      // simply stays hidden until the account matches a card again. See the
-      // supported-account rule at the top of
-      // src/app/accounts/[accountId]/page.tsx; /api/exchange and
-      // scripts/seed-cards.ts follow the same rule when they clear links.
+      // The carry is unconditional apart from the sign rule applied at the
+      // insert below (decided 2026-09-04). A pick is history and rides along
+      // whatever has since changed on the card side: the account's current
+      // card is not consulted, because an account's card is a fixed fact and
+      // a category from "a different card" is not a case this app has (see
+      // the supported-account rule at the top of
+      // src/app/accounts/[accountId]/page.tsx). A retired category carries
+      // too — retired rows stay in their tables precisely so old links hold.
       // Carrying is the last chance to keep the selection — Plaid reposts a
       // pending row under a new transaction_id and the old row is deleted
       // below — so a dropped carry is unrecoverable.
+      //
+      // The one thing checked is that the category ROW still exists. The seed
+      // never deletes one any more, so this only guards a delete made by hand
+      // — but a carry is an INSERT of a fresh row that no FK set-null can have
+      // cleaned up, and a stale id here would abort the whole sync, cursor
+      // included, and every later sync would replay into the same failure.
+      // Cheap insurance against a wedge.
       const pendingCardCategoryIds = [
         ...new Set(pendingRows.map((r) => r.cardCategoryId).filter((id) => id !== null)),
       ];
-      const categoryCardIds = new Map<number, number>();
-      const accountCardIds = new Map<string, number | null>();
+      const liveCardCategoryIds = new Set<number>();
       if (pendingCardCategoryIds.length > 0) {
         const categoryRows = await tx
-          .select({ id: cardCategories.id, cardId: cardCategories.cardId })
+          .select({ id: cardCategories.id })
           .from(cardCategories)
           .where(inArray(cardCategories.id, pendingCardCategoryIds));
-        for (const category of categoryRows) categoryCardIds.set(category.id, category.cardId);
-
-        const accountRows = await tx
-          .select({ accountId: accounts.accountId, cardId: accounts.cardId })
-          .from(accounts)
-          .where(inArray(accounts.accountId, [...new Set(pendingRows.map((r) => r.accountId))]));
-        for (const account of accountRows) accountCardIds.set(account.accountId, account.cardId);
+        for (const category of categoryRows) liveCardCategoryIds.add(category.id);
       }
-
-      // The credit side needs the same existence check, minus the card
-      // comparison: credit categories are global, so no card change can
-      // invalidate one — only deletion from the seed does
-      // (scripts/seed-cards.ts drops every credit category not in the seed
-      // list, and the FK set-nulls the links it can see). A carry is an
-      // INSERT of a fresh row that the FK cannot have cleaned up, so a stale
-      // id here aborts the whole sync — including the cursor update — and
-      // every later sync replays into the same failure.
       const pendingCreditCategoryIds = [
         ...new Set(pendingRows.map((r) => r.creditCategoryId).filter((id) => id !== null)),
       ];
@@ -290,18 +276,8 @@ export async function syncItem(item: ItemRow, options?: SyncItemOptions): Promis
       }
 
       for (const row of pendingRows) {
-        // Both lookups are compared against undefined explicitly: a plain
-        // equality would read two misses as "still valid" and carry a category
-        // id that no longer exists into the insert, failing the whole sync on
-        // the FK. The rows come from three separate statement snapshots under
-        // READ COMMITTED, so a concurrent seed run can produce that.
-        const categoryCardId =
-          row.cardCategoryId !== null ? categoryCardIds.get(row.cardCategoryId) : undefined;
-        const accountCardId = accountCardIds.get(row.accountId);
         const cardCategoryStillValid =
-          categoryCardId !== undefined &&
-          accountCardId !== undefined &&
-          (accountCardId === null || accountCardId === categoryCardId);
+          row.cardCategoryId !== null && liveCardCategoryIds.has(row.cardCategoryId);
         const creditCategoryStillValid =
           row.creditCategoryId !== null && liveCreditCategoryIds.has(row.creditCategoryId);
         // A recorded rate carries on its own, with no live category link
@@ -310,11 +286,7 @@ export async function syncItem(item: ItemRow, options?: SyncItemOptions): Promis
         // snapshot of what the purchase earned (src/db/schema.ts), and the
         // posted row IS that purchase, just re-identified by Plaid: the
         // pending row holding the rate is deleted a few statements down, so
-        // anything not carried here is lost for good. Both cases that sever a
-        // link keep the rate everywhere else — the FK set-null when a category
-        // leaves the seed file, and the card-move wipe in
-        // scripts/seed-cards.ts, which logs "(rates kept)" — so requiring a
-        // valid category here would make this the one path that erases them.
+        // anything not carried here is lost for good.
         if (cardCategoryStillValid || creditCategoryStillValid || row.rewardRate !== null) {
           carried.set(row.transactionId, {
             cardCategoryId: cardCategoryStillValid ? row.cardCategoryId : null,
