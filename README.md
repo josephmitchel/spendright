@@ -16,7 +16,7 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+You can start editing the page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
 
 ## Database
 
@@ -65,7 +65,7 @@ hashes or filenames. So the row you insert must carry the `when` of the last
 migration you are baselining, copied verbatim from `_journal.json`. Inserting a
 current timestamp instead silently marks _everything_ as applied: these
 migrations were generated within the last few days, so `now()` is greater than
-all five, and `0002`/`0003`/`0004` are skipped without running and without an
+every one of them, and `0002` onward are skipped without running and without an
 error. To baseline `0000` and `0001` — using `0001_same_bruce_banner`'s `when`,
 so `0002` onward still run:
 
@@ -83,7 +83,23 @@ values ('baseline-0001_same_bruce_banner', 1788309102608);
 `hash` is written by the migrator but never read back by it, so any marker that
 tells the next reader where the row came from will do.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Before deploying
+
+SpendRight is currently a single-user tool run on localhost, and two things are
+left undone on purpose because of that. Both have to be settled before it is
+reachable from anywhere else. The full note, with the reasoning, is at the top
+of `src/app/api/exchange/route.ts`.
+
+- **No authentication on any route.** Everything under `/api` is open, including
+  the route that mints and stores a Plaid access token, the route that deletes an
+  institution and all of its data, and the reads that return the account's whole
+  transaction history. The `items` table holds encrypted bank credentials.
+- **`POST /api/exchange` can run long.** It makes several Plaid calls before it
+  answers and the last one paginates, so a first sync of an item with years of
+  history can exceed a host's request timeout (Vercel's hobby limit is 10s) and
+  fail a link that actually succeeded. The in-request retry sleeping is capped
+  but not gone (the initial sync polls at most 3 times, ~6s); finishing the job
+  means running the first sync as a background job the client polls.
 
 ## Learn More
 

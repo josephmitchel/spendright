@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, getTableColumns, sql } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { accounts, cardCategories, creditCategories, transactions } from '@/db/schema';
 import { isInflowAmount } from '@/lib/amounts';
@@ -8,6 +8,17 @@ import { errorResponse, pgErrorCode } from '@/lib/errors';
 function badRequest(message: string) {
   return NextResponse.json({ error: { code: 'BAD_REQUEST', message } }, { status: 400 });
 }
+
+// Every column EXCEPT the raw Plaid payload, the same exclusion GET
+// /api/transactions makes and for the same reason (see the note there):
+// plaid_transaction is one to two kilobytes of transactions/sync JSON per row
+// that no client reads. A bare `.returning()` shipped it back on EVERY category
+// pick — the one column the list endpoint went out of its way to strip — and
+// the account page merges the response straight into its row
+// (`{ ...baseline, ...data.transaction }`), so it also parked that payload in
+// component state for the life of the page. Excluded rather than enumerated, so
+// a column added to the schema still reaches the client without a change here.
+const { plaidTransaction: _plaidTransaction, ...returnedColumns } = getTableColumns(transactions);
 
 // A response decided INSIDE the db transaction. Thrown rather than returned:
 // db.transaction commits whenever its callback returns and rolls back only on
@@ -227,7 +238,7 @@ export async function PATCH(
         .update(transactions)
         .set({ ...updateSet, updatedAt: sql`now()` })
         .where(eq(transactions.transactionId, transactionId))
-        .returning();
+        .returning(returnedColumns);
 
       // The untouched kind may still hold a category (e.g. a null clear of the
       // card kind on an inflow row) — resolve its name so the response always

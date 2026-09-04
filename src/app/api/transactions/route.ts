@@ -1,4 +1,4 @@
-import { desc, eq, getTableColumns } from 'drizzle-orm';
+import { desc, eq, getTableColumns, sql } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { cardCategories, creditCategories, transactions } from '@/db/schema';
 import { db } from '@/lib/db';
@@ -56,14 +56,31 @@ export async function GET(req: NextRequest) {
     };
     // The limit floor is 1 because 0 is already spoken for above: a caller
     // asking for `?limit=0` gets the default page, not an empty one.
+    //
+    // The default stays at 500 even though the account page now asks for 20 at
+    // a time (its PAGE_SIZE): the page size is the CLIENT's decision, and a
+    // caller that names no limit — curl, a script — is better served by one
+    // large response than by silently getting 20 rows.
     const limit = readBound('limit', 500, 1, 1000);
     // MAX_SAFE_INTEGER, not Infinity: it is the largest integer that survives
     // Number -> string -> bigint intact, and it is well inside bigint range.
     const offset = readBound('offset', 0, 0, Number.MAX_SAFE_INTEGER);
 
+    // Every column EXCEPT the raw Plaid payload. plaid_transaction is the
+    // whole transactions/sync object kept for debugging (src/db/schema.ts) and
+    // is by far the widest column — one to two kilobytes of JSON per row — so
+    // a default page of 500 shipped close to a megabyte that the only consumer
+    // never looks at: the `Transaction` interface in
+    // src/app/accounts/[accountId]/page.tsx does not declare the field, and no
+    // client reads it. Excluded rather than listing the columns to keep, so a
+    // column added to the schema still reaches the client without a change
+    // here.
+    const { plaidTransaction: _plaidTransaction, ...transactionColumns } =
+      getTableColumns(transactions);
+
     const rows = await db
       .select({
-        ...getTableColumns(transactions),
+        ...transactionColumns,
         cardCategoryName: cardCategories.name,
         creditCategoryName: creditCategories.name,
       })
@@ -75,7 +92,22 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    return NextResponse.json({ transactions: rows });
+    // How many rows the account has in total, not how many this page holds.
+    // Without it a client cannot tell a full last page from a page with more
+    // behind it, and the account page's pager would have to guess at "Next" —
+    // which is how the old unpaginated version silently showed only the newest
+    // 500 of a longer history with nothing on screen saying so.
+    //
+    // A second query rather than a window function over the page: `count(*)
+    // over ()` returns nothing at all on an empty page, so an offset past the
+    // end would report a total of 0 and the clamp on the client would have no
+    // way home.
+    const [{ total }] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(transactions)
+      .where(eq(transactions.accountId, accountId));
+
+    return NextResponse.json({ transactions: rows, total, limit, offset });
   } catch (err) {
     return errorResponse(err);
   }

@@ -16,10 +16,11 @@ export default function PlaidLinkButton({
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'exchanging' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // /api/exchange returns 200 with sync_error when the link itself succeeded
-  // but its first sync did not, so this is reported apart from `status` —
-  // the institution IS connected, and calling the whole thing a failure would
-  // send the user off to re-link something that is already there.
+  // /api/exchange returns 200 with sync_error, account_errors and/or a
+  // transactions.skipped count when the link itself succeeded but part of the
+  // work after it did not, so this is reported apart from `status` — the
+  // institution IS connected, and calling the whole thing a failure would send
+  // the user off to re-link something that is already there.
   //
   // The wording stays neutral about what to do next, because this covers every
   // way the first sync can fail, not just the common one. Plaid not having
@@ -58,9 +59,45 @@ export default function PlaidLinkButton({
         });
         const data = await readJson(res, 'Exchange failed');
         setStatus('idle');
-        setSyncNotice(
-          typeof data.sync_error === 'string' ? { message: data.sync_error, at: Date.now() } : null,
-        );
+        // Three partial failures share this one notice: the first sync
+        // throwing, the first sync holding its cursor back, and an account that
+        // could not be stored (/api/exchange reports all three rather than
+        // throwing, because the link itself succeeded either way). Joined into
+        // one line because the frame around them — "Connected, but …" — is true
+        // of all of them, and a second notice beside it would just be the same
+        // sentence twice.
+        const accountErrors: string[] = Array.isArray(data.account_errors)
+          ? data.account_errors.filter((e: unknown): e is string => typeof e === 'string')
+          : [];
+        // The quiet one: the sync SUCCEEDED — nothing threw, so sync_error is
+        // null — but rows arrived for an account that is not stored, so syncItem
+        // held the item's cursor back and they have not landed yet (see the
+        // cursor note in src/lib/sync.ts). Without this the notice said nothing
+        // about a first sync that did not, in fact, finish. It is the same
+        // condition syncItem writes to items.error and the home page renders
+        // under the institution; carrying it here too keeps the two halves of
+        // the screen agreeing, and is why HomeClient's syncSucceededAt requires
+        // !r.skipped — otherwise the next "Sync all" would clear this notice
+        // while the rows were still being held.
+        //
+        // Always the held case, never the dropped one: syncItem drops a batch
+        // only after MAX_SKIPPED_SYNCS consecutive skips, and this is a brand
+        // new item whose counter starts at zero, so a first sync cannot reach
+        // it. The home page's sync status handles the dropped wording.
+        const skipped =
+          typeof data.transactions?.skipped === 'number' ? data.transactions.skipped : 0;
+        const notices = [
+          ...(typeof data.sync_error === 'string' ? [data.sync_error] : []),
+          ...(skipped > 0
+            ? [
+                `${skipped} transaction(s) held for accounts that aren’t stored yet — they’ll be retried on the next sync`,
+              ]
+            : []),
+          ...(accountErrors.length > 0
+            ? [`${accountErrors.length} account(s) not stored — ${accountErrors.join('; ')}`]
+            : []),
+        ];
+        setSyncNotice(notices.length > 0 ? { message: notices.join(' · '), at: Date.now() } : null);
         onConnected();
       } catch (err) {
         setStatus('error');

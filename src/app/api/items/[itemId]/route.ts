@@ -6,6 +6,11 @@ import { db } from '@/lib/db';
 import { errorResponse } from '@/lib/errors';
 import { itemRemove } from '@/lib/plaid';
 
+// Unauthenticated, like every route here, and this is the destructive one:
+// anything that can reach it can delete an institution with all of its accounts
+// and transactions. Deliberate for a localhost single-user tool — see the
+// "BEFORE DEPLOYING" note at the top of src/app/api/exchange/route.ts, which is
+// where that decision is recorded.
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ itemId: string }> },

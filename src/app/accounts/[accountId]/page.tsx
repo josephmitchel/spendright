@@ -25,6 +25,14 @@ import { readJson } from '@/lib/http';
 // just go quiet behind this screen and come back intact once the account is
 // supported again.
 
+// Rows per page. The API's own default is 500 and its cap is 1000
+// (src/app/api/transactions/route.ts); the page size is this page's decision,
+// sent on every request so it never depends on that default. Before this, the
+// page asked for no bounds at all and rendered whatever came back — which meant
+// an account with more than 500 transactions showed the newest 500 and said
+// nothing about the rest.
+const PAGE_SIZE = 20;
+
 interface Transaction {
   transactionId: string;
   date: string;
@@ -105,6 +113,11 @@ function CategorySelect({
     // Number('') === 0 and get back a 400 in an alert; a no-op is the right
     // answer for a placeholder either way.
     <select
+      // The picker sits in a fixed-width column (see the table below), which
+      // cannot stretch for it the way an auto column did. A select is otherwise
+      // as wide as its widest option — "Select Streaming Services" — so without
+      // this it would spill out of its cell over the next column.
+      style={{ maxWidth: '100%' }}
       value={value ?? ''}
       disabled={disabled}
       onChange={(e) => {
@@ -142,27 +155,95 @@ function AccountView({ accountId }: { accountId: string }) {
   const [card, setCard] = useState<Card | null>(null);
   const [creditCategories, setCreditCategories] = useState<CreditCategory[]>([]);
   const [transactionList, setTransactionList] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Zero-based page of transactions, and the account's total row count as the
+  // server last reported it. `total` is null until a transactions read lands —
+  // "unknown", which is not the same as 0, so the pager and the "No
+  // transactions" message both hold off rather than assert an empty account.
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
+  // `loading` gates the whole account body and covers the FIRST load only. It
+  // ends when BOTH effects below have settled once: they run independently now
+  // (see the note above the account effect), and letting that one end it on its
+  // own would flash an empty table under a loaded header while the rows were
+  // still in flight. Neither flag ever goes back to false — Retry deliberately
+  // leaves whatever did load on screen.
+  const [accountLoadSettled, setAccountLoadSettled] = useState(false);
+  const [transactionsLoadSettled, setTransactionsLoadSettled] = useState(false);
+  const loading = !accountLoadSettled || !transactionsLoadSettled;
+  // Bumped by the Retry button below to re-run both load effects. This page has
+  // no other way back from a transient failure: the effects key off accountId
+  // and page, and nothing here re-fetches — so a blip on /api/cards left the
+  // account stuck showing an error with no card, no transactions section and no
+  // recovery short of a full page reload. HomeClient carries the same button
+  // for the same reason. Declared up here because settledRequest below is keyed
+  // on it as well as on `page`.
+  const [reloadKey, setReloadKey] = useState(0);
+  // The page number the rows on screen actually came from — -1 until the first
+  // response lands. It and settledRequest below are both records of what the
+  // effect last did that the pager's state is DERIVED from, rather than flags
+  // the effect sets, which is what the react-hooks lint rule wants (a setState
+  // in an effect body is a second render pass) and simpler to reason about:
+  // each comparison says exactly one thing.
+  //
+  // Set only when the read SUCCEEDED, which is why it is no longer what
+  // re-enables the pager: `transactionList` is only replaced on success too, so
+  // advancing this on a failed read made the pager say "Showing 21–40 of 57"
+  // over page 0's rows and let the user page on from a page that never arrived.
+  const [loadedPage, setLoadedPage] = useState(-1);
+  // The REQUEST that last settled, success or failure — the in-flight marker
+  // the two buttons key off, so a failed page read re-enables them instead of
+  // freezing the pager. Split from loadedPage rather than shared with it
+  // because the two answer different questions: this one is "is a request
+  // outstanding", loadedPage is "where did these rows come from", and a failed
+  // turn is the state where those disagree. There the buttons come back, the
+  // rows and the range stay on the page that did load, and the error banner's
+  // Retry re-requests the page the user asked for.
+  //
+  // A request is identified by BOTH of the transactions effect's keys, not by
+  // the page number alone: Retry bumps reloadKey and re-runs the effect for the
+  // SAME page, which a page-only marker cannot see as a new request. The pager
+  // then stayed enabled with no "Loading…" through the whole retry, and a click
+  // during it changed `page` — so the retry's response was thrown away by the
+  // `cancelled` cleanup with nothing on screen having said it was in flight.
+  const [settledRequest, setSettledRequest] = useState<{ page: number; reloadKey: number } | null>(
+    null,
+  );
+  // Deliberately NOT `loading`: that one gates the whole account body, so
+  // reusing it would blank the table, the pager and the header on every click
+  // and make the pager jump out from under the cursor. The old rows stay up
+  // with the buttons disabled until the new ones arrive.
+  const pageLoading = settledRequest?.page !== page || settledRequest.reloadKey !== reloadKey;
+  // The rows on screen came from loadedPage, so the pager's range is counted
+  // off that rather than off `page`. The two differ while a turn is in flight
+  // and after one that failed, and labelling those rows with a range they did
+  // not come from is the bug this pair exists to prevent.
+  const shownPage = loadedPage >= 0 ? loadedPage : page;
+  // One error slice per effect, joined for display. The two loads settle
+  // independently, so a single string would let whichever finished last speak
+  // for both — a transactions failure would erase a standing account error, and
+  // a later account success would erase the transactions one.
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const error = [accountError, transactionsError].filter(Boolean).join('; ') || null;
   // Which of the three loads actually came back. Each message below ("Account
   // not found", "Card not supported", "No transactions") asserts something
   // about what the database holds, and a read that failed is not evidence for
   // any of them — it only means this page does not know.
   const [loaded, setLoaded] = useState({ account: false, transactions: false, cards: false });
-  // Bumped by the Retry button below to re-run the load effect. This page has
-  // no other way back from a transient failure: the effect keys off accountId
-  // alone, and nothing here re-fetches — so a blip on /api/cards left the
-  // account stuck showing an error with no card, no transactions section and no
-  // recovery short of a full page reload. HomeClient carries the same button
-  // for the same reason.
-  const [reloadKey, setReloadKey] = useState(0);
 
+  // The account and the card catalog. Keyed on the account and Retry only — NOT
+  // on `page`: neither read has anything to do with which page of transactions
+  // is on screen, and keeping them in the paged effect made every page turn
+  // carry their failure modes. A blip on /api/cards while merely paging flipped
+  // categoriesMayBeStale on and disabled every picker; a blip on /api/accounts
+  // froze `card` and put an error banner up. Paging now touches nothing but the
+  // transactions effect below.
   useEffect(() => {
     // A response that arrives after this component is gone (or after a
     // StrictMode re-run) must not write to it.
     let cancelled = false;
     (async () => {
-      // Three independent endpoints, so each settles on its own — fetch AND
+      // Two independent endpoints, so each settles on its own — fetch AND
       // parse together, one promise per endpoint, for the same reason as the
       // load in HomeClient: Promise.all over the fetches turns a single
       // rejection into a total failure that discards the siblings that did
@@ -174,12 +255,9 @@ function AccountView({ accountId }: { accountId: string }) {
       // "Error: Failed to load cards" and nothing else — no header, no
       // balances, no rows — even though the account and its transactions had
       // both come back 200.
-      const [accountResult, txnResult, cardsResult] = await Promise.allSettled([
+      const [accountResult, cardsResult] = await Promise.allSettled([
         fetch(`/api/accounts?accountId=${encodeURIComponent(accountId)}`).then((res) =>
           readJson(res, 'Failed to load account'),
-        ),
-        fetch(`/api/transactions?accountId=${encodeURIComponent(accountId)}`).then((res) =>
-          readJson(res, 'Failed to load transactions'),
         ),
         fetch('/api/cards').then((res) => readJson(res, 'Failed to load cards')),
       ]);
@@ -196,7 +274,6 @@ function AccountView({ accountId }: { accountId: string }) {
       const loadedAccount: Account | null =
         accountResult.status === 'fulfilled' ? (accountResult.value.accounts?.[0] ?? null) : null;
       if (accountResult.status === 'fulfilled') setAccount(loadedAccount);
-      if (txnResult.status === 'fulfilled') setTransactionList(txnResult.value.transactions ?? []);
       if (cardsResult.status === 'fulfilled') {
         setCreditCategories(cardsResult.value.creditCategories ?? []);
         // Both responses, or neither. Resolving the card from the catalog
@@ -212,27 +289,84 @@ function AccountView({ accountId }: { accountId: string }) {
           setCard(cards.find((c) => c.id === loadedAccount?.cardId) ?? null);
         }
       }
-      setLoaded({
+      // Merged rather than replaced: the transactions flag belongs to the other
+      // effect now, and either one may settle first.
+      setLoaded((prev) => ({
+        ...prev,
         account: accountResult.status === 'fulfilled',
-        transactions: txnResult.status === 'fulfilled',
         cards: cardsResult.status === 'fulfilled',
-      });
+      }));
 
       // And say so on screen, next to whatever did render. A half-loaded page
       // presented as the whole truth is what made the old failure look like an
       // empty account: console.error is not a user surface.
-      const failures = [accountResult, txnResult, cardsResult].filter(
+      const failures = [accountResult, cardsResult].filter(
         (result): result is PromiseRejectedResult => result.status === 'rejected',
       );
       for (const failure of failures) console.error(failure.reason);
-      setError(
+      setAccountError(
         failures.length > 0
           ? failures
               .map((f) => (f.reason instanceof Error ? f.reason.message : 'Failed to load'))
               .join('; ')
           : null,
       );
-      setLoading(false);
+      setAccountLoadSettled(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // reloadKey is a dependency purely so Retry re-runs this.
+  }, [accountId, reloadKey]);
+
+  // The transactions, on their own effect: this is the only one of the three
+  // reads that depends on `page` (see the note above).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // allSettled over the single request, rather than try/catch, so the
+      // rejection is a value handled alongside the success — the bookkeeping
+      // below runs either way.
+      const [txnResult] = await Promise.allSettled([
+        fetch(
+          `/api/transactions?accountId=${encodeURIComponent(accountId)}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+        ).then((res) => readJson(res, 'Failed to load transactions')),
+      ]);
+      if (cancelled) return;
+
+      if (txnResult.status === 'fulfilled') {
+        setTransactionList(txnResult.value.transactions ?? []);
+        // Left alone when the response carries no count, for the same reason
+        // the card is: a value that did not arrive is not evidence of zero.
+        if (typeof txnResult.value.total === 'number') setTotal(txnResult.value.total);
+        setLoaded((prev) => ({ ...prev, transactions: true }));
+        setTransactionsError(null);
+        setLoadedPage(page);
+      } else {
+        console.error(txnResult.reason);
+        setLoaded((prev) => ({ ...prev, transactions: false }));
+        setTransactionsError(
+          txnResult.reason instanceof Error ? txnResult.reason.message : 'Failed to load',
+        );
+        // loadedPage is deliberately NOT touched here: the rows on screen are
+        // still the ones it names, and the pager reads its range off it.
+      }
+      // Either way the request is over, so the buttons come back — see the note
+      // on settledRequest.
+      setSettledRequest({ page, reloadKey });
+      setTransactionsLoadSettled(true);
+
+      // Land back on the last real page when this one is past the end. A sync
+      // that removed rows, or an item disconnected in another tab, can shrink
+      // the account under a pager that is sitting on page 5 — and an offset
+      // past the end returns an empty page, which would otherwise read as "no
+      // transactions" with no way back except Back. Setting `page` re-runs this
+      // effect; it cannot loop, because the page it moves to is by
+      // construction inside the count it just read.
+      if (txnResult.status === 'fulfilled' && typeof txnResult.value.total === 'number') {
+        const lastPage = Math.max(0, Math.ceil(txnResult.value.total / PAGE_SIZE) - 1);
+        if (page > lastPage) setPage(lastPage);
+      }
     })();
     return () => {
       cancelled = true;
@@ -240,8 +374,8 @@ function AccountView({ accountId }: { accountId: string }) {
     // reloadKey is a dependency purely so Retry re-runs this. The `cancelled`
     // cleanup is what makes a double-click safe: the superseded run's writes
     // are discarded, so an older, slower response can never land after a newer
-    // one.
-  }, [accountId, reloadKey]);
+    // one — which is also what makes fast clicking through pages safe.
+  }, [accountId, page, reloadKey]);
 
   // The load effect cancels itself with a local flag, but a PATCH is fired from
   // an event handler and outlives the effect that could have cancelled it, so it
@@ -405,6 +539,18 @@ function AccountView({ accountId }: { accountId: string }) {
     if (patchChain.current.get(transactionId) === run) patchChain.current.delete(transactionId);
   };
 
+  // The only way the pager changes pages. Not `setPage` directly, because the
+  // page the buttons step from is shownPage (the rows on screen) while the page
+  // the effect is keyed on is `page` (the last one asked for), and after a
+  // failed read those disagree: stepping forward from shownPage then names the
+  // page number `page` already holds, setState with an unchanged value re-runs
+  // no effect, and the button is dead exactly on the failure it should retry.
+  // Bumping reloadKey makes that press a fresh request instead.
+  const goToPage = (next: number) => {
+    if (next === page) setReloadKey((key) => key + 1);
+    else setPage(next);
+  };
+
   // Both option lists are only trustworthy when BOTH reads landed — see the
   // note above the table.
   const categoriesMayBeStale = !loaded.cards || !loaded.account;
@@ -447,7 +593,11 @@ function AccountView({ accountId }: { accountId: string }) {
               load is a worse answer than leaving them up. */}
           <button
             onClick={() => {
-              setError(null);
+              // Both slices, because the banner is their join: clearing one
+              // would leave the other's message standing and make the press
+              // look like it half-worked.
+              setAccountError(null);
+              setTransactionsError(null);
               setReloadKey((key) => key + 1);
             }}
           >
@@ -520,9 +670,43 @@ function AccountView({ accountId }: { accountId: string }) {
           {categoriesMayBeStale && (
             <p>Category lists may be out of date — editing is off until they refresh.</p>
           )}
-          {loaded.transactions && transactionList.length === 0 && <p>No transactions.</p>}
+          {/* "This account has none", not "this page has none": on a page
+              past the end the list is empty for a moment before the clamp in
+              the load effect moves back, and claiming the account is empty
+              there would be wrong. total === 0 is the account's own count. */}
+          {loaded.transactions && total === 0 && <p>No transactions.</p>}
+          {/* Fixed layout with declared column widths, and it is the pager
+              that makes it necessary. There is no CSS in this project, so an
+              `auto` table sizes its columns from the rows it currently holds:
+              with all of an account's transactions in one table that happened
+              once, but a page of 20 recomputes it, and what a page needs
+              depends on what is in it — a page with categories assigned wants
+              a wider Category column than a page of "none", enough to push
+              the whole table past the window. Past it, the browser compresses
+              every column to fit and Name starts wrapping onto two lines, so
+              paging back and forth visibly squished and unsquished the table.
+              Declared widths make the geometry the same on every page.
+
+              Percentages of a full-width table rather than pixels: the
+              columns keep their proportions at any window size. `break-word`
+              is the safety net a fixed layout needs — a column can no longer
+              grow for an unusually long merchant name, so it has to be
+              allowed to break inside one instead of overflowing its cell. */}
           {transactionList.length > 0 && (
-            <table border={1}>
+            <table
+              border={1}
+              style={{ tableLayout: 'fixed', width: '100%', overflowWrap: 'break-word' }}
+            >
+              <colgroup>
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '25%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '21%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '7%' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Date</th>
@@ -601,6 +785,52 @@ function AccountView({ accountId }: { accountId: string }) {
                 })}
               </tbody>
             </table>
+          )}
+          {/* The pager renders whenever the account's count is known and there
+              is anything to show, INCLUDING a single page — the "1–17 of 17"
+              line is the answer to "is this all of them?", which is exactly
+              what the unpaginated version could not give.
+
+              Both buttons are disabled while a page is in flight, so a second
+              click cannot queue a jump the user did not see: the load effect
+              discards the superseded response, but the page number itself
+              would still have moved twice. `total` is trusted for "Next"
+              rather than a short page, because a page CAN come back short of
+              PAGE_SIZE while rows exist behind it — a sync deleting rows
+              between the count and the page read is enough. */}
+          {total !== null && total > 0 && transactionList.length > 0 && (
+            <p>
+              {/* Counted off the rows actually on screen rather than off
+                  PAGE_SIZE, so the range is right on the last page and on the
+                  brief out-of-range render before the clamp lands — and off
+                  shownPage rather than `page` for the same reason, so the range
+                  describes the rows below it even while a turn is in flight. */}
+              Showing {shownPage * PAGE_SIZE + 1}–{shownPage * PAGE_SIZE + transactionList.length}{' '}
+              of {total}{' '}
+              {/* Stepped off shownPage — the page the rows on screen came
+                  from — rather than off `page`, which is only the page most
+                  recently ASKED for. The two differ after a failed read: the
+                  buttons are enabled again (see settledRequest) while `page`
+                  is still one past the rows below, so `p + 1` skipped straight
+                  over the page that failed and it was unreachable except
+                  through Retry. The disabled tests use shownPage for the same
+                  reason — "Previous" has to stay live on the page the user is
+                  actually looking at. While a read is in flight the two agree
+                  anyway, and both buttons are disabled regardless. */}
+              <button
+                onClick={() => goToPage(shownPage - 1)}
+                disabled={shownPage === 0 || pageLoading}
+              >
+                Previous
+              </button>{' '}
+              <button
+                onClick={() => goToPage(shownPage + 1)}
+                disabled={(shownPage + 1) * PAGE_SIZE >= total || pageLoading}
+              >
+                Next
+              </button>
+              {pageLoading && <span> Loading…</span>}
+            </p>
           )}
         </>
       )}

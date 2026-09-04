@@ -68,6 +68,13 @@ export const items = pgTable('items', {
   availableProducts: jsonb('available_products'),
   billedProducts: jsonb('billed_products'),
   error: jsonb('error'),
+  // How many CONSECUTIVE syncs have held this item's cursor back because Plaid
+  // sent transactions for an account that is not stored. Reset to 0 by a clean
+  // sync, and also by the sync that gives up and drops the batch — see the
+  // cursor note in src/lib/sync.ts for why the hold is bounded. It exists only
+  // because that bound needs a counter to run off: the cursor being held is
+  // otherwise the only state, and it cannot say how long it has been held.
+  skippedSyncs: integer('skipped_syncs').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

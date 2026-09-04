@@ -1,0 +1,1 @@
+ALTER TABLE "items" ADD COLUMN "skipped_syncs" integer DEFAULT 0 NOT NULL;

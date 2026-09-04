@@ -154,8 +154,35 @@ export default function HomeClient() {
     try {
       const res = await fetch('/api/sync', { method: 'POST' });
       const data = await readJson(res, 'Sync failed');
-      const results: { itemId: string; added?: number; error?: string }[] = data.results ?? [];
-      const parts = results.map((r) => (r.error ? `${r.itemId}: ${r.error}` : `+${r.added} added`));
+      const results: {
+        itemId: string;
+        added?: number;
+        skipped?: number;
+        dropped?: boolean;
+        error?: string;
+      }[] = data.results ?? [];
+      // `skipped` is normally 0 and is mentioned only when it isn't: rows Plaid
+      // sent for an account that exists nowhere in the database (see syncItem).
+      // The sync itself SUCCEEDED either way; what differs is what happened to
+      // those rows. Normally syncItem holds the item's cursor back, so Plaid
+      // re-offers the same batch on the next sync, by which time the account
+      // has probably been stored — nothing is lost. On the MAX_SKIPPED_SYNCS-th
+      // consecutive skip it gives up and advances the cursor instead, and
+      // `dropped` says so: those rows are gone, which is a different sentence
+      // and must not be reported as a retry. The count is here at all because
+      // the state is otherwise invisible — the only other sign of it is a line
+      // in the server log.
+      const parts = results.map((r) =>
+        r.error
+          ? `${r.itemId}: ${r.error}`
+          : `+${r.added} added${
+              r.skipped
+                ? r.dropped
+                  ? `, ${r.skipped} dropped after repeated failures — not recoverable (see the server log)`
+                  : `, ${r.skipped} skipped — will retry next sync (see the server log)`
+                : ''
+            }`,
+      );
       setSyncStatus(`Sync complete. ${parts.join(', ') || 'No items.'}`);
       // A sync in which every item came back clean is what makes the
       // connect-time notice in PlaidLinkButton stale: the item error it
@@ -165,7 +192,17 @@ export default function HomeClient() {
       // deliberate — the notice does not say which item it was about, so any
       // item still failing means it may well still be true. An empty result set
       // is not evidence of anything and does not clear it either.
-      if (results.length > 0 && results.every((r) => !r.error)) setSyncSucceededAt(Date.now());
+      //
+      // A skip counts as not clean, even though the item carries no error: a
+      // held-back cursor means that item's batch did NOT finish landing, which
+      // is the very thing the notice is about. Clearing it there would tell the
+      // user the first sync completed while the status line beside it still
+      // says rows are waiting on the next one. A skip that DROPPED its batch
+      // (see syncItem) is counted the same way: the rows are no longer waiting,
+      // but they never landed either, so "the first sync finished" is still the
+      // wrong thing to say — items.error carries the difference.
+      if (results.length > 0 && results.every((r) => !r.error && !r.skipped))
+        setSyncSucceededAt(Date.now());
       refresh();
     } catch (err) {
       setSyncStatus(`Sync failed: ${err instanceof Error ? err.message : 'unknown error'}`);
@@ -185,7 +222,7 @@ export default function HomeClient() {
     // JSON body on success ({ deleted }), so the helper's unreadable-response
     // check does not fire on the happy path.
     try {
-      const res = await fetch(`/api/items/${itemId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
       await readJson(res, 'Failed to remove item');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to remove item');
