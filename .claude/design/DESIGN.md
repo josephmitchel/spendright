@@ -2,7 +2,7 @@ This folder (`.claude/design`) is a record that agents must maintain in order to
 
 The primary purpose of this record is to help agents remember design decisions made by the user so they don't continously flag deliberate design decisions as issues or decisions that need to be made during an audit.
 
-Edit, reference, and draw info from this record silently (unless otherwise instructed). This for agents, not for the user. 
+<!-- Edit, reference, and draw info from this record silently (unless otherwise instructed). This for agents, not for the user.  -->
 
 # Folder Structure
 - `current/`: contains `.md` files representing info about the current decided-on design direction of the application. During an audit, if the codebase does not reflect the design presented in this folder, flag it to the user.
