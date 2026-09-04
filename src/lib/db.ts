@@ -8,12 +8,9 @@ const globalForDb = globalThis as unknown as {
   db?: NodePgDatabase<typeof schema>;
 };
 
-const pool =
-  globalForDb.pool ??
-  new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = globalForDb.pool ?? new Pool({ connectionString: process.env.DATABASE_URL });
 
-export const db: NodePgDatabase<typeof schema> =
-  globalForDb.db ?? drizzle(pool, { schema });
+export const db: NodePgDatabase<typeof schema> = globalForDb.db ?? drizzle(pool, { schema });
 
 if (process.env.NODE_ENV !== 'production') {
   globalForDb.pool = pool;

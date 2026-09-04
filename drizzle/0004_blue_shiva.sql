@@ -1,0 +1,2 @@
+CREATE INDEX "transactions_card_category_id_idx" ON "transactions" USING btree ("card_category_id");--> statement-breakpoint
+CREATE INDEX "transactions_credit_category_id_idx" ON "transactions" USING btree ("credit_category_id");

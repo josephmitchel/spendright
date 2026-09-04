@@ -7,6 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "seed:cards": "tsx scripts/seed-cards.ts"
   },
   "dependencies": {
@@ -27,6 +31,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "prettier": "3.9.6",
     "tsx": "^4.23.13",
     "typescript": "^5"
   }

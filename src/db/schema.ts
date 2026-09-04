@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -42,6 +44,16 @@ export const cardCategories = pgTable(
   },
   (table) => [unique('card_categories_card_id_name_uq').on(table.cardId, table.name)],
 );
+
+// Categories for inflow transactions (negative Plaid amounts: payments,
+// refunds, rewards). Global — shared by every card — and rate-less.
+// Seeded from creditCategorySeeds in src/db/cards.seed.ts.
+export const creditCategories = pgTable('credit_categories', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const items = pgTable('items', {
   id: serial('id').primaryKey(),
@@ -103,12 +115,21 @@ export const transactions = pgTable(
     isoCurrencyCode: text('iso_currency_code'),
     category: text('category'),
     pending: boolean('pending'),
-    // User-selected card spending category and its rate at selection time.
-    // Not written by sync, so re-syncs preserve user choices.
+    // User-selected card spending category (spend rows only, amount >= 0)
+    // and its rate at selection time. Not written by sync, so re-syncs
+    // preserve user choices.
     cardCategoryId: integer('card_category_id').references(() => cardCategories.id, {
       onDelete: 'set null',
     }),
+    // A historical snapshot, never restated: seeding a new rate leaves it
+    // alone, and it survives the category link being severed (deleted or
+    // renamed category, removed card), so past earnings stay accurate.
     rewardRate: numeric('reward_rate'),
+    // User-selected inflow category (inflow rows only, amount < 0).
+    // Never carries a rate.
+    creditCategoryId: integer('credit_category_id').references(() => creditCategories.id, {
+      onDelete: 'set null',
+    }),
     // Full raw Plaid transaction payload
     plaidTransaction: jsonb('plaid_transaction').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -117,6 +138,18 @@ export const transactions = pgTable(
   (table) => [
     index('transactions_account_date_idx').on(table.accountId, table.date.desc()),
     index('transactions_item_id_idx').on(table.itemId),
+    // Both category FKs are ON DELETE SET NULL, and seeding deletes
+    // categories routinely — without these, every such delete scans this
+    // table to apply the set-null.
+    index('transactions_card_category_id_idx').on(table.cardCategoryId),
+    index('transactions_credit_category_id_idx').on(table.creditCategoryId),
+    // Ties each category kind to the amount's sign (which also makes the two
+    // kinds mutually exclusive): any writer that drifts from the sign rule
+    // fails loudly instead of leaving invisible wrong-kind state.
+    check(
+      'transactions_category_kind_sign_ck',
+      sql`(${table.cardCategoryId} is null or ${table.amount} >= 0) and (${table.creditCategoryId} is null or ${table.amount} < 0)`,
+    ),
   ],
 );
 
@@ -125,3 +158,4 @@ export type AccountRow = typeof accounts.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;
 export type CardRow = typeof cards.$inferSelect;
 export type CardCategoryRow = typeof cardCategories.$inferSelect;
+export type CreditCategoryRow = typeof creditCategories.$inferSelect;

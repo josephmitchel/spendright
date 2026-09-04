@@ -14,11 +14,7 @@ export function encrypt(text: string): string {
 
 export function decrypt(data: string): string {
   const [ivHex, authTagHex, encryptedHex] = data.split(':');
-  const decipher = crypto.createDecipheriv(
-    'aes-256-gcm',
-    getKey(),
-    Buffer.from(ivHex, 'hex')
-  );
+  const decipher = crypto.createDecipheriv('aes-256-gcm', getKey(), Buffer.from(ivHex, 'hex'));
   decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
   return decipher.update(Buffer.from(encryptedHex, 'hex')).toString() + decipher.final('utf8');
 }

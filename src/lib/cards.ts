@@ -1,6 +1,9 @@
-import { cards, type CardRow } from '@/db/schema';
-import { db } from '@/lib/db';
+import type { CardRow } from '@/db/schema';
 
+// The single definition of how a Plaid account name resolves to a card
+// (case-insensitive exact match on cards.plaid_account_names). Callers pass
+// the card list they already hold — keep this module free of db imports so
+// scripts can use it without opening a connection pool.
 export function matchCard(cardList: CardRow[], accountName: string | null): CardRow | null {
   if (!accountName) return null;
   const normalized = accountName.trim().toLowerCase();
@@ -9,10 +12,4 @@ export function matchCard(cardList: CardRow[], accountName: string | null): Card
       (card.plaidAccountNames ?? []).some((n) => n.trim().toLowerCase() === normalized),
     ) ?? null
   );
-}
-
-export async function resolveCardId(accountName: string | null): Promise<number | null> {
-  if (!accountName) return null;
-  const cardList = await db.select().from(cards);
-  return matchCard(cardList, accountName)?.id ?? null;
 }

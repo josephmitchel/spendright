@@ -10,6 +10,7 @@ import {
   RemovedTransaction,
   Transaction as PlaidTransaction,
 } from 'plaid';
+import { PublicError } from '@/lib/errors';
 
 function getClient(): PlaidApi {
   const configuration = new Configuration({
@@ -131,7 +132,14 @@ export async function syncTransactions(
     // item's transactions yet — wait and retry without advancing.
     if (data.next_cursor === '') {
       if (++notReadyRetries > 10) {
-        throw new Error('Plaid transactions not ready after 10 retries');
+        // PublicError, not Error: this is the one failure in the app the user
+        // can act on — it clears itself once Plaid finishes preparing the item
+        // — so the message has to survive errorResponse's suppression and
+        // reach the link button. 503 because it is transient by definition.
+        throw new PublicError(
+          'Plaid is still preparing this account’s transactions — try syncing again in a minute',
+          { status: 503, code: 'NOT_READY' },
+        );
       }
       await sleep(2000);
       continue;

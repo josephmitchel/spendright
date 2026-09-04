@@ -9,6 +9,8 @@
 //   (case-insensitive exact match). An account's name shows on the home page.
 // - Removing a category from a card deletes it; transactions that used it
 //   keep their stored rate but lose the category link.
+// - Editing a rate applies to future selections only. Past transactions keep
+//   the rate they were categorized at, so seeding never restates earnings.
 
 export interface CardSeed {
   slug: string;
@@ -18,6 +20,17 @@ export interface CardSeed {
   plaidAccountNames: string[];
   categories: { name: string; rate: number }[];
 }
+
+// Categories for inflow transactions (negative Plaid amounts: payments,
+// refunds, rewards). Global — shared by every card — and rate-less.
+// Removing one severs the link on transactions that used it.
+export const creditCategorySeeds: string[] = [
+  'Credit Card Payment',
+  'Refund',
+  'Rewards',
+  'Statement Credit',
+  'Other',
+];
 
 export const cardSeeds: CardSeed[] = [
   {
