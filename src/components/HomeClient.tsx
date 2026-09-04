@@ -149,7 +149,7 @@ export default function HomeClient() {
       <h1>SpendRight</h1>
       <p>
         <PlaidLinkButton onConnected={refresh} syncSucceededAt={syncSucceededAt} />{' '}
-        <button onClick={syncAll} disabled={syncing || itemList.length === 0}>
+        <button onClick={syncAll} disabled={syncing || (itemsLoaded && itemList.length === 0)}>
           Sync all
         </button>
         {syncStatus && <span> {syncStatus}</span>}

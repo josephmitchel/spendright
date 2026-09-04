@@ -59,7 +59,25 @@ function assertUniqueCreditCategoryNames() {
   }
 }
 
+// Duplicate slugs would silently merge: the second upsert wins and the retire
+// pass never flags either. Case-insensitive, stricter than the slug unique index.
+function assertUniqueSlugs() {
+  const seen = new Map<string, string>();
+  for (const seed of cardSeeds) {
+    const key = seed.slug.trim().toLowerCase();
+    if (!key) {
+      throw new Error(`cards.seed.ts: "${seed.name}" has a blank slug`);
+    }
+    const other = seen.get(key);
+    if (other) {
+      throw new Error(`cards.seed.ts: slug "${seed.slug}" is used by more than one card`);
+    }
+    seen.set(key, seed.slug);
+  }
+}
+
 async function main() {
+  assertUniqueSlugs();
   assertUniqueAccountMatchers();
   assertUniqueCategoryNames();
   assertUniqueCreditCategoryNames();

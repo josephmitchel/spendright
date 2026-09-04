@@ -83,23 +83,38 @@ values ('baseline-0001_same_bruce_banner', 1788309102608);
 `hash` is written by the migrator but never read back by it, so any marker that
 tells the next reader where the row came from will do.
 
+## Webhooks (automatic sync)
+
+Syncing is automatic when Plaid can reach `POST /api/webhook`: set
+`PLAID_WEBHOOK_URL` to a public http(s) URL for that route (on localhost that
+means a tunnel, e.g. `ngrok http 3000`, with `/api/webhook` appended to the
+tunnel URL). Left unset, webhooks are off and the app is manual-sync only
+(the "Sync all" button).
+
+The URL reaches newly linked items on its own, through the link token. Items
+linked before it was set (or after it changed) need a one-off push:
+
+```bash
+npm run webhooks:update
+```
+
 ## Before deploying
 
 SpendRight is currently a single-user tool run on localhost, and two things are
 left undone on purpose because of that. Both have to be settled before it is
-reachable from anywhere else. The full note, with the reasoning, is at the top
-of `src/app/api/exchange/route.ts`.
+reachable from anywhere else.
 
 - **No authentication on any route.** Everything under `/api` is open, including
   the route that mints and stores a Plaid access token, the route that deletes an
   institution and all of its data, and the reads that return the account's whole
   transaction history. The `items` table holds encrypted bank credentials.
 - **`POST /api/exchange` can run long.** It makes several Plaid calls before it
-  answers and the last one paginates, so a first sync of an item with years of
-  history can exceed a host's request timeout (Vercel's hobby limit is 10s) and
-  fail a link that actually succeeded. The in-request retry sleeping is capped
-  but not gone (the initial sync polls at most 3 times, ~6s); finishing the job
-  means running the first sync as a background job the client polls.
+  answers and runs the first sync inline. That sync pulls a few days of history
+  at most, so volume is not the concern — the in-request retry sleeping is: the
+  initial sync polls Plaid's not-ready state at most 3 times (~6s), which on a
+  host with a tight request timeout (Vercel's hobby limit is 10s) can fail a
+  link that actually succeeded. Finishing the job means running the first sync
+  as a background job the client polls.
 
 ## Learn More
 
