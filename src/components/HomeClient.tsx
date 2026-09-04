@@ -50,6 +50,10 @@ export default function HomeClient() {
   const [loadError, setLoadError] = useState<string | null>(null);
   // Whether /api/items succeeded; gates the "No institutions" message.
   const [itemsLoaded, setItemsLoaded] = useState(false);
+  // Whether /api/accounts has ever succeeded; gates the per-institution
+  // account tables so a failed read never renders as an empty account list.
+  // Design: partial-load-rendering.
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
 
   // Generation counter: a refresh superseded by a later one writes nothing.
   const refreshSeq = useRef(0);
@@ -62,7 +66,11 @@ export default function HomeClient() {
     ]);
     if (seq !== refreshSeq.current) return;
     if (itemsResult.status === 'fulfilled') setItemList(itemsResult.value.items ?? []);
-    if (accountsResult.status === 'fulfilled') setAccountList(accountsResult.value.accounts ?? []);
+    if (accountsResult.status === 'fulfilled') {
+      setAccountList(accountsResult.value.accounts ?? []);
+      // Sticky: a later failed refresh keeps rendering the rows that did load.
+      setAccountsLoaded(true);
+    }
     setItemsLoaded(itemsResult.status === 'fulfilled');
     const failures = [itemsResult, accountsResult].filter(
       (result): result is PromiseRejectedResult => result.status === 'rejected',
@@ -181,37 +189,40 @@ export default function HomeClient() {
               <button onClick={() => removeItem(item.itemId)}>Remove</button>
             </h2>
             {item.error != null && <p>Item error: {itemErrorMessage(item.error)}</p>}
-            <table border={1}>
-              <thead>
-                <tr>
-                  <th>Account</th>
-                  <th>Mask</th>
-                  <th>Type</th>
-                  <th>Current</th>
-                  <th>Available</th>
-                  <th>Limit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {itemAccounts.map((account) => (
-                  <tr key={account.accountId}>
-                    <td>
-                      <Link href={`/accounts/${account.accountId}`}>
-                        {account.name ?? account.officialName ?? account.accountId}
-                      </Link>
-                    </td>
-                    <td>{account.mask}</td>
-                    <td>
-                      {account.type}
-                      {account.subtype ? ` / ${account.subtype}` : ''}
-                    </td>
-                    <td>{account.balanceCurrent}</td>
-                    <td>{account.balanceAvailable}</td>
-                    <td>{account.balanceLimit}</td>
+            {!accountsLoaded && <p>Accounts couldn&apos;t be loaded — use Retry above.</p>}
+            {accountsLoaded && (
+              <table border={1}>
+                <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>Mask</th>
+                    <th>Type</th>
+                    <th>Current</th>
+                    <th>Available</th>
+                    <th>Limit</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {itemAccounts.map((account) => (
+                    <tr key={account.accountId}>
+                      <td>
+                        <Link href={`/accounts/${account.accountId}`}>
+                          {account.name ?? account.officialName ?? account.accountId}
+                        </Link>
+                      </td>
+                      <td>{account.mask}</td>
+                      <td>
+                        {account.type}
+                        {account.subtype ? ` / ${account.subtype}` : ''}
+                      </td>
+                      <td>{account.balanceCurrent}</td>
+                      <td>{account.balanceAvailable}</td>
+                      <td>{account.balanceLimit}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </section>
         );
       })}

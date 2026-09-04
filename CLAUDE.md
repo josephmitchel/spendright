@@ -2,9 +2,6 @@
 
 This repo is for development on SpendRight, a personal finance app primarily centered around credit card spending optimization. It is in very early stages.
 
-### Design
-For info on the current design direction of the application, view `.claude/design`.
-
 ### Code Intelligence
 
 Prefer LSP over Grep/Glob/Read for code navigation:

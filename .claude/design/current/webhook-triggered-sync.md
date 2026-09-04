@@ -1,0 +1,8 @@
+---
+name: webhook-triggered-sync
+description: POST /api/webhook is the automatic sync path; a verified TRANSACTIONS/SYNC_UPDATES_AVAILABLE webhook runs syncItem inline for the named item, and every other webhook is acknowledged with a 200
+tags: [POST /api/webhook, src/app/api/webhook/route.ts, syncItem, SYNC_UPDATES_AVAILABLE, items.error]
+date: 2026-09-04
+---
+
+Only `SYNC_UPDATES_AVAILABLE` triggers a sync: the legacy transactions codes (INITIAL_UPDATE, HISTORICAL_UPDATE, DEFAULT_UPDATE) announce the same news and arrive alongside it, so acting on them would double-sync. Everything else — other codes, an item_id no longer stored (Plaid keeps announcing a removed item), and a malformed body (non-JSON, or a missing item_id; unreachable from Plaid but decided 2026-09-04) — is acknowledged with a 200 so Plaid stops re-delivering: once a request is verified, no *decision* answers a non-2xx. An infrastructure failure is the deliberate exception (decided 2026-09-04): if the item lookup itself throws (database down or unreachable), the error escapes to `errorResponse` and answers a 500, because nothing was recorded on any item row and no state advanced, so Plaid's re-delivery is the only retry mechanism that exists for that failure. The sync runs inline like every other sync path ([[inline-initial-sync]]). A sync failure is written to `items.error` through the allow-list ([[error-message-allow-list]]) and still answers 200: the cursor did not advance, so the next webhook or manual sync retries, and a non-2xx would only make Plaid re-deliver news already recorded. Fulfils the automatic path of [[automatic-sync]]; requests are verified first ([[webhook-jwt-verification]]).

@@ -3,6 +3,7 @@ import {
   Configuration,
   CountryCode,
   ItemWithConsentFields,
+  JWKPublicKey,
   LinkTokenCreateRequest,
   PlaidApi,
   PlaidEnvironments,
@@ -19,13 +20,30 @@ function getBasePath(): string {
   const basePath = PlaidEnvironments[env];
   if (!basePath) {
     throw new PublicError(
-      `PLAID_ENV="${env}" is not a Plaid environment — use one of: ${Object.keys(
-        PlaidEnvironments,
-      ).join(', ')}`,
+      `PLAID_ENV is not a Plaid environment — use one of: ${Object.keys(PlaidEnvironments).join(
+        ', ',
+      )}`,
       { status: 500, code: 'BAD_CONFIG' },
     );
   }
   return basePath;
+}
+
+// Unset credentials would go to Plaid as blank headers and come back as
+// Plaid's INVALID_API_KEYS, which names neither variable.
+// Design: config-validated-not-assumed
+function getCredential(name: 'PLAID_CLIENT_ID' | 'PLAID_SECRET'): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new PublicError(
+      `${name} must be set — copy it from the Plaid dashboard into .env.local`,
+      {
+        status: 500,
+        code: 'BAD_CONFIG',
+      },
+    );
+  }
+  return value;
 }
 
 function getClient(): PlaidApi {
@@ -33,8 +51,8 @@ function getClient(): PlaidApi {
     basePath: getBasePath(),
     baseOptions: {
       headers: {
-        'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-        'PLAID-SECRET': process.env.PLAID_SECRET,
+        'PLAID-CLIENT-ID': getCredential('PLAID_CLIENT_ID'),
+        'PLAID-SECRET': getCredential('PLAID_SECRET'),
         'Plaid-Version': '2020-09-14',
       },
     },
@@ -60,17 +78,37 @@ function getCountryCodes(): CountryCode[] {
   return splitEnvList(process.env.PLAID_COUNTRY_CODES, 'US') as CountryCode[];
 }
 
+// Optional public URL Plaid delivers webhooks to (a tunnel reaching
+// /api/webhook). Unset disables webhooks; set, it must be an http(s) URL,
+// because Plaid accepts a garbage string and then delivers nothing.
+// Design: config-validated-not-assumed, webhook-registration.
+export function getWebhookUrl(): string | null {
+  const url = process.env.PLAID_WEBHOOK_URL;
+  if (!url) return null;
+  if (!/^https?:\/\//.test(url)) {
+    throw new PublicError(
+      'PLAID_WEBHOOK_URL must be an http(s):// URL reaching /api/webhook — or unset, which disables webhooks',
+      { status: 500, code: 'BAD_CONFIG' },
+    );
+  }
+  return url;
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Create Link Token
 // https://plaid.com/docs/api/link/#create-link-token
 export async function createLinkToken(): Promise<string> {
+  const webhook = getWebhookUrl();
   const configs: LinkTokenCreateRequest = {
     user: { client_user_id: 'spendright-user' },
     client_name: 'SpendRight',
     products: getProducts(),
     country_codes: getCountryCodes(),
     language: 'en',
+    // Newly linked items report to /api/webhook; existing items are covered
+    // by npm run webhooks:update. Design: webhook-registration.
+    ...(webhook ? { webhook } : {}),
   };
 
   const response = await getClient().linkTokenCreate(configs);
@@ -124,6 +162,19 @@ export async function getAccounts(accessToken: string): Promise<AccountBase[]> {
 export async function itemRemove(accessToken: string): Promise<string> {
   const response = await getClient().itemRemove({ access_token: accessToken });
   return response.data.request_id;
+}
+
+// Point an existing item's webhook deliveries at `url`.
+// https://plaid.com/docs/api/items/#itemwebhookupdate
+export async function updateItemWebhook(accessToken: string, url: string): Promise<void> {
+  await getClient().itemWebhookUpdate({ access_token: accessToken, webhook: url });
+}
+
+// The public key Plaid signs webhook JWTs with, looked up by the JWT header's kid.
+// https://plaid.com/docs/api/webhooks/webhook-verification/
+export async function getWebhookVerificationKey(keyId: string): Promise<JWKPublicKey> {
+  const response = await getClient().webhookVerificationKeyGet({ key_id: keyId });
+  return response.data.key;
 }
 
 export interface SyncResult {

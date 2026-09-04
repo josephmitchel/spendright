@@ -41,15 +41,18 @@ export default function PlaidLinkButton({
         const accountErrors: string[] = Array.isArray(data.account_errors)
           ? data.account_errors.filter((e: unknown): e is string => typeof e === 'string')
           : [];
-        // A first sync can hold rows back but never drop them (the skip
-        // counter starts at zero), so this is always the "held" wording.
+        // A re-linked item keeps its stored skip streak, so the exchange-time
+        // sync can be the one that drops the held rows. Design: bounded-cursor-hold.
         const skipped =
           typeof data.transactions?.skipped === 'number' ? data.transactions.skipped : 0;
+        const dropped = data.transactions?.dropped === true;
         const notices = [
           ...(typeof data.sync_error === 'string' ? [data.sync_error] : []),
           ...(skipped > 0
             ? [
-                `${skipped} transaction(s) held for accounts that aren’t stored yet — they’ll be retried on the next sync`,
+                dropped
+                  ? `${skipped} transaction(s) dropped after repeated failures — not recoverable (see the server log)`
+                  : `${skipped} transaction(s) held for accounts that aren’t stored yet — they’ll be retried on the next sync`,
               ]
             : []),
           ...(accountErrors.length > 0

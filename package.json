@@ -11,7 +11,8 @@
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "seed:cards": "tsx scripts/seed-cards.ts"
+    "seed:cards": "tsx scripts/seed-cards.ts",
+    "webhooks:update": "tsx scripts/update-webhooks.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
-import { accounts, cards, items } from '@/db/schema';
+import { accounts, cards, items, type CardRow } from '@/db/schema';
 import { upsertAccount } from '@/lib/accounts';
 import { encrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
@@ -81,9 +81,20 @@ export async function POST(req: NextRequest) {
           updatedAt: sql`now()`,
         },
       })
-      .returning({ institutionName: items.institutionName });
+      // The full row: it is the committed item this response and the initial
+      // sync below run against, with no re-read that could fail after commit.
+      // Design: initial-sync-reported-not-thrown.
+      .returning();
 
-    const cardList = await db.select().from(cards).orderBy(cards.id);
+    // Best-effort, like the sync path's account refresh: the initial sync
+    // re-reads cards and re-upserts every account, so a failure here only
+    // defers the card match. Design: initial-sync-reported-not-thrown.
+    let cardList: CardRow[] = [];
+    try {
+      cardList = await db.select().from(cards).orderBy(cards.id);
+    } catch (err) {
+      console.error(`Could not read cards for item ${itemId} — storing accounts unmatched:`, err);
+    }
 
     // Account store failures are reported, not thrown; the initial sync below
     // retries every account, so the list is reconciled after it.
@@ -104,8 +115,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const [itemRow] = await db.select().from(items).where(eq(items.itemId, itemId));
-
     // The link is committed by now; a failed first sync is recorded on the
     // item row and in the response, and the link still returns 200.
     let syncResult: SyncItemResult | null = null;
@@ -113,7 +122,7 @@ export async function POST(req: NextRequest) {
     try {
       // Reuses the accountsGet result (all accounts, including any that failed
       // to store) and caps the not-ready poll. Design: not-ready-poll-budgets.
-      syncResult = await syncItem(itemRow, { plaidAccounts, notReadyRetries: 3 });
+      syncResult = await syncItem(storedItem, { plaidAccounts, notReadyRetries: 3 });
     } catch (err) {
       console.error(`Initial sync failed for item ${itemId}:`, err);
       syncError = publicErrorMessage(err, 'Initial sync failed — check the server log');

@@ -7,7 +7,7 @@ import { errorResponse } from '@/lib/errors';
 export async function GET(req: NextRequest) {
   try {
     const accountId = req.nextUrl.searchParams.get('accountId');
-    if (!accountId) {
+    if (!accountId || accountId.trim() === '') {
       return NextResponse.json(
         { error: { code: 'BAD_REQUEST', message: 'accountId is required' } },
         { status: 400 },

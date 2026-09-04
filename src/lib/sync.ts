@@ -253,8 +253,8 @@ export async function syncItem(item: ItemRow, options?: SyncItemOptions): Promis
             ? null
             : {
                 message: dropped
-                  ? `${skipped} transaction(s) arrived for accounts that are not stored, after ${MAX_SKIPPED_SYNCS} syncs of holding them back. They have been dropped so this connection keeps syncing, and they cannot be recovered — check the server log for the accounts involved.`
-                  : `${skipped} transaction(s) arrived for accounts that are not stored — they are being held and re-offered on every sync (${consecutiveSkippedSyncs} of ${MAX_SKIPPED_SYNCS}). If this line does not clear, the account cannot be stored: check the server log. After ${MAX_SKIPPED_SYNCS} syncs they are dropped so the connection keeps working.`,
+                  ? `${skipped} transaction(s) arrived for accounts that are not stored, for the ${MAX_SKIPPED_SYNCS}th consecutive sync. They have been dropped so this connection keeps syncing, and they cannot be recovered — check the server log for the accounts involved.`
+                  : `${skipped} transaction(s) arrived for accounts that are not stored — they are being held and re-offered on every sync (${consecutiveSkippedSyncs} of ${MAX_SKIPPED_SYNCS}). If this line does not clear, the account cannot be stored: check the server log. On the ${MAX_SKIPPED_SYNCS}th consecutive sync they are dropped so the connection keeps working.`,
               },
         updatedAt: sql`now()`,
       })
@@ -265,7 +265,7 @@ export async function syncItem(item: ItemRow, options?: SyncItemOptions): Promis
   if (skipped > 0) {
     if (dropped) {
       console.error(
-        `sync ${item.itemId}: ${skipped} transaction(s) reference accounts that are not stored — held for ${MAX_SKIPPED_SYNCS} syncs and now DROPPED, cursor advanced; these rows are gone (see the per-row lines above for the accounts)`,
+        `sync ${item.itemId}: ${skipped} transaction(s) reference accounts that are not stored — held back for ${MAX_SKIPPED_SYNCS - 1} syncs and now DROPPED, cursor advanced; these rows are gone (see the per-row lines above for the accounts)`,
       );
     } else {
       console.warn(

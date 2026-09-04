@@ -64,9 +64,13 @@ async function main() {
   assertUniqueCategoryNames();
   assertUniqueCreditCategoryNames();
 
-  // pg treats a missing connectionString as "use libpq defaults", not an error.
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is not set — check .env.local (or .env) before running the seed');
+  // pg treats a missing connectionString as "use libpq defaults", not an
+  // error, and parses a wrong-scheme URL scheme-agnostically rather than
+  // rejecting it. Same guard as src/lib/db.ts. Design: config-validated-not-assumed.
+  if (!process.env.DATABASE_URL || !/^postgres(ql)?:\/\//.test(process.env.DATABASE_URL)) {
+    throw new Error(
+      'DATABASE_URL must be a postgresql:// connection URL — set it in .env.local (or .env) before running the seed',
+    );
   }
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
