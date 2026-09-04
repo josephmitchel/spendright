@@ -6,11 +6,7 @@ import { db } from '@/lib/db';
 import { errorResponse, plaidErrorBody } from '@/lib/errors';
 import { itemRemove } from '@/lib/plaid';
 
-// Unauthenticated, like every route here, and this is the destructive one:
-// anything that can reach it can delete an institution with all of its accounts
-// and transactions. Deliberate for a localhost single-user tool — see the
-// "BEFORE DEPLOYING" note at the top of src/app/api/exchange/route.ts, which is
-// where that decision is recorded.
+// Unauthenticated and destructive. Design: single-user-localhost-no-auth.
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ itemId: string }> },
@@ -25,10 +21,7 @@ export async function DELETE(
       );
     }
 
-    // Plaid already forgetting the item is not a failure: the row is what is
-    // being removed, and it goes either way. Read through plaidErrorBody, the
-    // one shape check for Plaid errors (src/lib/errors.ts), rather than by
-    // hand.
+    // Plaid already having forgotten the item is not a failure.
     try {
       await itemRemove(decrypt(item.accessToken));
     } catch (err) {

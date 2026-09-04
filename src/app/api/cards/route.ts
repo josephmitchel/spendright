@@ -6,17 +6,8 @@ import { errorResponse } from '@/lib/errors';
 
 export async function GET() {
   try {
-    // Only what can currently be picked. Retired rows (the seed stamps
-    // `retired_at` instead of deleting — see src/db/schema.ts) stay in their
-    // tables so old transactions keep their links, but they are not offered:
-    // a picker must not list a category the card no longer has. A saved
-    // category that is retired still renders on the account page by name,
-    // because GET /api/transactions resolves names by join, not from here.
-    //
-    // Ordered so the pickers these feed keep a stable option order across
-    // reloads — an unordered scan can shift after a seed reconcile. Card
-    // categories lead with the best-earning ones (ties broken alphabetically);
-    // credit categories have no rate, so they go alphabetically.
+    // Retired rows are not offered. Design: categories-retired-not-deleted,
+    // picker-ordering.
     const [cardRows, categoryRows, creditCategoryRows] = await Promise.all([
       db.select().from(cards).where(isNull(cards.retiredAt)).orderBy(cards.name),
       db

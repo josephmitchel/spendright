@@ -12,22 +12,8 @@ import {
 } from 'plaid';
 import { PublicError } from '@/lib/errors';
 
-// PLAID_ENV resolved to a base URL, and VALIDATED rather than indexed blind
-// (decided 2026-09-03). PlaidEnvironments holds exactly two keys in plaid v41 —
-// `sandbox` and `production`; the `development` environment Plaid ran for years
-// is gone from the SDK. An unrecognized value therefore indexes to `undefined`,
-// and the SDK reads a falsy basePath as "unset", not as an error:
-// Configuration does `configuration.basePath || this.basePath`, and this.basePath
-// defaults to BASE_PATH = https://production.plaid.com
-// (node_modules/plaid/dist/base.js). So `PLAID_ENV=development` — or a
-// capitalization slip like `Sandbox` — silently sent every call to PRODUCTION,
-// against real institutions and real billing, with nothing on screen saying so.
-// The one misconfiguration that must never fail open is exactly the one that did.
-//
-// PublicError so the message survives errorResponse's suppression (see
-// src/lib/errors.ts): this is an operator mistake in .env.local, and "Internal
-// server error" gives them nothing to act on. It names only the offending value
-// and the allowed set — no secrets.
+// Validated: an unknown PLAID_ENV indexes to undefined, which the SDK treats
+// as "unset" and silently defaults to production. Design: config-validated-not-assumed
 function getBasePath(): string {
   const env = process.env.PLAID_ENV || 'sandbox';
   const basePath = PlaidEnvironments[env];
@@ -56,14 +42,8 @@ function getClient(): PlaidApi {
   return new PlaidApi(configuration);
 }
 
-// Both lists come from a comma-separated env var, so each entry is trimmed and
-// blanks are dropped before Plaid sees them. Written the obvious way, a
-// perfectly reasonable `PLAID_PRODUCTS=transactions, liabilities` sent
-// " liabilities" and `PLAID_COUNTRY_CODES=US,` sent "", and Plaid answers both
-// with an opaque INVALID_FIELD on linkTokenCreate — which reads as a Plaid
-// outage rather than as a stray space in .env.local. Falling back when the
-// result is EMPTY as well as when the variable is unset, so a value of "," or
-// " " lands on the same default rather than on an empty products array.
+// Comma-separated env list: entries trimmed, blanks dropped, and the fallback
+// used when the result is empty as well as when the variable is unset.
 function splitEnvList(raw: string | undefined, fallback: string): string[] {
   const parsed = (raw ?? '')
     .split(',')
@@ -153,31 +133,9 @@ export interface SyncResult {
   cursor: string | null;
 }
 
-// How many times to re-poll transactions/sync when Plaid says the item's
-// transactions are not prepared yet, at `NOT_READY_DELAY_MS` apart. The default
-// is the caller that can afford to wait: POST /api/sync is a button the user
-// pressed and its whole job is this poll.
-//
-// /api/exchange passes 3 (≈6s), because waiting there is the one place the wait
-// costs something. A brand-new item is exactly when the not-ready path fires, so
-// the default budget put ~22s of sleeping inside the link request — fine under
-// `next dev`, a 504 on any host with a request timeout (Vercel's hobby limit is
-// 10s), and the user would be told "Exchange failed" for an item that was in
-// fact created.
-//
-// 3 rather than 0 (decided 2026-09-03) because a first sync answering with an
-// empty next_cursor is the NORMAL case on a fresh item, not an edge one: at 0
-// essentially every connect ended in NOT_READY, so the link button's
-// "Connected, but…" notice fired every time and items.error was written and
-// re-rendered as "Item error: …" on every home-page load until the user pressed
-// "Sync all" by hand. That traded a working flow for a deployment this project
-// has not made yet (see point 2 at the top of /api/exchange). A few seconds
-// covers the common case and still leaves headroom under a 10s limit.
-//
-// Exceeding it loses nothing: the initial sync is reported rather than thrown
-// (see the block at the end of /api/exchange), so the link returns 200, the item
-// lands on the home page carrying the NOT_READY message below, and "Sync all" —
-// which does get the full budget — picks it up.
+// Re-polls of transactions/sync while Plaid reports the item as not ready.
+// Callers with a request timeout to respect pass a smaller budget.
+// Design: not-ready-poll-budgets
 const DEFAULT_NOT_READY_RETRIES = 10;
 const NOT_READY_DELAY_MS = 2000;
 
@@ -202,10 +160,7 @@ export async function syncTransactions(
   // `?? DEFAULT`, so an explicit 0 means zero retries rather than falling back.
   const notReadyBudget = options?.notReadyRetries ?? DEFAULT_NOT_READY_RETRIES;
 
-  // NOT bounded overall: `has_more` pagination still runs to completion here,
-  // and a first sync of a large item is many round trips. That is the other
-  // half of the deployment risk the NOT_READY budget above addresses — see the
-  // "Before deploying" note at the top of src/app/api/exchange/route.ts.
+  // The has_more loop is not bounded; a large first sync is many round trips.
   while (hasMore) {
     const response = await client.transactionsSync({
       access_token: accessToken,
@@ -217,10 +172,7 @@ export async function syncTransactions(
     // item's transactions yet — wait and retry without advancing.
     if (data.next_cursor === '') {
       if (notReadyRetries++ >= notReadyBudget) {
-        // PublicError, not Error: this is the one failure in the app the user
-        // can act on — it clears itself once Plaid finishes preparing the item
-        // — so the message has to survive errorResponse's suppression and
-        // reach the link button. 503 because it is transient by definition.
+        // PublicError so the message reaches the user; 503 because it is transient.
         throw new PublicError(
           'Plaid is still preparing this account’s transactions — try syncing again in a minute',
           { status: 503, code: 'NOT_READY' },

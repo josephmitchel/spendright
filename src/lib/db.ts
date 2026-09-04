@@ -3,22 +3,9 @@ import { Pool } from 'pg';
 import * as schema from '@/db/schema';
 import { PublicError } from '@/lib/errors';
 
-// Validated rather than handed over blind, on the same principle as
-// ENCRYPTION_KEY in src/lib/crypto.ts and PLAID_ENV in src/lib/plaid.ts
-// (decided 2026-09-04). pg reads a missing connectionString as "use the PG*
-// env vars and libpq defaults" — localhost, $USER, a database named after the
-// user — rather than as an error, so an unset DATABASE_URL did not fail: it
-// quietly pointed every query at whatever happened to be listening, and the
-// first sign was a "relation does not exist" from the wrong database.
-// scripts/seed-cards.ts already guards this for the seed's deletes; the app
-// gets the same check for the same reason. The shape test is the URL scheme
-// only — enough to catch an empty value, a bare hostname, or a variable
-// pasted from the wrong project, without second-guessing the rest of the URL.
-//
-// This runs at module load, so the PublicError surfaces in the dev server's
-// log and overlay rather than through errorResponse — the pool is built once,
-// at module scope, and the message names the variable and its shape either
-// way. Never the value: a connection URL carries a password.
+// pg treats a missing connectionString as "use PG* env vars and libpq
+// defaults", so an unset DATABASE_URL must fail here, not connect elsewhere.
+// Design: config-validated-not-assumed. Runs at module load; never logs the value.
 const DATABASE_URL_PATTERN = /^postgres(ql)?:\/\//;
 
 function getConnectionString(): string {

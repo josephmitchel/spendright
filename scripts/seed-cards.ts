@@ -1,10 +1,7 @@
 // Upserts src/db/cards.seed.ts into Postgres and re-matches accounts to cards.
 // Run with: npm run seed:cards
 
-// Must stay the FIRST import: it loads .env.local, and every import below it
-// is evaluated after it, which is the only reason env is set by the time they
-// run. Writing `config({ path: '.env.local' })` inline here instead would run
-// it AFTER all of them — see scripts/load-env.ts for why.
+// Must stay the first import so env is loaded before the modules below evaluate.
 import './load-env';
 
 import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
@@ -14,17 +11,8 @@ import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
 import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
 import { matchCard } from '../src/lib/cards';
 
-// A Plaid account name may appear on only one card: matchCard takes the first
-// hit, so a name listed twice would make an account's card — and therefore
-// which categories its transactions can use — depend on row order.
-//
-// A blank entry is rejected for a different reason. Normally it is simply
-// inert — a placeholder or a typo that matches no real account, and the user
-// debugs an unsupported account by hand with nothing pointing at the cause.
-// It is not always inert: matchCard's only blank guard is `if (!accountName)`,
-// so a whitespace-only Plaid account name is truthy, normalizes to '' here too,
-// and would inherit this card's categories. Neither outcome is ever intended,
-// so fail on the seed file rather than defend against it downstream.
+// Design: seed-validation. A blank matcher would match a whitespace-only Plaid
+// account name, since matchCard normalizes both sides the same way.
 function assertUniqueAccountMatchers() {
   const owners = new Map<string, string>();
   for (const seed of cardSeeds) {
@@ -44,13 +32,7 @@ function assertUniqueAccountMatchers() {
   }
 }
 
-// A card may list a category name only once. Each category is a separate
-// upsert against the (card_id, name) unique index, so a repeat takes the
-// DO UPDATE branch and overwrites the first one's rate: the card silently ends
-// up with whichever rate was listed last, and the count printed at the end
-// over-reports. Compared case-insensitively, one step stricter than the index:
-// "Gas" and "gas" would survive as two separate rows, which is not an
-// overwrite but is two near-identical entries in every picker.
+// Case-insensitive, stricter than the (card_id, name) unique index.
 function assertUniqueCategoryNames() {
   for (const seed of cardSeeds) {
     const seen = new Set<string>();
@@ -66,13 +48,6 @@ function assertUniqueCategoryNames() {
   }
 }
 
-// The same rule for the global credit categories, for the same reason as the
-// card-side check above — a duplicate just shows up differently. These insert
-// with onConflictDoNothing on the name, so an exact repeat is swallowed
-// silently and only over-reports in the count printed at the end. The case
-// variant is the real damage: the unique index is exact, so "Other" and
-// "other" both survive as separate rows and every inflow picker shows two
-// near-identical entries. Compared case-insensitively to catch both.
 function assertUniqueCreditCategoryNames() {
   const seen = new Set<string>();
   for (const name of creditCategorySeeds) {
@@ -89,10 +64,7 @@ async function main() {
   assertUniqueCategoryNames();
   assertUniqueCreditCategoryNames();
 
-  // pg reads a missing connectionString as "use the PG* env vars and libpq
-  // defaults" (localhost, $USER) rather than as an error, so an unloaded
-  // .env.local would quietly point this script's deletes at whatever database
-  // happens to be listening. Fail before the pool exists.
+  // pg treats a missing connectionString as "use libpq defaults", not an error.
   if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is not set — check .env.local (or .env) before running the seed');
   }
@@ -101,27 +73,10 @@ async function main() {
   const rootDb = drizzle(pool);
 
   try {
-    // Backfill missing rates. reward_rate is a snapshot of the rate when the
-    // user picked the category, so this only fills gaps — editing a rate in
-    // the seed file must NOT restate what past transactions already earned.
-    // Every link it reads through still exists, because the reconcile below
-    // retires categories rather than deleting them; the order between the two
-    // no longer matters for correctness, only for keeping this statement's
-    // locks out of the reconcile's transaction.
-    //
-    // Its OWN transaction, deliberately outside the reconcile below. Inside
-    // it, this one statement locks every categorized transaction row and holds
-    // those locks through the upserts and retirements — while syncItem's
-    // upsert loop (src/lib/sync.ts) locks transaction rows in Plaid's order.
-    // Two overlapping row sets locked in different orders is a deadlock, and
-    // Postgres resolves it by aborting one side with 40P01: the seed
-    // (rerunnable) or the sync (its cursor update lost, replaying into the
-    // same race). It is idempotent (`where reward_rate is null`), so a crash
-    // between the two statements just means the next run redoes it.
-    //
-    // With no deletes and no per-account wipe, the reconcile below touches no
-    // transactions rows at all, so the remaining overlap with a live sync is
-    // this statement alone.
+    // Backfill missing reward rates only; existing rates are never restated
+    // (design: categorization-is-a-historical-snapshot). Kept outside the
+    // reconcile transaction so its transaction-row locks can't deadlock with a
+    // concurrent sync. Idempotent.
     await rootDb.execute(sql`
       update transactions t
       set reward_rate = cc.rate
@@ -129,19 +84,9 @@ async function main() {
       where t.card_category_id = cc.id and t.reward_rate is null
     `);
 
-    // One transaction: the reconcile is a single consistent step, so a
-    // failure part-way through cannot leave retired cards alongside stale
-    // account matches.
-    //
-    // RETIRE, NEVER DELETE (decided 2026-09-04). A card, card category or
-    // credit category that has left the seed file gets `retired_at` stamped
-    // and stays in its table, so every transaction categorized with it keeps
-    // both the category link and the rate: a categorization is a historical
-    // record and a card-side change must not rewrite it. Deleting set-nulled
-    // the link on every old row by FK, which is exactly that rewrite. Retired
-    // rows are not offered (matchCard, GET /api/cards and PATCH all skip them),
-    // and re-adding the slug or name clears the stamp on the same row, so old
-    // links point at the revived row with nothing to migrate.
+    // Reconcile the catalog to the seed file in one transaction. Rows that left
+    // the file are retired, never deleted; nothing here touches `transactions`.
+    // Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
     await rootDb.transaction(async (tx) => {
       let categoryCount = 0;
 
@@ -153,8 +98,7 @@ async function main() {
           type: seed.type,
           plaidAccountNames: seed.plaidAccountNames,
         };
-        // `retiredAt: null` in the update set is what revives a card whose
-        // slug came back into the file.
+        // `retiredAt: null` revives a card whose slug came back into the file.
         const [card] = await tx
           .insert(cards)
           .values(cardValues)
@@ -180,12 +124,8 @@ async function main() {
           categoryCount++;
         }
 
-        // An empty seed list means "this card has no categories", so the
-        // filter is simply omitted and every category for the card is
-        // retired. The credit-category and card retirements below use the
-        // same explicit shape rather than relying on how drizzle renders an
-        // empty array. `retired_at is null` keeps the stamp at the moment the
-        // row first left the file rather than moving it on every run.
+        // Empty seed list = retire every category (drizzle can't render
+        // notInArray([])). `retired_at is null` keeps the original stamp.
         const seedNames = seed.categories.map((c) => c.name);
         const retired = await tx
           .update(cardCategories)
@@ -205,11 +145,8 @@ async function main() {
         }
       }
 
-      // Reconcile the global credit (inflow) categories: upsert by name (which
-      // also revives a retired one), then retire the ones no longer listed.
-      // Guarded for the same reason as the retirements: an empty seed list
-      // means "no credit categories", and drizzle throws on values([]) rather
-      // than rendering an insert of no rows.
+      // Credit categories: upsert by name (revives retired ones), then retire
+      // the rest. drizzle throws on values([]).
       if (creditCategorySeeds.length > 0) {
         await tx
           .insert(creditCategories)
@@ -237,11 +174,8 @@ async function main() {
         );
       }
 
-      // Retire cards that are no longer in the seed file. Their categories are
-      // left as they are: matchCard skips a retired card, so no account keeps
-      // matching it and none of its categories can be picked, while every
-      // transaction that already carries one keeps it. Re-adding the slug
-      // revives the card and its still-listed categories together.
+      // Retire cards no longer in the file; their categories are left as-is
+      // since matchCard skips retired cards.
       const seedSlugs = cardSeeds.map((s) => s.slug);
       const retiredCards = await tx
         .update(cards)
@@ -259,16 +193,8 @@ async function main() {
         );
       }
 
-      // Re-match every account to a card by Plaid account name. That is ALL
-      // this loop does to an account: an account's card is a fixed fact, and a
-      // null match is only a temporary naming mismatch (the account is
-      // unsupported until the seed file lists the new name — see the
-      // supported-account rule at the top of
-      // src/app/accounts/[accountId]/page.tsx). Nothing here touches
-      // transactions: saved categories and rates are never cleared on the
-      // strength of what the account currently matches. matchCard skips
-      // retired cards, so an account whose card just left the file drops to
-      // "no card" here in the same transaction.
+      // Re-match accounts to cards by Plaid account name. Only accounts.card_id
+      // is written; a null match never clears saved categories.
       const cardList = await tx.select().from(cards).orderBy(cards.id);
       const accountList = await tx.select().from(accounts);
       let matched = 0;

@@ -1,17 +1,10 @@
-// Card catalog seed data. Edit this file to add/update cards, then run:
-//   npm run seed:cards
-//
-// - `slug` is the stable identity of a card: changing rates/categories/matchers
-//   updates the existing card; changing the slug creates a new one.
-// - `type`: 'cashback' → category rates are cashback percentages;
-//   'points' → category rates are point multipliers.
-// - `plaidAccountNames`: Plaid account names that resolve to this card
-//   (case-insensitive exact match). An account's name shows on the home page.
-// - Removing a category (or a whole card) from this file RETIRES it: it stops
-//   being offered, but transactions that used it keep both the category and
-//   the rate they were categorized with. Adding the name back revives it.
-// - Editing a rate applies to future selections only. Past transactions keep
-//   the rate they were categorized at, so seeding never restates earnings.
+// Card catalog seed data. Edit this file, then run: npm run seed:cards
+// - `slug` is a card's stable identity; changing it creates a new card.
+// - `type`: 'cashback' → rates are percentages; 'points' → point multipliers.
+// - `plaidAccountNames`: case-insensitive exact match on the Plaid account
+//   name (shown on the home page). Add a name here to support an account.
+// - Removing a card or category retires it; adding it back revives it.
+// Design: card-catalog-in-code.
 
 export interface CardSeed {
   slug: string;
@@ -22,9 +15,7 @@ export interface CardSeed {
   categories: { name: string; rate: number }[];
 }
 
-// Categories for inflow transactions (negative Plaid amounts: payments,
-// refunds, rewards). Global — shared by every card — and rate-less.
-// Removing one retires it; transactions that used it keep the link.
+// Global, rate-less categories for inflow transactions (negative amounts).
 export const creditCategorySeeds: string[] = [
   'Credit Card Payment',
   'Refund',
