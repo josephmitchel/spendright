@@ -10,6 +10,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { items } from '../src/db/schema';
 import { decrypt } from '../src/lib/crypto';
+import { loggableError } from '../src/lib/log';
 import { getWebhookUrl, updateItemWebhook } from '../src/lib/plaid';
 
 async function main() {
@@ -44,7 +45,7 @@ async function main() {
         console.log(`  ${label}: webhook set`);
       } catch (err) {
         failures++;
-        console.error(`  ${label}: webhook update failed —`, err);
+        console.error(`  ${label}: webhook update failed —`, loggableError(err));
       }
     }
     console.log(
@@ -57,6 +58,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error(loggableError(err));
   process.exit(1);
 });

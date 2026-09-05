@@ -12,6 +12,7 @@ import {
 import { upsertAccount } from '@/lib/accounts';
 import { isInflowAmount } from '@/lib/amounts';
 import { decrypt } from '@/lib/crypto';
+import { loggableError } from '@/lib/log';
 import { db } from '@/lib/db';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
 
@@ -66,7 +67,7 @@ export async function syncItem(item: ItemRow, options?: SyncItemOptions): Promis
     } catch (err) {
       console.error(
         `sync ${item.itemId}: accountsGet failed — syncing without an account refresh:`,
-        err,
+        loggableError(err),
       );
     }
   }
@@ -167,17 +168,17 @@ export async function syncItem(item: ItemRow, options?: SyncItemOptions): Promis
       }
 
       for (const row of pendingRows) {
-        const cardCategoryStillValid =
+        const cardCategoryExists =
           row.cardCategoryId !== null && liveCardCategoryIds.has(row.cardCategoryId);
-        const creditCategoryStillValid =
+        const creditCategoryExists =
           row.creditCategoryId !== null && liveCreditCategoryIds.has(row.creditCategoryId);
         // A rate carries on its own, without a live category link: it is a
         // historical snapshot of what the purchase earned.
-        if (cardCategoryStillValid || creditCategoryStillValid || row.rewardRate !== null) {
+        if (cardCategoryExists || creditCategoryExists || row.rewardRate !== null) {
           carried.set(row.transactionId, {
-            cardCategoryId: cardCategoryStillValid ? row.cardCategoryId : null,
+            cardCategoryId: cardCategoryExists ? row.cardCategoryId : null,
             rewardRate: row.rewardRate,
-            creditCategoryId: creditCategoryStillValid ? row.creditCategoryId : null,
+            creditCategoryId: creditCategoryExists ? row.creditCategoryId : null,
           });
         }
       }

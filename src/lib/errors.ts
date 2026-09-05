@@ -1,16 +1,30 @@
 import { NextResponse } from 'next/server';
+import { loggableError } from '@/lib/log';
 
 interface PlaidErrorBody {
+  error_type?: string;
   error_code?: string;
   error_message?: string;
   display_message?: string | null;
+  request_id?: string;
 }
 
 // Plaid's error body, or null if this is not a Plaid SDK failure. error_code
 // is what identifies the shape; `response.data` alone matches other libraries.
+// The fields are picked, never passed through whole: callers store this object
+// on items.error and GET /api/items serves it, so the allow-list must be
+// structural rather than trust whatever Plaid's response happens to carry.
+// Design: error-message-allow-list.
 export function plaidErrorBody(err: unknown): PlaidErrorBody | null {
   const data = (err as { response?: { data?: PlaidErrorBody } })?.response?.data;
-  return data?.error_code ? data : null;
+  if (!data?.error_code) return null;
+  return {
+    error_type: data.error_type,
+    error_code: data.error_code,
+    error_message: data.error_message,
+    display_message: data.display_message,
+    request_id: data.request_id,
+  };
 }
 
 // An error whose message is safe to show to the user. Design:
@@ -53,7 +67,9 @@ export function pgErrorCode(err: unknown): string | undefined {
 }
 
 export function errorResponse(err: unknown): NextResponse {
-  console.error(err);
+  // Redacted: a raw Plaid error carries the client secret and the
+  // decrypted access token in its axios config. Design: plaid-error-log-redaction.
+  console.error(loggableError(err));
 
   const plaidError = plaidErrorBody(err);
   if (plaidError) {

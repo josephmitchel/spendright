@@ -5,11 +5,13 @@ import { usePlaidLink } from 'react-plaid-link';
 import { readJson } from '@/lib/http';
 
 export default function PlaidLinkButton({
-  onConnected,
+  // The Action suffix is Next's TypeScript-plugin convention for a function
+  // prop on a client component; this is a plain callback, not a Server Action.
+  onConnectedAction,
   // When "Sync all" last completed with every item clean; null if never.
   syncSucceededAt,
 }: {
-  onConnected: () => void;
+  onConnectedAction: () => void;
   syncSucceededAt: number | null;
 }) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
@@ -60,13 +62,13 @@ export default function PlaidLinkButton({
             : []),
         ];
         setSyncNotice(notices.length > 0 ? { message: notices.join(' · '), at: Date.now() } : null);
-        onConnected();
+        onConnectedAction();
       } catch (err) {
         setStatus('error');
         setErrorMessage(err instanceof Error ? err.message : 'Exchange failed');
       }
     },
-    [onConnected],
+    [onConnectedAction],
   );
 
   const { open, ready } = usePlaidLink({ token: linkToken, onSuccess });

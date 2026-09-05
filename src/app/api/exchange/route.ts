@@ -5,6 +5,7 @@ import { upsertAccount } from '@/lib/accounts';
 import { encrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { errorResponse, plaidErrorBody, publicErrorMessage } from '@/lib/errors';
+import { loggableError } from '@/lib/log';
 import { exchangePublicToken, getAccounts, getInstitutionById, getItem } from '@/lib/plaid';
 import { syncItem, type SyncItemResult } from '@/lib/sync';
 
@@ -39,7 +40,10 @@ export async function POST(req: NextRequest) {
       try {
         institution = await getInstitutionById(plaidItem.institution_id);
       } catch (err) {
-        console.error('institutionsGetById failed (continuing without metadata):', err);
+        console.error(
+          'institutionsGetById failed (continuing without metadata):',
+          loggableError(err),
+        );
       }
     }
 
@@ -124,7 +128,7 @@ export async function POST(req: NextRequest) {
       // to store) and caps the not-ready poll. Design: not-ready-poll-budgets.
       syncResult = await syncItem(storedItem, { plaidAccounts, notReadyRetries: 3 });
     } catch (err) {
-      console.error(`Initial sync failed for item ${itemId}:`, err);
+      console.error(`Initial sync failed for item ${itemId}:`, loggableError(err));
       syncError = publicErrorMessage(err, 'Initial sync failed — check the server log');
       const plaidError = plaidErrorBody(err);
       // Recording the failure is best-effort; a failed write must not fail the link.

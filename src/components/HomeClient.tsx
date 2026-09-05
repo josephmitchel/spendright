@@ -148,7 +148,7 @@ export default function HomeClient() {
     <main>
       <h1>SpendRight</h1>
       <p>
-        <PlaidLinkButton onConnected={refresh} syncSucceededAt={syncSucceededAt} />{' '}
+        <PlaidLinkButton onConnectedAction={refresh} syncSucceededAt={syncSucceededAt} />{' '}
         <button onClick={syncAll} disabled={syncing || (itemsLoaded && itemList.length === 0)}>
           Sync all
         </button>

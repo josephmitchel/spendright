@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { items } from '@/db/schema';
 import { db } from '@/lib/db';
 import { errorResponse, plaidErrorBody, publicErrorMessage } from '@/lib/errors';
+import { loggableError } from '@/lib/log';
 import { syncItem, type SyncItemResult } from '@/lib/sync';
 
 export async function POST() {
@@ -14,7 +15,7 @@ export async function POST() {
       try {
         results.push(await syncItem(item));
       } catch (err) {
-        console.error(`Sync failed for item ${item.itemId}:`, err);
+        console.error(`Sync failed for item ${item.itemId}:`, loggableError(err));
         // The message is stored on the item row and shown on every load, so it
         // goes through the allow-list. Design: error-message-allow-list.
         const message = publicErrorMessage(err, 'Sync failed — check the server log');

@@ -91,6 +91,23 @@ means a tunnel, e.g. `ngrok http 3000`, with `/api/webhook` appended to the
 tunnel URL). Left unset, webhooks are off and the app is manual-sync only
 (the "Sync all" button).
 
+A tunnel forwards every route, not just the webhook, so `src/proxy.ts` answers
+404 to any request that did not arrive at a loopback host (or that came
+through a forwarding proxy) — through the tunnel, only `POST /api/webhook`
+responds. That protection depends on the tunnel injecting real forwarding
+headers, which HTTP tunnels like ngrok and cloudflared do (a non-loopback
+`Host` and the caller's real IP on `X-Forwarded-For`). **Use only such a
+tunnel.** A raw TCP forward — `ssh -R`, socat, an editor's port forwarding —
+injects nothing: it connects from loopback (so the bind does not apply) and
+hands the remote caller full control of every header, which would expose the
+whole unauthenticated API, not just the webhook. Against direct connections
+the headers are forgeable anyway, so there the real enforcement is the bind:
+both `dev` and `start` run with `-H 127.0.0.1`, and `src/instrumentation.ts`
+exits the server if it finds itself reachable on a non-loopback interface
+(e.g. after a bare `next dev` without the flag). If a tunnel URL was ever
+exposed without this guard, treat `PLAID_SECRET` as leaked and rotate it in
+the Plaid dashboard.
+
 The URL reaches newly linked items on its own, through the link token. Items
 linked before it was set (or after it changed) need a one-off push:
 
@@ -108,6 +125,8 @@ reachable from anywhere else.
   the route that mints and stores a Plaid access token, the route that deletes an
   institution and all of its data, and the reads that return the account's whole
   transaction history. The `items` table holds encrypted bank credentials.
+  (The loopback bind keeps the LAN out and `src/proxy.ts` refuses requests a
+  tunnel forwards — but that is a guard, not authentication.)
 - **`POST /api/exchange` can run long.** It makes several Plaid calls before it
   answers and runs the first sync inline. That sync pulls a few days of history
   at most, so volume is not the concern — the in-request retry sleeping is: the

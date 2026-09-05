@@ -3,15 +3,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { items } from '@/db/schema';
 import { db } from '@/lib/db';
 import { errorResponse, plaidErrorBody, publicErrorMessage } from '@/lib/errors';
+import { loggableError } from '@/lib/log';
 import { syncItem } from '@/lib/sync';
-import { verifyPlaidWebhook } from '@/lib/webhook';
+import { precheckPlaidWebhook, verifyPlaidWebhook } from '@/lib/webhook';
 
 // The automatic sync path: Plaid announces new transactions and this route
 // syncs the named item. Every request is verified before its body is trusted.
 // Design: automatic-sync, webhook-triggered-sync, webhook-jwt-verification.
 export async function POST(req: NextRequest) {
   try {
-    // Raw text first: verification hashes the exact bytes Plaid signed.
+    // Cheap refusals first (no header, oversized declared body), so an
+    // unverified caller cannot make this route decode and hash a large body.
+    // The body itself is already buffered by then (Next buffers it before any
+    // route code runs, capped by proxyClientMaxBodySize in next.config.ts).
+    precheckPlaidWebhook(req.headers.get('plaid-verification'), req.headers.get('content-length'));
+    // Raw text next: verification hashes the exact bytes Plaid signed.
     const rawBody = await req.text();
     await verifyPlaidWebhook(rawBody, req.headers.get('plaid-verification'));
 
@@ -60,7 +66,7 @@ export async function POST(req: NextRequest) {
       const result = await syncItem(item);
       return NextResponse.json({ acknowledged: true, synced: true, result });
     } catch (err) {
-      console.error(`webhook sync failed for item ${item_id}:`, err);
+      console.error(`webhook sync failed for item ${item_id}:`, loggableError(err));
       const message = publicErrorMessage(err, 'Sync failed — check the server log');
       const plaidError = plaidErrorBody(err);
       // Same allow-list and best-effort write as POST /api/sync. Still a 200:
