@@ -2,12 +2,15 @@
   "name": "spendright",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
-    "predev": "mkdir -p .next && chmod -R go-rwx .next",
+    "predev": "node scripts/tighten-next.mjs",
     "dev": "next dev -H 127.0.0.1",
-    "prebuild": "mkdir -p .next && chmod -R go-rwx .next",
+    "prebuild": "node scripts/tighten-next.mjs",
     "build": "next build",
-    "postbuild": "chmod -R go-rwx .next",
+    "postbuild": "node scripts/tighten-next.mjs",
     "start": "node scripts/start.mjs",
     "lint": "eslint && node scripts/check-design-refs.mjs",
     "typecheck": "tsc --noEmit",
@@ -27,7 +30,7 @@
     "react-plaid-link": "^4.2.0"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/node": "^24",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",

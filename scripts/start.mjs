@@ -9,7 +9,6 @@
 // the records say must not go unnoticed.
 // Design: non-local-request-guard, scheduled-sync.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -18,20 +17,17 @@ const nextBin = require.resolve('next/dist/bin/next');
 
 // The Turbopack cache under .next persists process.env values (ENCRYPTION_KEY
 // and PLAID_SECRET among them) into files created world-readable, undoing
-// .env.local's 0600. Tightened here as well as after every build (postbuild),
-// so cache left by earlier dev sessions is covered too.
+// .env.local's 0600. Tightened here as well as around every build and dev
+// session, all through the one policy script (it prints its own error and
+// exits non-zero on failure); refusing to start beats serving with the cache
+// possibly readable by other local accounts.
 // Design: build-cache-secret-permissions.
-const nextDir = fileURLToPath(new URL('../.next', import.meta.url));
-if (existsSync(nextDir)) {
-  const tightened = spawnSync('chmod', ['-R', 'go-rwx', nextDir]);
-  if (tightened.status !== 0) {
-    console.error(
-      'start.mjs: could not tighten permissions on .next — refusing to start with the ' +
-        'secret-bearing build cache possibly readable by other local accounts.',
-    );
-    process.exit(1);
-  }
-}
+const tighten = spawnSync(
+  process.execPath,
+  [fileURLToPath(new URL('./tighten-next.mjs', import.meta.url))],
+  { stdio: 'inherit' },
+);
+if (tighten.status !== 0) process.exit(1);
 
 // The Next CLI (commander) accepts `-p 3001`, `-p3001`, `--port 3001` and
 // `--port=3001`, last one wins, PORT as fallback. Every accepted form must be

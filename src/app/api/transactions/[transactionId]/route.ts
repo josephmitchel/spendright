@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import type { TransactionPatchPayload } from '@/lib/api-types';
 import type { CategoryKind } from '@/lib/amounts';
 import { setTransactionCategory } from '@/lib/categories';
-import { badRequest, errorResponse, jsonError, pgErrorCode, readJsonBody } from '@/lib/errors';
+import { badRequest, jsonError, pgErrorCode, readJsonBody, withErrorResponse } from '@/lib/errors';
 
 // Postgres serial ids are int32; anything past that cannot exist.
 const MAX_INT32 = 2147483647;
@@ -38,33 +38,34 @@ function parseCategoryPatch(body: unknown): ParsedCategoryPatch {
 // - { cardCategoryId: number }   spend category (amount >= 0)
 // - { creditCategoryId: number } inflow category (amount < 0)
 // There is no clear. Design: category-write-contract, no-category-clear.
-// Not wrapped in withErrorResponse: the route-local 23503 mapping below needs
-// its own catch, which already funnels everything else into errorResponse.
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ transactionId: string }> },
-) {
-  try {
+export const PATCH = withErrorResponse(
+  async (req: NextRequest, { params }: { params: Promise<{ transactionId: string }> }) => {
     const { transactionId } = await params;
     const parsed = parseCategoryPatch(await readJsonBody(req));
     if (!parsed.ok) {
       return badRequest(parsed.message);
     }
 
-    const transaction = await setTransactionCategory(transactionId, parsed.kind, parsed.categoryId);
-    return NextResponse.json<TransactionPatchPayload>({ transaction });
-  } catch (err) {
-    // 23503 foreign_key_violation: the category was deleted (by hand; the seed
-    // only retires) between validation and the update. Route-local because the
-    // meaning of a broken FK is this route's alone; PublicError rejections and
-    // the app-wide lock/deadlock mapping live in errorResponse.
-    if (pgErrorCode(err) === '23503') {
-      return jsonError(
-        'CATEGORY_REMOVED',
-        'That category no longer exists — reload the page and pick again',
-        409,
+    try {
+      const transaction = await setTransactionCategory(
+        transactionId,
+        parsed.kind,
+        parsed.categoryId,
       );
+      return NextResponse.json<TransactionPatchPayload>({ transaction });
+    } catch (err) {
+      // 23503 foreign_key_violation: the category was deleted (by hand; the
+      // seed only retires) between validation and the update. Route-local
+      // because the meaning of a broken FK is this route's alone; everything
+      // else rethrows into the wrapper's errorResponse.
+      if (pgErrorCode(err) === '23503') {
+        return jsonError(
+          'CATEGORY_REMOVED',
+          'That category no longer exists — reload the page and pick again',
+          409,
+        );
+      }
+      throw err;
     }
-    return errorResponse(err);
-  }
-}
+  },
+);

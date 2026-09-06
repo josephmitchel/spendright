@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useLoadProtocol } from '@/components/useLoadProtocol';
+import { useCallback, useState } from 'react';
+import { useLoadProtocol, type LoadReads } from '@/components/useLoadProtocol';
 import { useVisiblePoll } from '@/components/useVisiblePoll';
 import type { AccountsResponse, ApiAccount, ApiItem, ItemsResponse } from '@/lib/api-types';
 import { getJson } from '@/lib/http';
@@ -16,34 +16,26 @@ export function useHomeData() {
   // `accounts` is sticky: a later failed refresh keeps rendering the rows
   // that did load. `items` follows the latest refresh, because the "No
   // institutions" message needs current evidence. Design: partial-load-rendering.
-  const { settled, error, loaded, clearError, load } = useLoadProtocol(
+  const { settled, error, loaded, clearError, refresh, reload } = useLoadProtocol(
     { items: false, accounts: false },
+    useCallback(
+      (load: LoadReads<'items' | 'accounts'>) =>
+        load(
+          {
+            items: getJson<ItemsResponse>('/api/items', 'Failed to load institutions'),
+            accounts: getJson<AccountsResponse>('/api/accounts', 'Failed to load accounts'),
+          },
+          (results) => {
+            if (results.items.status === 'fulfilled') setItemList(results.items.value.items);
+            if (results.accounts.status === 'fulfilled') {
+              setAccountList(results.accounts.value.accounts);
+            }
+          },
+        ),
+      [],
+    ),
     { stickyKeys: ['accounts'] },
   );
-
-  const refresh = useCallback(
-    () =>
-      load(
-        {
-          items: getJson<ItemsResponse>('/api/items', 'Failed to load institutions'),
-          accounts: getJson<AccountsResponse>('/api/accounts', 'Failed to load accounts'),
-        },
-        (results) => {
-          if (results.items.status === 'fulfilled') setItemList(results.items.value.items);
-          if (results.accounts.status === 'fulfilled') {
-            setAccountList(results.accounts.value.accounts);
-          }
-        },
-      ),
-    [load],
-  );
-
-  // Wrapped so react-hooks/set-state-in-effect can see the async boundary.
-  useEffect(() => {
-    void (async () => {
-      await refresh();
-    })();
-  }, [refresh]);
 
   // Re-read every minute while the tab is visible and on return to it.
   // Design: home-reflects-background-sync.
@@ -53,5 +45,5 @@ export function useHomeData() {
     }, [refresh]),
   );
 
-  return { itemList, accountList, settled, error, clearError, loaded, refresh };
+  return { itemList, accountList, settled, error, clearError, loaded, refresh, reload };
 }

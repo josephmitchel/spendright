@@ -15,7 +15,10 @@ const PROBE_DELAYS_MS = [3000, 15000];
 const PROBE_TIMEOUT_MS = 1500;
 
 // @types/node does not model the diagnostic-report body, so the shape is
-// declared here (verified against Node 20 output). A listening tcp handle's
+// declared here (verified against Node 20 output; re-verified against Node
+// 24.14.1 on 2026-09-06 — package.json's engines field and .nvmrc pin the
+// Node major so an unnoticed runtime jump cannot outrun this check; re-verify
+// and re-date on every major bump). A listening tcp handle's
 // signature: a localEndpoint, no remoteEndpoint, active, and neither
 // readable nor writable — a client socket mid-connect also has no
 // remoteEndpoint yet, but reports readable/writable true.
@@ -116,9 +119,11 @@ async function assertLoopbackOnly(logVerdict: boolean): Promise<void> {
   // report shape, or the socket lives in another process), the probes above
   // aimed at PORT/3000 — which may not be the real port, since Next walks
   // the port forward on EADDRINUSE — so "could not verify" is fatal: serving
-  // with the primary sensor blind is serving unasserted. Verified on Node 20
-  // that both `next dev` and `next start` listen in the process register()
-  // runs in, so a healthy server always reaches the passed branch.
+  // with the primary sensor blind is serving unasserted. Verified on Node 20,
+  // and re-verified on Node 24.14.1 (2026-09-06, the pinned major — see
+  // engines/.nvmrc), that both `next dev` and `next start` listen in the
+  // process register() runs in, so a healthy server always reaches the
+  // passed branch.
   if (logVerdict) {
     if (endpoints.length > 0) {
       console.log(

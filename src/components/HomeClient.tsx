@@ -19,7 +19,8 @@ function itemErrorMessage(error: NonNullable<ApiItem['error']>): string {
 
 // Thin view over the home hooks, mirroring the account page's shape.
 export default function HomeClient() {
-  const { itemList, accountList, settled, error, clearError, loaded, refresh } = useHomeData();
+  const { itemList, accountList, settled, error, clearError, loaded, refresh, reload } =
+    useHomeData();
   const { syncAll, syncing, syncStatus, syncSucceededAt } = useSyncAll(refresh);
   const { removeItem, removeError } = useItemRemoval(refresh);
 
@@ -41,7 +42,7 @@ export default function HomeClient() {
           <button
             onClick={() => {
               clearError();
-              void refresh();
+              reload();
             }}
           >
             Retry
