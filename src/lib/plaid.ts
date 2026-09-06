@@ -69,12 +69,33 @@ function splitEnvList(raw: string | undefined, fallback: string): string[] {
   return parsed.length > 0 ? parsed : [fallback];
 }
 
+// Validated against the SDK's enum values: a typo'd entry would otherwise
+// sail through a cast and surface as a Plaid API error naming neither the
+// variable nor the bad value. Design: config-validated-not-assumed.
+function getEnvEnumList<T extends string>(
+  name: 'PLAID_PRODUCTS' | 'PLAID_COUNTRY_CODES',
+  fallback: T,
+  allowedValues: T[],
+): T[] {
+  const entries = splitEnvList(process.env[name], fallback);
+  const allowed = new Set<string>(allowedValues);
+  const valid = entries.filter((entry): entry is T => allowed.has(entry));
+  if (valid.length !== entries.length) {
+    const invalid = entries.filter((entry) => !allowed.has(entry));
+    throw new PublicError(
+      `${name} contains ${invalid.join(', ')} — use of: ${allowedValues.join(', ')}`,
+      { status: 500, code: 'BAD_CONFIG' },
+    );
+  }
+  return valid;
+}
+
 function getProducts(): Products[] {
-  return splitEnvList(process.env.PLAID_PRODUCTS, Products.Transactions) as Products[];
+  return getEnvEnumList('PLAID_PRODUCTS', Products.Transactions, Object.values(Products));
 }
 
 function getCountryCodes(): CountryCode[] {
-  return splitEnvList(process.env.PLAID_COUNTRY_CODES, 'US') as CountryCode[];
+  return getEnvEnumList('PLAID_COUNTRY_CODES', CountryCode.Us, Object.values(CountryCode));
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

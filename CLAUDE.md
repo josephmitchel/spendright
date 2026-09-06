@@ -4,11 +4,12 @@ This repo is for development on SpendRight, a personal finance app primarily cen
 
 # Design
 
-Current design information about the project is available in `.claude/design`. Familiarize yourself with the project's current design direction before making code changes. 
+Current design information about the project is available in `.claude/design`. Familiarize yourself with the project's current design direction before making code changes.
 
 ### Code Intelligence
 
 Prefer LSP over Grep/Glob/Read for code navigation:
+
 - `goToDefinition` / `goToImplementation` to jump to source
 - `findReferences` to see all usages across the codebase
 - `workspaceSymbol` to find where something is defined

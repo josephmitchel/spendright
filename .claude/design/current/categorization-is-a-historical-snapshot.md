@@ -8,6 +8,7 @@ date: 2026-09-04
 When a user categorizes a purchase as, say, Groceries at 6%, that pairing is a fact about the past: the category existed, the rate applied, and the user benefited from it. A later change to the card's benefits (the category removed from the seed, its rate edited, the category renamed) must leave that transaction reading exactly as it did: same category name, same rate. Old data is never rewritten because a card's current terms changed.
 
 Consequences:
+
 - Editing a rate in the seed applies to future picks only. The seed backfills missing rates but never overwrites one.
 - Removing a category from a card retires it ([[categories-retired-not-deleted]]): it stops being offered for new picks, and every transaction that carries it keeps the link and the rate.
 - The account page shows the historical category and rate as recorded. The picker renders a retired category as its disabled selected option. The "(unlinked)" rate marker now only reaches rows whose link was stripped before retirement existed, or by a hand delete.

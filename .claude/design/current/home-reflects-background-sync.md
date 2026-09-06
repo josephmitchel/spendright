@@ -1,7 +1,8 @@
 ---
 name: home-reflects-background-sync
 description: HomeClient re-reads /api/items and /api/accounts once a minute while the tab is visible and on return to it, so an hourly scheduled sync shows up without a reload; the connect-notice expiry stays keyed to a manual Sync all
-tags: [HomeClient, src/components/HomeClient.tsx, refresh, visibilitychange, scheduled sync, polling]
+tags:
+  [HomeClient, src/components/HomeClient.tsx, refresh, visibilitychange, scheduled sync, polling]
 date: 2026-09-05
 ---
 

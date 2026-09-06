@@ -1,7 +1,14 @@
 ---
 name: seed-validation
 description: The seed script refuses to run on duplicate or blank slugs, duplicate or blank matchers, and duplicate category names
-tags: [scripts/seed-cards.ts, assertUniqueSlugs, assertUniqueAccountMatchers, assertUniqueCategoryNames, assertUniqueCreditCategoryNames]
+tags:
+  [
+    scripts/seed-cards.ts,
+    assertUniqueSlugs,
+    assertUniqueAccountMatchers,
+    assertUniqueCategoryNames,
+    assertUniqueCreditCategoryNames,
+  ]
 date: 2026-09-04
 ---
 

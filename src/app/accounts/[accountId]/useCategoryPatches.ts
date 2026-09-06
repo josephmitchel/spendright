@@ -8,6 +8,7 @@ import type {
   TransactionPatchResponse,
 } from '@/lib/api-types';
 import { readJson } from '@/lib/http';
+import { serializeByKey } from '@/lib/serialize';
 
 // The category columns a PATCH can change. Reconciliation merges only these
 // into the current row: a page re-fetch mid-burst may have replaced the row,
@@ -106,11 +107,8 @@ export function useCategoryPatches(
       }
     };
 
-    const previous = patchChain.current.get(transactionId);
-    const run = previous ? previous.catch(() => {}).then(send) : send();
-    patchChain.current.set(transactionId, run);
-    await run.catch(() => {});
-    if (patchChain.current.get(transactionId) === run) patchChain.current.delete(transactionId);
+    // send() never rejects, so joining the row's chain is the whole await.
+    await serializeByKey(patchChain.current, transactionId, send);
   };
 
   return { setCategory, patchError };

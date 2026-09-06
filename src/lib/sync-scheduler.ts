@@ -1,3 +1,4 @@
+import { globalSingleton } from '@/lib/global-singleton';
 import { loggableError } from '@/lib/log';
 import { syncAllItems } from '@/lib/sync-all';
 
@@ -11,16 +12,16 @@ import { syncAllItems } from '@/lib/sync-all';
 const STARTUP_DELAY_MS = 10 * 1000;
 const INTERVAL_MS = 60 * 60 * 1000;
 
-// On globalThis so the guard is once per process, not once per module copy —
-// the bundler can duplicate this module across chunks, and a module-scope
-// flag would let a caller through the other copy double the timers.
-const globalForScheduler = globalThis as unknown as { syncSchedulerStarted?: boolean };
+// A process-wide singleton so the guard is once per process, not once per
+// module copy — a module-scope flag would let a caller through another copy
+// double the timers.
+const schedulerState = globalSingleton('syncScheduler', () => ({ started: false }));
 
 export function startSyncScheduler(): void {
   // register() runs once per server instance, but guard anyway so a second
   // caller can never double the timers.
-  if (globalForScheduler.syncSchedulerStarted) return;
-  globalForScheduler.syncSchedulerStarted = true;
+  if (schedulerState.started) return;
+  schedulerState.started = true;
 
   const run = async () => {
     try {

@@ -1,7 +1,19 @@
 ---
 name: bounded-cursor-hold
 description: Transactions for an account with no row are skipped and the cursor is held back so Plaid re-offers them; the fifth consecutive skipped sync advances the cursor and drops the batch
-tags: [syncItem, recordSyncOutcome, MAX_SKIPPED_SYNCS, skippedItemErrorMessage, skippedSyncNotice, items.skipped_syncs, items.cursor, items.error, src/lib/sync.ts, src/lib/sync-messages.ts]
+tags:
+  [
+    syncItem,
+    recordSyncOutcome,
+    MAX_SKIPPED_SYNCS,
+    skippedItemErrorMessage,
+    skippedSyncNotice,
+    items.skipped_syncs,
+    items.cursor,
+    items.error,
+    src/lib/sync.ts,
+    src/lib/sync-messages.ts,
+  ]
 date: 2026-09-04
 ---
 

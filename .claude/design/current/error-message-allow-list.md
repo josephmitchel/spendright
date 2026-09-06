@@ -1,7 +1,20 @@
 ---
 name: error-message-allow-list
 description: Only Plaid error bodies and app-written PublicErrors reach the client or items.error; everything else is Internal server error
-tags: [errorResponse, jsonError, badRequest, PublicError, publicErrorMessage, plaidErrorBody, pgErrorCode, pickPlaidErrorFields, plaidErrorMessage, src/lib/errors.ts, src/lib/plaid-errors.ts]
+tags:
+  [
+    errorResponse,
+    jsonError,
+    badRequest,
+    PublicError,
+    publicErrorMessage,
+    plaidErrorBody,
+    pgErrorCode,
+    pickPlaidErrorFields,
+    plaidErrorMessage,
+    src/lib/errors.ts,
+    src/lib/plaid-errors.ts,
+  ]
 date: 2026-09-04
 ---
 

@@ -123,6 +123,7 @@ async function main() {
             set: { ...cardValues, retiredAt: null, updatedAt: sql`now()` },
           })
           .returning();
+        if (!card) throw new Error(`card upsert returned no row for ${seed.slug}`);
 
         for (const category of seed.categories) {
           const categoryValues = {

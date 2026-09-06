@@ -1,6 +1,8 @@
 import { items } from '@/db/schema';
 import { db } from '@/lib/db';
+import { globalSingleton } from '@/lib/global-singleton';
 import { loggableError } from '@/lib/log';
+import { singleFlight } from '@/lib/serialize';
 import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
 
 // The one sync-all runner, shared by the scheduler and POST /api/sync, and
@@ -8,25 +10,18 @@ import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
 // run instead of starting a duplicate whole-account pass. (The cursor-write
 // invariant — no two concurrent syncItem calls on one item — is held by
 // syncItem's own per-item lock in src/lib/sync.ts, which also covers the
-// exchange route's inline initial sync.) The in-flight promise lives on
-// globalThis because the bundler emits separate copies of this module for the
-// route's static import and the scheduler's dynamic import (verified in the
-// compiled chunks); a module-scope variable would be one guard per copy, not
-// one per process. Design: scheduled-sync.
+// exchange route's inline initial sync.) The in-flight slot is a process-wide
+// singleton: the route imports this module statically and the scheduler
+// dynamically, so each gets its own module copy. Design: scheduled-sync.
 
 export type SyncAllResult = Array<SyncItemResult | { itemId: string; error: string }>;
 
-const globalForSyncAll = globalThis as unknown as {
-  syncAllInFlight?: Promise<SyncAllResult> | null;
-};
+const syncAllSlot = globalSingleton('syncAllInFlight', () => ({
+  inFlight: null as Promise<SyncAllResult> | null,
+}));
 
 export function syncAllItems(): Promise<SyncAllResult> {
-  if (!globalForSyncAll.syncAllInFlight) {
-    globalForSyncAll.syncAllInFlight = runSyncAll().finally(() => {
-      globalForSyncAll.syncAllInFlight = null;
-    });
-  }
-  return globalForSyncAll.syncAllInFlight;
+  return singleFlight(syncAllSlot, runSyncAll);
 }
 
 async function runSyncAll(): Promise<SyncAllResult> {

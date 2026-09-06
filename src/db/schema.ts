@@ -1,4 +1,6 @@
 import { sql } from 'drizzle-orm';
+import type { Transaction as PlaidTransactionPayload } from 'plaid';
+import type { ItemErrorBody } from '@/lib/plaid-errors';
 import {
   boolean,
   check,
@@ -70,9 +72,10 @@ export const items = pgTable('items', {
   institutionLogo: text('institution_logo'),
   institutionPrimaryColor: text('institution_primary_color'),
   cursor: text('cursor'),
-  availableProducts: jsonb('available_products'),
-  billedProducts: jsonb('billed_products'),
-  error: jsonb('error'),
+  availableProducts: jsonb('available_products').$type<string[]>(),
+  billedProducts: jsonb('billed_products').$type<string[]>(),
+  // A picked Plaid error body or { message }. Design: error-message-allow-list.
+  error: jsonb('error').$type<ItemErrorBody>(),
   // Consecutive syncs that held the cursor back over an unknown account.
   // Design: bounded-cursor-hold.
   skippedSyncs: integer('skipped_syncs').notNull().default(0),
@@ -136,7 +139,7 @@ export const transactions = pgTable(
       onDelete: 'set null',
     }),
     // Full raw Plaid transaction payload
-    plaidTransaction: jsonb('plaid_transaction').notNull(),
+    plaidTransaction: jsonb('plaid_transaction').$type<PlaidTransactionPayload>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

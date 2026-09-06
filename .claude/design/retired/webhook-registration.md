@@ -1,7 +1,8 @@
 ---
 name: webhook-registration
 description: PLAID_WEBHOOK_URL reached new items via the link token and existing items via the one-off npm run webhooks:update script
-tags: [getWebhookUrl, PLAID_WEBHOOK_URL, createLinkToken, updateItemWebhook, scripts/update-webhooks.ts]
+tags:
+  [getWebhookUrl, PLAID_WEBHOOK_URL, createLinkToken, updateItemWebhook, scripts/update-webhooks.ts]
 date: 2026-09-04
 ---
 

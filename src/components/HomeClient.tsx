@@ -1,139 +1,35 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
-import type {
-  AccountsResponse,
-  ApiAccount,
-  ApiItem,
-  ItemDeleteResponse,
-  ItemsResponse,
-  SyncResponse,
-} from '@/lib/api-types';
-import { joinedFailureMessage, readJson } from '@/lib/http';
+import { useHomeData } from '@/components/useHomeData';
+import { useItemRemoval } from '@/components/useItemRemoval';
+import { useSyncAll } from '@/components/useSyncAll';
+import type { ApiItem } from '@/lib/api-types';
 import { plaidErrorMessage } from '@/lib/plaid-errors';
-import { skippedSyncNotice } from '@/lib/sync-messages';
 
-// items.error is either a Plaid error body or { message }; stringify is the
-// fallback for an unrecognized shape. Design: error-message-allow-list.
-function itemErrorMessage(error: unknown): string {
-  const body = (error ?? {}) as {
-    display_message?: string | null;
-    error_message?: string;
-    message?: string;
-  };
-  return plaidErrorMessage(body, body.message || JSON.stringify(error));
+// items.error is a picked Plaid error body or { message } (typed on the
+// column); stringify is the fallback for a stored body with no usable text.
+// Design: error-message-allow-list.
+function itemErrorMessage(error: NonNullable<ApiItem['error']>): string {
+  const fallback = JSON.stringify(error);
+  return 'message' in error ? error.message || fallback : plaidErrorMessage(error, fallback);
 }
 
+// Thin view over the home hooks, mirroring the account page's shape.
 export default function HomeClient() {
-  const [itemList, setItemList] = useState<ApiItem[]>([]);
-  const [accountList, setAccountList] = useState<ApiAccount[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  // Guards against a second concurrent POST /api/sync.
-  const [syncing, setSyncing] = useState(false);
-  // When "Sync all" last came back with every item clean; PlaidLinkButton uses
-  // it to expire its connect-time notice.
-  const [syncSucceededAt, setSyncSucceededAt] = useState<number | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [removeError, setRemoveError] = useState<string | null>(null);
-  // Whether /api/items succeeded; gates the "No institutions" message.
-  const [itemsLoaded, setItemsLoaded] = useState(false);
-  // Whether /api/accounts has ever succeeded; gates the per-institution
-  // account tables so a failed read never renders as an empty account list.
-  // Design: partial-load-rendering.
-  const [accountsLoaded, setAccountsLoaded] = useState(false);
-
-  // Generation counter: a refresh superseded by a later one writes nothing.
-  const refreshSeq = useRef(0);
-  const refresh = useCallback(async () => {
-    const seq = ++refreshSeq.current;
-    // Design: partial-load-rendering — each endpoint settles on its own.
-    const [itemsResult, accountsResult] = await Promise.allSettled([
-      fetch('/api/items').then((res) =>
-        readJson<ItemsResponse>(res, 'Failed to load institutions'),
-      ),
-      fetch('/api/accounts').then((res) =>
-        readJson<AccountsResponse>(res, 'Failed to load accounts'),
-      ),
-    ]);
-    if (seq !== refreshSeq.current) return;
-    if (itemsResult.status === 'fulfilled') setItemList(itemsResult.value.items ?? []);
-    if (accountsResult.status === 'fulfilled') {
-      setAccountList(accountsResult.value.accounts ?? []);
-      // Sticky: a later failed refresh keeps rendering the rows that did load.
-      setAccountsLoaded(true);
-    }
-    setItemsLoaded(itemsResult.status === 'fulfilled');
-    setLoadError(joinedFailureMessage([itemsResult, accountsResult]));
-    setLoading(false);
-  }, []);
-
-  // Wrapped so react-hooks/set-state-in-effect can see the async boundary.
-  useEffect(() => {
-    void (async () => {
-      await refresh();
-    })();
-  }, [refresh]);
-
-  // The hourly scheduled sync mutates items.error and balances behind an open
-  // page, so re-read every minute while the tab is visible and on return to
-  // it. Superseded loads write nothing, so a poll can never clobber a
-  // fresher read. Design: home-reflects-background-sync.
-  useEffect(() => {
-    const refreshIfVisible = () => {
-      if (!document.hidden) void refresh();
-    };
-    const interval = setInterval(refreshIfVisible, 60_000);
-    document.addEventListener('visibilitychange', refreshIfVisible);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', refreshIfVisible);
-    };
-  }, [refresh]);
-
-  const syncAll = async () => {
-    setSyncing(true);
-    setSyncStatus('Syncing…');
-    try {
-      const res = await fetch('/api/sync', { method: 'POST' });
-      const data = await readJson<SyncResponse>(res, 'Sync failed');
-      const results = data.results ?? [];
-      // `skipped` rows were held back (cursor not advanced) unless `dropped`,
-      // in which case the sync gave up on them. Design: bounded-cursor-hold.
-      const parts = results.map((result) =>
-        'error' in result
-          ? `${result.itemId}: ${result.error}`
-          : `+${result.added} added${
-              result.skipped ? `, ${skippedSyncNotice(result.skipped, result.dropped)}` : ''
-            }`,
-      );
-      setSyncStatus(`Sync complete. ${parts.join(', ') || 'No items.'}`);
-      // Clean means every item finished with no error and no held/dropped rows.
-      if (results.length > 0 && results.every((result) => !('error' in result) && !result.skipped))
-        setSyncSucceededAt(Date.now());
-      void refresh();
-    } catch (err) {
-      setSyncStatus(`Sync failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      // Released when the POST settles; the refresh above is not awaited.
-      setSyncing(false);
-    }
-  };
-
-  const removeItem = async (itemId: string) => {
-    if (!confirm('Remove this institution and all of its accounts and transactions?')) return;
-    setRemoveError(null);
-    try {
-      const res = await fetch(`/api/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
-      await readJson<ItemDeleteResponse>(res, 'Failed to remove item');
-    } catch (err) {
-      setRemoveError(err instanceof Error ? err.message : 'Failed to remove item');
-      return;
-    }
-    void refresh();
-  };
+  const {
+    itemList,
+    accountList,
+    loading,
+    loadError,
+    clearLoadError,
+    itemsLoaded,
+    accountsLoaded,
+    refresh,
+  } = useHomeData();
+  const { syncAll, syncing, syncStatus, syncSucceededAt } = useSyncAll(refresh);
+  const { removeItem, removeError } = useItemRemoval(refresh);
 
   return (
     <main>
@@ -152,7 +48,7 @@ export default function HomeClient() {
           Error: {loadError}{' '}
           <button
             onClick={() => {
-              setLoadError(null);
+              clearLoadError();
               void refresh();
             }}
           >

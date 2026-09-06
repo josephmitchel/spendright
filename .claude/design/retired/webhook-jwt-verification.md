@@ -1,7 +1,15 @@
 ---
 name: webhook-jwt-verification
 description: /api/webhook verified Plaid's ES256 JWT (pinned alg, signature, body hash, five-minute freshness) before trusting the body, with budgeted key fetches, a TTL-stale-key fallback, and a uniform 401
-tags: [verifyPlaidWebhook, precheckPlaidWebhook, src/lib/webhook.ts, Plaid-Verification, UNVERIFIED, keyCache]
+tags:
+  [
+    verifyPlaidWebhook,
+    precheckPlaidWebhook,
+    src/lib/webhook.ts,
+    Plaid-Verification,
+    UNVERIFIED,
+    keyCache,
+  ]
 date: 2026-09-04
 ---
 

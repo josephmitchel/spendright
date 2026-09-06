@@ -45,10 +45,11 @@ export async function GET(req: NextRequest) {
 
     // The account's total row count. A separate query rather than a window
     // function, which returns nothing on an empty page.
-    const [{ total }] = await db
+    const [countRow] = await db
       .select({ total: sql<number>`count(*)::int` })
       .from(transactions)
       .where(eq(transactions.accountId, accountId));
+    const total = countRow?.total ?? 0;
 
     return NextResponse.json({ transactions: rows, total, limit, offset });
   } catch (err) {

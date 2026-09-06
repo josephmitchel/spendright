@@ -1,7 +1,14 @@
 ---
 name: category-kind-sign-rule
 description: Card categories attach to spend rows (amount >= 0) and global rate-less credit categories to inflow rows (amount < 0), enforced by a DB check constraint
-tags: [isInflowAmount, src/lib/amounts.ts, transactions_category_kind_sign_ck, credit_categories, card_categories]
+tags:
+  [
+    isInflowAmount,
+    src/lib/amounts.ts,
+    transactions_category_kind_sign_ck,
+    credit_categories,
+    card_categories,
+  ]
 date: 2026-09-04
 ---
 

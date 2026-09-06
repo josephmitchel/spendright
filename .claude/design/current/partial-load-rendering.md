@@ -1,7 +1,18 @@
 ---
 name: partial-load-rendering
 description: Each endpoint settles independently, whatever arrived is rendered, failures show beside it with Retry, and a failed read is never evidence of an empty state
-tags: [Promise.allSettled, joinedFailureMessage, src/lib/http.ts, HomeClient refresh, useAccountData, useTransactionPage, loaded, itemsLoaded, Retry]
+tags:
+  [
+    Promise.allSettled,
+    joinedFailureMessage,
+    src/lib/http.ts,
+    HomeClient refresh,
+    useAccountData,
+    useTransactionPage,
+    loaded,
+    itemsLoaded,
+    Retry,
+  ]
 date: 2026-09-04
 ---
 

@@ -15,7 +15,9 @@ import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { plaidErrorBody, publicErrorMessage } from '@/lib/errors';
 import { loggableError } from '@/lib/log';
+import { globalSingleton } from '@/lib/global-singleton';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
+import { serializeByKey } from '@/lib/serialize';
 import { MAX_SKIPPED_SYNCS, skippedItemErrorMessage } from '@/lib/sync-messages';
 
 function toTransactionRow(txn: PlaidTransaction, itemId: string) {
@@ -57,26 +59,11 @@ export interface SyncItemOptions {
 // syncItem calls on one item would race the cursor write, and syncItem has two
 // entry points (syncAllItems and the exchange route's inline initial sync), so
 // the lock lives here, covering every caller by construction, rather than in
-// any one of them. Held on globalThis for the same reason as the sync-all
-// guard: the bundler emits separate copies of this module per import graph.
-// Design: scheduled-sync.
-const globalForSyncItem = globalThis as unknown as {
-  syncItemTails?: Map<string, Promise<void>>;
-};
+// any one of them. Design: scheduled-sync.
+const syncItemTails = globalSingleton('syncItemTails', () => new Map<string, Promise<void>>());
 
 export function syncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
-  const tails = (globalForSyncItem.syncItemTails ??= new Map<string, Promise<void>>());
-  const previous = tails.get(item.itemId) ?? Promise.resolve();
-  const run = previous.then(() => runSyncItem(item, options));
-  const tail = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  tails.set(item.itemId, tail);
-  tail.then(() => {
-    if (tails.get(item.itemId) === tail) tails.delete(item.itemId);
-  });
-  return run;
+  return serializeByKey(syncItemTails, item.itemId, () => runSyncItem(item, options));
 }
 
 // Records a sync failure on the item row and returns the user-facing message.

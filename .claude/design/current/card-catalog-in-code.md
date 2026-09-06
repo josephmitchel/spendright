@@ -1,7 +1,15 @@
 ---
 name: card-catalog-in-code
 description: Cards and their categories are defined in a seed file and reconciled into Postgres by a script; there is no UI for editing them
-tags: [src/db/cards.seed.ts, scripts/seed-cards.ts, npm run seed:cards, cards, card_categories, credit_categories]
+tags:
+  [
+    src/db/cards.seed.ts,
+    scripts/seed-cards.ts,
+    npm run seed:cards,
+    cards,
+    card_categories,
+    credit_categories,
+  ]
 date: 2026-09-04
 ---
 

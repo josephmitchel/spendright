@@ -1,7 +1,15 @@
 ---
 name: not-ready-poll-budgets
 description: Plaid's not-ready state is polled 10 times from sync-all (manual or scheduled), 3 times from the link route, 2s apart
-tags: [syncTransactions, DEFAULT_NOT_READY_RETRIES, NOT_READY_DELAY_MS, src/lib/plaid.ts, notReadyRetries, syncAllItems]
+tags:
+  [
+    syncTransactions,
+    DEFAULT_NOT_READY_RETRIES,
+    NOT_READY_DELAY_MS,
+    src/lib/plaid.ts,
+    notReadyRetries,
+    syncAllItems,
+  ]
 date: 2026-09-04
 ---
 

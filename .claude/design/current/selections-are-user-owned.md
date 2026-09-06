@@ -1,7 +1,14 @@
 ---
 name: selections-are-user-owned
 description: Sync never overwrites a user's category selection; the only exception is a sign flip on a modified transaction
-tags: [syncItem, src/lib/sync.ts, onConflictDoUpdate, transactions.card_category_id, transactions.credit_category_id]
+tags:
+  [
+    syncItem,
+    src/lib/sync.ts,
+    onConflictDoUpdate,
+    transactions.card_category_id,
+    transactions.credit_category_id,
+  ]
 date: 2026-09-04
 ---
 

@@ -37,7 +37,9 @@ export function decrypt(data: string): string {
       { status: 500, code: 'BAD_CONFIG' },
     );
   }
-  const [ivHex, authTagHex, encryptedHex] = data.split(':');
+  // The pattern above guarantees all three parts; the defaults satisfy the
+  // checked index access.
+  const [ivHex = '', authTagHex = '', encryptedHex = ''] = data.split(':');
   try {
     const decipher = crypto.createDecipheriv('aes-256-gcm', getKey(), Buffer.from(ivHex, 'hex'));
     decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));

@@ -14,6 +14,12 @@ export interface PlaidErrorFields {
   request_id?: string;
 }
 
+// The closed union stored on items.error: a picked Plaid error body, or the
+// { message } shape the sync bookkeeping writes. Typed on the jsonb column so
+// the writers (src/lib/sync.ts) and the client's item-error rendering cannot
+// drift apart silently. Design: typed-api-contract.
+export type ItemErrorBody = PlaidErrorFields | { message: string };
+
 export function pickPlaidErrorFields(data: PlaidErrorFields): PlaidErrorFields {
   return {
     error_type: data.error_type,
