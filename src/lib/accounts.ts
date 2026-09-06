@@ -3,6 +3,7 @@ import type { AccountBase } from 'plaid';
 import { accounts, type CardRow } from '@/db/schema';
 import { matchCard } from '@/lib/cards';
 import { db } from '@/lib/db';
+import { logError } from '@/lib/log';
 
 // The handle drizzle passes to a db.transaction callback.
 export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -71,7 +72,7 @@ export async function storeAccounts(
         await upsertAccount(tx, plaidAccount, itemId, cardList);
       });
     } catch (err) {
-      console.error(
+      logError(
         `Failed to store account ${plaidAccount.account_id} for item ${itemId} — continuing:`,
         err,
       );

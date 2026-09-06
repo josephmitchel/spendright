@@ -7,22 +7,26 @@ import {
   type TransactionRow,
 } from '@/db/schema';
 import type { DbTransaction } from '@/lib/accounts';
-import { isInflowAmount } from '@/lib/amounts';
+import { isInflowAmount, type CategoryKind } from '@/lib/amounts';
 import { db } from '@/lib/db';
-import { PublicError } from '@/lib/errors';
-
-export type CategoryKind = 'card' | 'credit';
+import { PublicError } from '@/lib/public-error';
 
 // Every column except the raw Plaid payload — the single definition of which
 // transaction columns are served, shared by every query that projects
-// transaction rows toward the client. A column that must not be served is
-// excluded here and nowhere else. Design: raw-plaid-payload-stored-not-served.
-const { plaidTransaction: _plaidTransaction, ...returnedColumns } = getTableColumns(transactions);
-export const servedTransactionColumns = returnedColumns;
+// transaction rows toward the client. The exclusion is made once, here, in
+// the runtime pick; the served row type below is derived from it, so a column
+// can never be excluded at the type level but still served (or vice versa).
+// Design: raw-plaid-payload-stored-not-served.
+const { plaidTransaction: _plaidTransaction, ...servedTransactionColumns } =
+  getTableColumns(transactions);
+export { servedTransactionColumns };
 
 // The updated row with both joined category names; the kind not written is
 // null by the sign constraint, so no second lookup is made.
-export type CategorizedTransaction = Omit<TransactionRow, 'plaidTransaction'> & {
+export type CategorizedTransaction = Pick<
+  TransactionRow,
+  keyof typeof servedTransactionColumns & keyof TransactionRow
+> & {
   cardCategoryName: string | null;
   creditCategoryName: string | null;
 };
@@ -139,7 +143,7 @@ export async function setTransactionCategory(
       .update(transactions)
       .set({ ...pick.updateSet, updatedAt: sql`now()` })
       .where(eq(transactions.transactionId, transactionId))
-      .returning(returnedColumns);
+      .returning(servedTransactionColumns);
     if (!updated) {
       // Unreachable while the row lock is held; satisfies the checked index.
       throw new PublicError('Transaction not found', { status: 404, code: 'NOT_FOUND' });

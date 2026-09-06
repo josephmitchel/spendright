@@ -8,9 +8,10 @@
 // components must never hand-declare their own row mirrors. Type-only
 // imports — nothing here reaches a bundle.
 // Design: typed-api-contract, single-response-reader.
-import type { AccountRow, CreditCategoryRow, ItemRow } from '@/db/schema';
+import type { AccountRow, CreditCategoryRow } from '@/db/schema';
 import type { CardWithCategories } from '@/lib/card-catalog';
 import type { CategorizedTransaction } from '@/lib/categories';
+import type { PublicItemRow } from '@/lib/items';
 import type { LinkResult } from '@/lib/link';
 import type { SyncAllResult } from '@/lib/sync-all';
 
@@ -25,8 +26,10 @@ type Serialized<T> = T extends Date
       ? { [K in keyof T]: Serialized<T[K]> }
       : T;
 
-// The encrypted access token is never served. Design: access-tokens-encrypted.
-type PublicItem = Omit<ItemRow, 'accessToken'>;
+// The encrypted access token is never served; the type is derived from the
+// runtime column pick in src/lib/items.ts, never a separate Omit that could
+// drift from it. Design: access-tokens-encrypted.
+type PublicItem = PublicItemRow;
 
 export type ApiAccount = Serialized<AccountRow>;
 export type ApiItem = Serialized<PublicItem>;

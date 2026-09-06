@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLoadProtocol } from '@/components/useLoadProtocol';
 import type { AccountsResponse, ApiAccount, ApiItem, ItemsResponse } from '@/lib/api-types';
-import { readJson, settleReads } from '@/lib/http';
+import { readJson } from '@/lib/http';
 
 // The items + accounts half of the home page's data, re-read on demand and on
 // a visibility-gated poll: the hourly scheduled sync mutates items.error and
@@ -12,45 +12,34 @@ import { readJson, settleReads } from '@/lib/http';
 export function useHomeData() {
   const [itemList, setItemList] = useState<ApiItem[]>([]);
   const [accountList, setAccountList] = useState<ApiAccount[]>([]);
-  // The `loaded` flags deliberately differ in stickiness: `items` follows the
-  // latest refresh, because the "No institutions" message needs current
-  // evidence, while `accounts` stays true once any refresh succeeded, so a
-  // later failed refresh keeps rendering the rows that did load.
-  // Design: partial-load-rendering.
-  const { settled, setSettled, error, setError, loaded, setLoaded, clearError } = useLoadProtocol({
-    items: false,
-    accounts: false,
-  });
+  // `accounts` is sticky: a later failed refresh keeps rendering the rows
+  // that did load. `items` follows the latest refresh, because the "No
+  // institutions" message needs current evidence. Design: partial-load-rendering.
+  const { settled, error, loaded, clearError, load } = useLoadProtocol(
+    { items: false, accounts: false },
+    { stickyKeys: ['accounts'] },
+  );
 
-  // Generation counter: a refresh superseded by a later one writes nothing.
-  const refreshSeq = useRef(0);
-  const refresh = useCallback(async () => {
-    const seq = ++refreshSeq.current;
-    // Design: partial-load-rendering — each endpoint settles on its own.
-    const {
-      results,
-      succeeded,
-      error: failureMessage,
-    } = await settleReads({
-      items: fetch('/api/items').then((res) =>
-        readJson<ItemsResponse>(res, 'Failed to load institutions'),
+  const refresh = useCallback(
+    () =>
+      load(
+        {
+          items: fetch('/api/items').then((res) =>
+            readJson<ItemsResponse>(res, 'Failed to load institutions'),
+          ),
+          accounts: fetch('/api/accounts').then((res) =>
+            readJson<AccountsResponse>(res, 'Failed to load accounts'),
+          ),
+        },
+        (results) => {
+          if (results.items.status === 'fulfilled') setItemList(results.items.value.items);
+          if (results.accounts.status === 'fulfilled') {
+            setAccountList(results.accounts.value.accounts);
+          }
+        },
       ),
-      accounts: fetch('/api/accounts').then((res) =>
-        readJson<AccountsResponse>(res, 'Failed to load accounts'),
-      ),
-    });
-    if (seq !== refreshSeq.current) return;
-    if (results.items.status === 'fulfilled') setItemList(results.items.value.items ?? []);
-    if (results.accounts.status === 'fulfilled') {
-      setAccountList(results.accounts.value.accounts ?? []);
-    }
-    setLoaded((previous) => ({
-      items: succeeded.items,
-      accounts: previous.accounts || succeeded.accounts,
-    }));
-    setError(failureMessage);
-    setSettled(true);
-  }, [setError, setLoaded, setSettled]);
+    [load],
+  );
 
   // Wrapped so react-hooks/set-state-in-effect can see the async boundary.
   useEffect(() => {

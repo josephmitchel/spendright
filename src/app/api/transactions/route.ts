@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import type { TransactionsPayload } from '@/lib/api-types';
 import { badRequest, errorResponse } from '@/lib/errors';
 import { listTransactions } from '@/lib/transactions';

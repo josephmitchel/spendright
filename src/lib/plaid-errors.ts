@@ -20,20 +20,28 @@ export interface PlaidErrorFields {
 // drift apart silently. Design: typed-api-contract.
 export type ItemErrorBody = PlaidErrorFields | { message: string };
 
+// The input type is a cast over an unvalidated response body, so each value
+// is type-checked at runtime as well as picked: a non-string here would be
+// stored on items.error and rendered as a React child.
+const asString = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
+
 export function pickPlaidErrorFields(data: PlaidErrorFields): PlaidErrorFields {
   return {
-    error_type: data.error_type,
-    error_code: data.error_code,
-    error_message: data.error_message,
-    display_message: data.display_message,
-    request_id: data.request_id,
+    error_type: asString(data.error_type),
+    error_code: asString(data.error_code),
+    error_message: asString(data.error_message),
+    display_message: data.display_message === null ? null : asString(data.display_message),
+    request_id: asString(data.request_id),
   };
 }
 
 // Plaid's own wording when it offered any, else the caller's fallback.
+// Guarded per field: stored bodies predating the runtime checks above may
+// hold non-strings, and this renders straight into the page.
 export function plaidErrorMessage(
   body: { display_message?: string | null; error_message?: string },
   fallback: string,
 ): string {
-  return body.display_message || body.error_message || fallback;
+  return asString(body.display_message) || asString(body.error_message) || fallback;
 }

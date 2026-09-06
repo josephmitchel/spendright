@@ -1,5 +1,6 @@
 // Client-side response reader; the only way components read API bodies.
 // Design: single-response-reader. No server imports — bundled into client code.
+import { logError } from '@/lib/log';
 
 // The one rendering of a caught client-side failure: the Error's own message
 // (readJson only throws messages that came through the server's allow-listed
@@ -14,7 +15,12 @@ export function errorMessage(err: unknown, fallback: string): string {
 // is asserted, not validated: the server is this same app.
 export async function readJson<T>(res: Response, failureMessage: string): Promise<T> {
   const data = await res.json().catch(() => undefined);
-  if (!res.ok) throw new Error(data?.error?.message || failureMessage);
+  if (!res.ok) {
+    // Checked, not just truthy: a non-string here would stringify into a
+    // nonsense Error message instead of the fallback.
+    const message: unknown = data?.error?.message;
+    throw new Error(typeof message === 'string' && message ? message : failureMessage);
+  }
   // `== null`: a body of JSON `null` is unreadable too, not a good body.
   if (data == null) throw new Error(`${failureMessage}: unreadable response`);
   return data as T;
@@ -50,7 +56,7 @@ export async function settleReads<T extends Record<string, unknown>>(
     results[key] = outcome as (typeof results)[typeof key];
     succeeded[key] = outcome.status === 'fulfilled';
     if (outcome.status === 'rejected') {
-      console.error(outcome.reason);
+      logError('read failed:', outcome.reason);
       messages.push(errorMessage(outcome.reason, 'Failed to load'));
     }
   });

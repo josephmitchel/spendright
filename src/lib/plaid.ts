@@ -1,16 +1,17 @@
 import {
-  AccountBase,
+  type AccountBase,
   Configuration,
   CountryCode,
-  ItemWithConsentFields,
-  LinkTokenCreateRequest,
+  type ItemWithConsentFields,
+  type LinkTokenCreateRequest,
   PlaidApi,
   PlaidEnvironments,
   Products,
-  RemovedTransaction,
-  Transaction as PlaidTransaction,
+  type RemovedTransaction,
+  type Transaction as PlaidTransaction,
 } from 'plaid';
-import { PublicError } from '@/lib/errors';
+import { globalSingleton } from '@/lib/global-singleton';
+import { PublicError } from '@/lib/public-error';
 
 // Validated: an unknown PLAID_ENV indexes to undefined, which the SDK treats
 // as "unset" and silently defaults to production. Design: config-validated-not-assumed
@@ -45,25 +46,27 @@ function getCredential(name: 'PLAID_CLIENT_ID' | 'PLAID_SECRET'): string {
   return value;
 }
 
-// Built once per process: the configuration is immutable after validation,
-// so per-call construction only re-allocates the SDK client. If validation
-// throws, nothing is cached and the next call re-validates.
-let cachedClient: PlaidApi | null = null;
-
+// Built once per process, through globalSingleton like every other
+// per-process value (module scope is per module copy here — see
+// src/lib/global-singleton.ts). If validation throws, globalSingleton caches
+// nothing and the next call re-validates.
 function getClient(): PlaidApi {
-  if (cachedClient) return cachedClient;
-  const configuration = new Configuration({
-    basePath: getBasePath(),
-    baseOptions: {
-      headers: {
-        'PLAID-CLIENT-ID': getCredential('PLAID_CLIENT_ID'),
-        'PLAID-SECRET': getCredential('PLAID_SECRET'),
-        'Plaid-Version': '2020-09-14',
-      },
-    },
-  });
-  cachedClient = new PlaidApi(configuration);
-  return cachedClient;
+  return globalSingleton(
+    'plaidClient',
+    () =>
+      new PlaidApi(
+        new Configuration({
+          basePath: getBasePath(),
+          baseOptions: {
+            headers: {
+              'PLAID-CLIENT-ID': getCredential('PLAID_CLIENT_ID'),
+              'PLAID-SECRET': getCredential('PLAID_SECRET'),
+              'Plaid-Version': '2020-09-14',
+            },
+          },
+        }),
+      ),
+  );
 }
 
 // Comma-separated env list: entries trimmed, blanks dropped, and the fallback

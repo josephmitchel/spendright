@@ -6,6 +6,14 @@
 // Design: plaid-error-log-redaction.
 import { pickPlaidErrorFields, type PlaidErrorFields } from '@/lib/plaid-errors';
 
+// The one way a caught error is logged. Redaction is unconditional rather
+// than a per-call-site habit: whether a site can see a Plaid error is a
+// property of today's call graph, not anything checked, so every site pays
+// the (free) loggableError pass. Design: plaid-error-log-redaction.
+export function logError(message: string, err: unknown): void {
+  console.error(message, loggableError(err));
+}
+
 export function loggableError(err: unknown): unknown {
   const axiosErr = err as {
     isAxiosError?: boolean;

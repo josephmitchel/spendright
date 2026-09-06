@@ -1,5 +1,5 @@
 import { eq, inArray, sql } from 'drizzle-orm';
-import { AccountBase, Transaction as PlaidTransaction } from 'plaid';
+import { type AccountBase, type Transaction as PlaidTransaction } from 'plaid';
 import {
   accounts,
   cardCategories,
@@ -15,7 +15,7 @@ import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { plaidErrorBody, publicErrorMessage } from '@/lib/errors';
 import { globalSingleton } from '@/lib/global-singleton';
-import { loggableError } from '@/lib/log';
+import { logError } from '@/lib/log';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
 import { serializeByKey } from '@/lib/serialize';
 import { MAX_SKIPPED_SYNCS, skippedItemErrorMessage } from '@/lib/sync-messages';
@@ -87,7 +87,7 @@ export async function recordSyncFailure(
       .set({ error: plaidError ?? { message }, updatedAt: sql`now()` })
       .where(eq(items.itemId, itemId));
   } catch (writeErr) {
-    console.error(`Could not record the sync failure for item ${itemId}:`, writeErr);
+    logError(`Could not record the sync failure for item ${itemId}:`, writeErr);
   }
   return message;
 }
@@ -298,9 +298,9 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
     try {
       plaidAccounts = await getAccounts(accessToken);
     } catch (err) {
-      console.error(
+      logError(
         `sync ${item.itemId}: accountsGet failed — syncing without an account refresh:`,
-        loggableError(err),
+        err,
       );
     }
     if (plaidAccounts.length > 0) {
@@ -315,14 +315,21 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
     notReadyRetries: options?.notReadyRetries,
   });
 
-  let skipped = 0;
-  let outcome = { consecutiveSkippedSyncs: 0, dropped: false };
-  await db.transaction(async (tx) => {
+  // db.transaction returns the callback's value, so the results come out as
+  // the return value — no closure mutation, and no placeholder that a future
+  // unreached assignment could leave looking like a real clean-sync outcome.
+  const { skipped, outcome } = await db.transaction(async (tx) => {
     const upserts = [...added, ...modified];
     const knownAccountIds = await knownAccountIdsFor(tx, upserts);
     // The carry must resolve before the pending rows are deleted below.
     const carried = await resolveCarriedSelections(tx, added);
-    skipped = await upsertTransactions(tx, item.itemId, upserts, knownAccountIds, carried);
+    const skippedCount = await upsertTransactions(
+      tx,
+      item.itemId,
+      upserts,
+      knownAccountIds,
+      carried,
+    );
 
     const removedIds = removed
       .map((r) => r.transaction_id)
@@ -331,7 +338,10 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
       await tx.delete(transactions).where(inArray(transactions.transactionId, removedIds));
     }
 
-    outcome = await recordSyncOutcome(tx, item.itemId, skipped, cursor);
+    return {
+      skipped: skippedCount,
+      outcome: await recordSyncOutcome(tx, item.itemId, skippedCount, cursor),
+    };
   });
 
   // On a drop this log line is the only lasting record of what was lost.

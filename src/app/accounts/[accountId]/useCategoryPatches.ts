@@ -7,8 +7,7 @@ import type {
   ApiTransaction,
   TransactionPatchResponse,
 } from '@/lib/api-types';
-// Type-only, so the server module never reaches the client bundle.
-import type { CategoryKind } from '@/lib/categories';
+import type { CategoryKind } from '@/lib/amounts';
 import { errorMessage, readJson } from '@/lib/http';
 import { serializeByKey } from '@/lib/serialize';
 

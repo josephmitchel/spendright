@@ -1,3 +1,4 @@
+// @ts-check
 // `next start` runs instrumentation.ts — the loopback bind assertion and the
 // sync scheduler — lazily, on the first incoming request (outside dev,
 // NextServer.prepare() is a no-op and register() waits for handleRequest).
@@ -42,7 +43,10 @@ const args = process.argv.slice(2);
 let port = Number(process.env.PORT) || 3000;
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
-  if (arg === '-p' || arg === '--port') port = Number(args[i + 1]);
+  if (arg === undefined) continue;
+  // A missing value (`-p` as the last arg) parses to NaN; Next rejects that
+  // form itself and exits, which stops the wrapper too.
+  if (arg === '-p' || arg === '--port') port = Number(args[i + 1] ?? NaN);
   else if (arg.startsWith('--port=')) port = Number(arg.slice('--port='.length));
   else if (arg.startsWith('-p') && !arg.startsWith('--')) port = Number(arg.slice('-p'.length));
 }
@@ -54,7 +58,7 @@ const child = spawn(process.execPath, [nextBin, 'start', ...args, '-H', '127.0.0
   stdio: 'inherit',
 });
 child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 1)));
-for (const signal of ['SIGINT', 'SIGTERM']) {
+for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
   process.on(signal, () => child.kill(signal));
 }
 

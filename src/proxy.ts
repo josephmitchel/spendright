@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { jsonError } from '@/lib/errors';
 
 // SpendRight is a single-user tool with no authentication on any route, so

@@ -10,6 +10,7 @@
     "postbuild": "chmod -R go-rwx .next",
     "start": "node scripts/start.mjs",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",

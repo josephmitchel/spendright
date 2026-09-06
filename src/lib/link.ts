@@ -6,7 +6,7 @@ import { loadCardCatalog } from '@/lib/card-catalog';
 import { encrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { publicErrorMessage } from '@/lib/errors';
-import { loggableError } from '@/lib/log';
+import { logError } from '@/lib/log';
 import { exchangePublicToken, getAccounts, getInstitutionById, getItem } from '@/lib/plaid';
 import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
 
@@ -32,7 +32,7 @@ async function fetchInstitution(
   try {
     return await getInstitutionById(institutionId);
   } catch (err) {
-    console.error('institutionsGetById failed (continuing without metadata):', loggableError(err));
+    logError('institutionsGetById failed (continuing without metadata):', err);
     return null;
   }
 }
@@ -40,8 +40,10 @@ async function fetchInstitution(
 // Persists the freshly exchanged token before anything else can fail: from
 // here the item is visible locally (it can be synced or removed), so a
 // transient failure in the enrichment calls below can no longer orphan a
-// live Plaid Item behind a discarded token. Design: token-stored-before-enrichment.
-async function storeItemShell(itemId: string, accessToken: string): Promise<void> {
+// live Plaid Item behind a discarded token. Returns the ciphertext it wrote,
+// which storeItem below re-writes verbatim — the token is encrypted exactly
+// once per link. Design: token-stored-before-enrichment.
+async function storeItemShell(itemId: string, accessToken: string): Promise<string> {
   const encrypted = encrypt(accessToken);
   await db
     .insert(items)
@@ -50,6 +52,7 @@ async function storeItemShell(itemId: string, accessToken: string): Promise<void
       target: items.itemId,
       set: { accessToken: encrypted, updatedAt: sql`now()` },
     });
+  return encrypted;
 }
 
 // Upserts the item row and returns it as written. The full row comes back via
@@ -58,13 +61,13 @@ async function storeItemShell(itemId: string, accessToken: string): Promise<void
 // Design: initial-sync-reported-not-thrown.
 async function storeItem(
   itemId: string,
-  accessToken: string,
+  encryptedAccessToken: string,
   plaidItem: PlaidItem,
   institution: Institution | null,
 ): Promise<ItemRow> {
   const itemValues = {
     itemId,
-    accessToken: encrypt(accessToken),
+    accessToken: encryptedAccessToken,
     institutionId: plaidItem.institution_id ?? null,
     institutionName: institution?.name ?? plaidItem.institution_name ?? null,
     institutionLogo: institution?.logo ?? null,
@@ -121,7 +124,7 @@ async function runInitialSync(
     const result = await syncItem(storedItem, { plaidAccounts, notReadyRetries: 3 });
     return { result, error: null };
   } catch (err) {
-    console.error(`Initial sync failed for item ${storedItem.itemId}:`, loggableError(err));
+    logError(`Initial sync failed for item ${storedItem.itemId}:`, err);
     const error = await recordSyncFailure(
       storedItem.itemId,
       err,
@@ -151,11 +154,15 @@ export async function linkItem(publicToken: string): Promise<LinkResult> {
   const { accessToken, itemId } = await exchangePublicToken(publicToken);
   // Stored immediately: everything after this line may fail without
   // orphaning the Plaid Item. Design: token-stored-before-enrichment.
-  await storeItemShell(itemId, accessToken);
-  const plaidItem = await getItem(accessToken);
-  const plaidAccounts = await getAccounts(accessToken);
+  const encryptedAccessToken = await storeItemShell(itemId, accessToken);
+  // Independent Plaid reads, in parallel: this route runs the initial sync
+  // inline and is the latency-sensitive one. Design: inline-initial-sync.
+  const [plaidItem, plaidAccounts] = await Promise.all([
+    getItem(accessToken),
+    getAccounts(accessToken),
+  ]);
   const institution = await fetchInstitution(plaidItem.institution_id);
-  const storedItem = await storeItem(itemId, accessToken, plaidItem, institution);
+  const storedItem = await storeItem(itemId, encryptedAccessToken, plaidItem, institution);
 
   const cardList = await loadCardCatalog(db);
   // Failures are reported, not thrown. This is the batch's only store pass;

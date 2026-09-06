@@ -1,9 +1,7 @@
 'use client';
 
 import type { ApiCard, ApiCreditCategory, ApiTransaction } from '@/lib/api-types';
-import { isInflowAmount } from '@/lib/amounts';
-// Type-only, so the server module never reaches the client bundle.
-import type { CategoryKind } from '@/lib/categories';
+import { isInflowAmount, type CategoryKind } from '@/lib/amounts';
 
 // One picker for both category kinds. Placeholders are disabled+hidden: a
 // transaction keeps a category once one is assigned (design: no-category-clear).
@@ -65,7 +63,10 @@ export function TransactionTable({
   transactionList: ApiTransaction[];
   // Design: stale-lists-disable-editing.
   categoriesMayBeStale: boolean;
-  onSelectCategory: (row: ApiTransaction, kind: CategoryKind, categoryId: number) => void;
+  // Async so the type says what the handler is; the returned promise never
+  // rejects (the patch hook folds failures into its own error state) and is
+  // deliberately not awaited here.
+  onSelectCategory: (row: ApiTransaction, kind: CategoryKind, categoryId: number) => Promise<void>;
 }) {
   const rateHeader = card.type === 'points' ? 'Multiplier' : 'Cashback %';
   return (
@@ -113,7 +114,7 @@ export function TransactionTable({
                     value={selectedId}
                     valueName={selectedName}
                     options={options}
-                    onSelect={(id) => onSelectCategory(txn, kind, id)}
+                    onSelect={(id) => void onSelectCategory(txn, kind, id)}
                     disabled={categoriesMayBeStale}
                   />
                 ) : (

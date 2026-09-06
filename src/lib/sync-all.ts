@@ -1,7 +1,7 @@
 import { items } from '@/db/schema';
 import { db } from '@/lib/db';
 import { globalSingleton } from '@/lib/global-singleton';
-import { loggableError } from '@/lib/log';
+import { logError } from '@/lib/log';
 import { singleFlight } from '@/lib/serialize';
 import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
 
@@ -32,7 +32,7 @@ async function runSyncAll(): Promise<SyncAllResult> {
     try {
       results.push(await syncItem(item));
     } catch (err) {
-      console.error(`Sync failed for item ${item.itemId}:`, loggableError(err));
+      logError(`Sync failed for item ${item.itemId}:`, err);
       const message = await recordSyncFailure(
         item.itemId,
         err,

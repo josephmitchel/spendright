@@ -6,13 +6,14 @@ import './load-env';
 
 import { and, eq, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { AnyPgColumn } from 'drizzle-orm/pg-core';
+import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
 import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
 import { loadCardCatalog } from '../src/lib/card-catalog';
 import { matchCard } from '../src/lib/cards';
 import { requireDatabaseUrl } from '../src/lib/env';
+import { logError } from '../src/lib/log';
 
 // The one skeleton behind every seed uniqueness check: keys are normalized
 // the way matchCard normalizes (trim + lowercase), so a blank or case-variant
@@ -86,6 +87,16 @@ function assertSeedIsValid(): void {
 // schemaless client, not src/lib/db's schema-typed one).
 type SeedTransaction = Parameters<Parameters<NodePgDatabase['transaction']>[0]>[0];
 
+// The seed tables retireMissing knows, each paired with its key column here
+// and nowhere else — the pairing is a single declaration, so a call site can
+// never hand the helper a column from the wrong table.
+type SeedTable = typeof cards | typeof cardCategories | typeof creditCategories;
+const retireKeyColumns = new Map<PgTable, AnyPgColumn>([
+  [cards, cards.slug],
+  [cardCategories, cardCategories.name],
+  [creditCategories, creditCategories.name],
+]);
+
 // The one implementation of "retire what left the seed file": stamps
 // retired_at on every live row in scope whose key column is no longer among
 // `keptKeys`, and logs what it retired. An empty kept list retires everything
@@ -94,12 +105,14 @@ type SeedTransaction = Parameters<Parameters<NodePgDatabase['transaction']>[0]>[
 // Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
 async function retireMissing(
   tx: SeedTransaction,
-  table: typeof cards | typeof cardCategories | typeof creditCategories,
-  keyColumn: AnyPgColumn,
+  table: SeedTable,
   keptKeys: string[],
   label: string,
   scope?: SQL,
 ): Promise<void> {
+  const keyColumn = retireKeyColumns.get(table);
+  // Unreachable while SeedTable and the map list the same tables.
+  if (!keyColumn) throw new Error('retireMissing: no key column declared for this table');
   const retired = await tx
     .update(table)
     .set({ retiredAt: sql`now()`, updatedAt: sql`now()` })
@@ -159,7 +172,6 @@ async function upsertCards(tx: SeedTransaction): Promise<number> {
     await retireMissing(
       tx,
       cardCategories,
-      cardCategories.name,
       seed.categories.map((c) => c.name),
       `${seed.slug}: retired categories no longer in seed`,
       eq(cardCategories.cardId, card.id),
@@ -184,7 +196,6 @@ async function upsertCreditCategories(tx: SeedTransaction): Promise<void> {
   await retireMissing(
     tx,
     creditCategories,
-    creditCategories.name,
     creditCategorySeeds,
     'retired credit categories no longer in seed',
   );
@@ -243,7 +254,6 @@ async function main() {
       await retireMissing(
         tx,
         cards,
-        cards.slug,
         cardSeeds.map((s) => s.slug),
         'retired cards no longer in seed',
       );
@@ -261,7 +271,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((err: unknown) => {
+  logError('seed failed:', err);
   process.exit(1);
 });

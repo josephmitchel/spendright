@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { loggableError } from '@/lib/log';
+import { logError } from '@/lib/log';
 import { pickPlaidErrorFields, plaidErrorMessage, type PlaidErrorFields } from '@/lib/plaid-errors';
+import { PublicError } from '@/lib/public-error';
 
 // The single constructor of the `{ error: { code, message } }` envelope, for
 // thrown paths (errorResponse below) and returned paths (routes) alike.
@@ -21,20 +22,10 @@ export function badRequest(message: string): NextResponse {
 // Design: error-message-allow-list.
 export function plaidErrorBody(err: unknown): PlaidErrorFields | null {
   const data = (err as { response?: { data?: PlaidErrorFields } })?.response?.data;
-  if (!data?.error_code) return null;
+  // typeof-checked, not just truthy: the cast above is over an unvalidated
+  // response, and pickPlaidErrorFields type-checks each value it copies.
+  if (typeof data?.error_code !== 'string' || !data.error_code) return null;
   return pickPlaidErrorFields(data);
-}
-
-// An error whose message is safe to show to the user. Design:
-// error-message-allow-list. Never construct one from a caught error's message.
-export class PublicError extends Error {
-  status: number;
-  code: string;
-  constructor(message: string, options?: { status?: number; code?: string }) {
-    super(message);
-    this.status = options?.status ?? 500;
-    this.code = options?.code ?? 'INTERNAL';
-  }
 }
 
 // Same allow-list as errorResponse, for callers that store the message
@@ -74,7 +65,7 @@ export function errorResponse(err: unknown): NextResponse {
 
   // Redacted: a raw Plaid error carries the client secret and the
   // decrypted access token in its axios config. Design: plaid-error-log-redaction.
-  console.error(loggableError(err));
+  logError('request failed:', err);
 
   const plaidError = plaidErrorBody(err);
   if (plaidError) {

@@ -5,4 +5,4 @@ tags: [src/lib/crypto.ts, encrypt, decrypt, items.access_token, GET /api/items]
 date: 2026-09-04
 ---
 
-Tokens are stored as `iv:tag:ciphertext` hex. `GET /api/items` strips the column. Rotating the key invalidates every stored token; the decrypt path names that condition explicitly (see [[config-validated-not-assumed]]).
+Tokens are stored as `iv:tag:ciphertext` hex. `GET /api/items` strips the column via `publicItemColumns` in `src/lib/items.ts` — the single definition of the served item columns, from which the served type is derived ([[typed-api-contract]], 2026-09-06). A link encrypts the token exactly once: `storeItemShell` returns the ciphertext it wrote and `storeItem` re-writes it verbatim ([[token-stored-before-enrichment]]). Rotating the key invalidates every stored token; the decrypt path names that condition explicitly (see [[config-validated-not-assumed]]).

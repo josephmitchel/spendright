@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { items } from '@/db/schema';
 import type { ItemDeleteResponse } from '@/lib/api-types';
 import { decrypt } from '@/lib/crypto';

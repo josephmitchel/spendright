@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { PublicError } from '@/lib/errors';
+import { logError } from '@/lib/log';
+import { PublicError } from '@/lib/public-error';
 
 // 64 hex characters = the 32 bytes AES-256 requires.
 const ENCRYPTION_KEY_PATTERN = /^[0-9a-fA-F]{64}$/;
@@ -47,7 +48,7 @@ export function decrypt(data: string): string {
   } catch (err) {
     if (err instanceof PublicError) throw err;
     // GCM auth failure = wrong key. Logged, never echoed.
-    console.error('decrypt failed:', err);
+    logError('decrypt failed:', err);
     throw new PublicError(
       'Could not decrypt a stored value — ENCRYPTION_KEY is not the key it was encrypted with. Rotating it invalidates every stored Plaid access token: restore the previous key, or remove the affected institutions and link them again',
       { status: 500, code: 'BAD_CONFIG' },

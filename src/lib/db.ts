@@ -1,8 +1,8 @@
-import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from '@/db/schema';
 import { requireDatabaseUrl } from '@/lib/env';
-import { PublicError } from '@/lib/errors';
+import { PublicError } from '@/lib/public-error';
 import { globalSingleton } from '@/lib/global-singleton';
 
 // The shared guard from src/lib/env.ts, rethrown as PublicError so the

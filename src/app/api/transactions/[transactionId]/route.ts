@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import type { TransactionPatchPayload } from '@/lib/api-types';
-import { setTransactionCategory, type CategoryKind } from '@/lib/categories';
+import type { CategoryKind } from '@/lib/amounts';
+import { setTransactionCategory } from '@/lib/categories';
 import { badRequest, errorResponse, jsonError, pgErrorCode } from '@/lib/errors';
 
 // Postgres serial ids are int32; anything past that cannot exist.

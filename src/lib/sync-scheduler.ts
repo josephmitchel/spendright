@@ -1,5 +1,5 @@
 import { globalSingleton } from '@/lib/global-singleton';
-import { loggableError } from '@/lib/log';
+import { logError } from '@/lib/log';
 import { syncAllItems } from '@/lib/sync-all';
 
 // The automatic sync path: an in-process timer, started once per server from
@@ -34,7 +34,7 @@ export function startSyncScheduler(): void {
       );
     } catch (err) {
       // Reachable only if the item list itself could not be read.
-      console.error('scheduled sync failed:', loggableError(err));
+      logError('scheduled sync failed:', err);
     }
   };
 

@@ -3,6 +3,8 @@
 // and the sync scheduler (design: scheduled-sync). Both modules import node
 // builtins or the server-only graph, so each is dynamically imported after
 // the runtime check.
+import { logError } from '@/lib/log';
+
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
@@ -14,7 +16,7 @@ export async function register(): Promise<void> {
     const { scheduleBindAssertion } = await import('@/lib/bind-assertion');
     scheduleBindAssertion();
   } catch (err) {
-    console.error('FATAL: could not start the bind assertion —', err);
+    logError('FATAL: could not start the bind assertion —', err);
     process.exit(1);
   }
 
@@ -28,7 +30,7 @@ export async function register(): Promise<void> {
     const { startSyncScheduler } = await import('@/lib/sync-scheduler');
     startSyncScheduler();
   } catch (err) {
-    console.error('FATAL: startup config is broken —', err);
+    logError('FATAL: startup config is broken —', err);
     process.exit(1);
   }
 }

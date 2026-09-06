@@ -110,23 +110,45 @@ async function assertLoopbackOnly(logVerdict: boolean): Promise<void> {
     )
   ).find((endpoint) => endpoint !== null);
   if (reachable) fail(reachable);
+  // "Passed" is only claimed when the primary sensor saw the bind. With no
+  // listening socket visible (another process holds it, or a Node upgrade
+  // changed the report shape), the probes above aimed at PORT/3000 — which
+  // may not be the real port, since Next walks the port forward on
+  // EADDRINUSE — so the verdict is "could not verify", never a silent pass.
   if (logVerdict) {
-    console.log(
-      endpoints.length > 0
-        ? `bind assertion passed (listening: ${endpoints
-            .map((endpoint) => `${endpoint.address}:${endpoint.port}`)
-            .join(', ')})`
-        : 'bind assertion passed: no listening socket visible in this process; external probes found nothing',
-    );
+    if (endpoints.length > 0) {
+      console.log(
+        `bind assertion passed (listening: ${endpoints
+          .map((endpoint) => `${endpoint.address}:${endpoint.port}`)
+          .join(', ')})`,
+      );
+    } else {
+      console.warn(
+        `bind assertion could not verify the bind: no listening TCP socket is visible in this ` +
+          `process's diagnostic report. External probes of port(s) ${ports.join(', ')} found ` +
+          'nothing reachable, but that port may not be the one actually served — confirm the ' +
+          'server was started with `npm run dev` or `npm run start` (which pass -H 127.0.0.1).',
+      );
+    }
   }
 }
 
 // Probed twice because register() can run before the server is listening: a
 // wide-open bind not yet accepting at the first probe is caught by the
 // second, which also logs the verdict. unref() keeps the timers from
-// holding the process open.
+// holding the process open. A rejection (say, process.report throwing) is
+// fail-closed like every other failure of this guard: serving with the
+// assertion silently dead is exactly what must not happen.
 export function scheduleBindAssertion(): void {
   PROBE_DELAYS_MS.forEach((delay, index) => {
-    setTimeout(() => void assertLoopbackOnly(index === PROBE_DELAYS_MS.length - 1), delay).unref();
+    setTimeout(() => {
+      assertLoopbackOnly(index === PROBE_DELAYS_MS.length - 1).catch((err: unknown) => {
+        console.error(
+          'FATAL: the bind assertion could not run — refusing to serve without it:',
+          err,
+        );
+        process.exit(1);
+      });
+    }, delay).unref();
   });
 }
