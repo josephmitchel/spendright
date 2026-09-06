@@ -8,7 +8,8 @@
 // components must never hand-declare their own row mirrors. Type-only
 // imports — nothing here reaches a bundle.
 // Design: typed-api-contract, single-response-reader.
-import type { AccountRow, CardCategoryRow, CardRow, CreditCategoryRow, ItemRow } from '@/db/schema';
+import type { AccountRow, CreditCategoryRow, ItemRow } from '@/db/schema';
+import type { CardWithCategories } from '@/lib/card-catalog';
 import type { CategorizedTransaction } from '@/lib/categories';
 import type { LinkResult } from '@/lib/link';
 import type { SyncAllResult } from '@/lib/sync-all';
@@ -26,11 +27,9 @@ type Serialized<T> = T extends Date
 
 // The encrypted access token is never served. Design: access-tokens-encrypted.
 type PublicItem = Omit<ItemRow, 'accessToken'>;
-type CardWithCategories = CardRow & { categories: CardCategoryRow[] };
 
 export type ApiAccount = Serialized<AccountRow>;
 export type ApiItem = Serialized<PublicItem>;
-export type ApiCardCategory = Serialized<CardCategoryRow>;
 export type ApiCard = Serialized<CardWithCategories>;
 export type ApiCreditCategory = Serialized<CreditCategoryRow>;
 // The raw Plaid payload is never served; the joined category names ride

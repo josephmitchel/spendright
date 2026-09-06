@@ -10,72 +10,76 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
 import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
+import { loadCardCatalog } from '../src/lib/card-catalog';
 import { matchCard } from '../src/lib/cards';
 import { requireDatabaseUrl } from '../src/lib/env';
 
-// Design: seed-validation. A blank matcher would match a whitespace-only Plaid
-// account name, since matchCard normalizes both sides the same way.
-function assertUniqueAccountMatchers() {
+// The one skeleton behind every seed uniqueness check: keys are normalized
+// the way matchCard normalizes (trim + lowercase), so a blank or case-variant
+// entry can never slip past as a distinct key. `owner` names the seed entry a
+// key belongs to, for the error messages. Design: seed-validation.
+function assertUniqueKeys(
+  entries: Array<{ value: string; owner: string }>,
+  describe: {
+    blank: (owner: string) => string;
+    duplicate: (value: string, firstOwner: string, owner: string) => string;
+  },
+): void {
   const owners = new Map<string, string>();
-  for (const seed of cardSeeds) {
-    for (const name of seed.plaidAccountNames) {
-      const key = name.trim().toLowerCase();
-      if (!key) {
-        throw new Error(`cards.seed.ts: "${seed.slug}" lists a blank plaidAccountNames entry`);
-      }
-      const owner = owners.get(key);
-      if (owner) {
-        throw new Error(
-          `cards.seed.ts: plaidAccountNames entry "${name}" is claimed by both "${owner}" and "${seed.slug}"`,
-        );
-      }
-      owners.set(key, seed.slug);
+  for (const { value, owner } of entries) {
+    const key = value.trim().toLowerCase();
+    if (!key) throw new Error(describe.blank(owner));
+    const firstOwner = owners.get(key);
+    if (firstOwner !== undefined) {
+      throw new Error(describe.duplicate(value, firstOwner, owner));
     }
+    owners.set(key, owner);
   }
 }
 
-// Case-insensitive, stricter than the (card_id, name) unique index.
-function assertUniqueCategoryNames() {
-  for (const seed of cardSeeds) {
-    const seen = new Set<string>();
-    for (const category of seed.categories) {
-      const key = category.name.trim().toLowerCase();
-      if (seen.has(key)) {
-        throw new Error(
-          `cards.seed.ts: "${seed.slug}" lists the category "${category.name}" more than once`,
-        );
-      }
-      seen.add(key);
-    }
-  }
-}
+function assertSeedIsValid(): void {
+  // Duplicate slugs would silently merge: the second upsert wins and the
+  // retire pass never flags either.
+  assertUniqueKeys(
+    cardSeeds.map((seed) => ({ value: seed.slug, owner: seed.name })),
+    {
+      blank: (owner) => `cards.seed.ts: "${owner}" has a blank slug`,
+      duplicate: (value) => `cards.seed.ts: slug "${value}" is used by more than one card`,
+    },
+  );
 
-function assertUniqueCreditCategoryNames() {
-  const seen = new Set<string>();
-  for (const name of creditCategorySeeds) {
-    const key = name.trim().toLowerCase();
-    if (seen.has(key)) {
-      throw new Error(`cards.seed.ts: creditCategorySeeds lists "${name}" more than once`);
-    }
-    seen.add(key);
-  }
-}
+  // A blank matcher would match a whitespace-only Plaid account name, since
+  // matchCard normalizes both sides the same way.
+  assertUniqueKeys(
+    cardSeeds.flatMap((seed) =>
+      seed.plaidAccountNames.map((name) => ({ value: name, owner: seed.slug })),
+    ),
+    {
+      blank: (owner) => `cards.seed.ts: "${owner}" lists a blank plaidAccountNames entry`,
+      duplicate: (value, firstOwner, owner) =>
+        `cards.seed.ts: plaidAccountNames entry "${value}" is claimed by both "${firstOwner}" and "${owner}"`,
+    },
+  );
 
-// Duplicate slugs would silently merge: the second upsert wins and the retire
-// pass never flags either. Case-insensitive, stricter than the slug unique index.
-function assertUniqueSlugs() {
-  const seen = new Map<string, string>();
+  // Per-card, and case-insensitive: stricter than the (card_id, name) unique index.
   for (const seed of cardSeeds) {
-    const key = seed.slug.trim().toLowerCase();
-    if (!key) {
-      throw new Error(`cards.seed.ts: "${seed.name}" has a blank slug`);
-    }
-    const other = seen.get(key);
-    if (other) {
-      throw new Error(`cards.seed.ts: slug "${seed.slug}" is used by more than one card`);
-    }
-    seen.set(key, seed.slug);
+    assertUniqueKeys(
+      seed.categories.map((category) => ({ value: category.name, owner: seed.slug })),
+      {
+        blank: (owner) => `cards.seed.ts: "${owner}" lists a blank category name`,
+        duplicate: (value, _firstOwner, owner) =>
+          `cards.seed.ts: "${owner}" lists the category "${value}" more than once`,
+      },
+    );
   }
+
+  assertUniqueKeys(
+    creditCategorySeeds.map((name) => ({ value: name, owner: 'creditCategorySeeds' })),
+    {
+      blank: () => 'cards.seed.ts: creditCategorySeeds lists a blank name',
+      duplicate: (value) => `cards.seed.ts: creditCategorySeeds lists "${value}" more than once`,
+    },
+  );
 }
 
 // The handle drizzle passes to a rootDb.transaction callback (this script's
@@ -112,11 +116,103 @@ async function retireMissing(
   }
 }
 
+// Upserts each seeded card and its categories, then retires the per-card
+// categories that left the file. Returns the category count for the summary.
+async function upsertCards(tx: SeedTransaction): Promise<number> {
+  let categoryCount = 0;
+
+  for (const seed of cardSeeds) {
+    const cardValues = {
+      slug: seed.slug,
+      name: seed.name,
+      issuer: seed.issuer ?? null,
+      type: seed.type,
+      plaidAccountNames: seed.plaidAccountNames,
+    };
+    // `retiredAt: null` revives a card whose slug came back into the file.
+    const [card] = await tx
+      .insert(cards)
+      .values(cardValues)
+      .onConflictDoUpdate({
+        target: cards.slug,
+        set: { ...cardValues, retiredAt: null, updatedAt: sql`now()` },
+      })
+      .returning();
+    if (!card) throw new Error(`card upsert returned no row for ${seed.slug}`);
+
+    for (const category of seed.categories) {
+      const categoryValues = {
+        cardId: card.id,
+        name: category.name,
+        rate: String(category.rate),
+      };
+      await tx
+        .insert(cardCategories)
+        .values(categoryValues)
+        .onConflictDoUpdate({
+          target: [cardCategories.cardId, cardCategories.name],
+          set: { rate: categoryValues.rate, retiredAt: null, updatedAt: sql`now()` },
+        });
+      categoryCount++;
+    }
+
+    await retireMissing(
+      tx,
+      cardCategories,
+      cardCategories.name,
+      seed.categories.map((c) => c.name),
+      `${seed.slug}: retired categories no longer in seed`,
+      eq(cardCategories.cardId, card.id),
+    );
+  }
+
+  return categoryCount;
+}
+
+// Credit categories: upsert by name (revives retired ones), then retire the
+// rest. drizzle throws on values([]).
+async function upsertCreditCategories(tx: SeedTransaction): Promise<void> {
+  if (creditCategorySeeds.length > 0) {
+    await tx
+      .insert(creditCategories)
+      .values(creditCategorySeeds.map((name) => ({ name })))
+      .onConflictDoUpdate({
+        target: creditCategories.name,
+        set: { retiredAt: null, updatedAt: sql`now()` },
+      });
+  }
+  await retireMissing(
+    tx,
+    creditCategories,
+    creditCategories.name,
+    creditCategorySeeds,
+    'retired credit categories no longer in seed',
+  );
+}
+
+// Re-matches accounts to cards by Plaid account name. Only accounts.card_id
+// is written; a null match never clears saved categories. Returns the match
+// counts for the summary.
+async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; total: number }> {
+  const cardList = await loadCardCatalog(tx);
+  const accountList = await tx.select().from(accounts);
+  let matched = 0;
+  for (const account of accountList) {
+    const card = matchCard(cardList, account.name);
+    if (card) matched++;
+    if ((card?.id ?? null) !== account.cardId) {
+      await tx
+        .update(accounts)
+        .set({ cardId: card?.id ?? null, updatedAt: sql`now()` })
+        .where(eq(accounts.id, account.id));
+      console.log(`  account "${account.name}" -> ${card ? card.slug : 'no card'}`);
+    }
+  }
+  return { matched, total: accountList.length };
+}
+
 async function main() {
-  assertUniqueSlugs();
-  assertUniqueAccountMatchers();
-  assertUniqueCategoryNames();
-  assertUniqueCreditCategoryNames();
+  assertSeedIsValid();
 
   // Shared guard — the seed must never run against whatever is on localhost.
   // Design: config-validated-not-assumed.
@@ -139,71 +235,8 @@ async function main() {
     // the file are retired, never deleted; nothing here touches `transactions`.
     // Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
     await rootDb.transaction(async (tx) => {
-      let categoryCount = 0;
-
-      for (const seed of cardSeeds) {
-        const cardValues = {
-          slug: seed.slug,
-          name: seed.name,
-          issuer: seed.issuer ?? null,
-          type: seed.type,
-          plaidAccountNames: seed.plaidAccountNames,
-        };
-        // `retiredAt: null` revives a card whose slug came back into the file.
-        const [card] = await tx
-          .insert(cards)
-          .values(cardValues)
-          .onConflictDoUpdate({
-            target: cards.slug,
-            set: { ...cardValues, retiredAt: null, updatedAt: sql`now()` },
-          })
-          .returning();
-        if (!card) throw new Error(`card upsert returned no row for ${seed.slug}`);
-
-        for (const category of seed.categories) {
-          const categoryValues = {
-            cardId: card.id,
-            name: category.name,
-            rate: String(category.rate),
-          };
-          await tx
-            .insert(cardCategories)
-            .values(categoryValues)
-            .onConflictDoUpdate({
-              target: [cardCategories.cardId, cardCategories.name],
-              set: { rate: categoryValues.rate, retiredAt: null, updatedAt: sql`now()` },
-            });
-          categoryCount++;
-        }
-
-        await retireMissing(
-          tx,
-          cardCategories,
-          cardCategories.name,
-          seed.categories.map((c) => c.name),
-          `${seed.slug}: retired categories no longer in seed`,
-          eq(cardCategories.cardId, card.id),
-        );
-      }
-
-      // Credit categories: upsert by name (revives retired ones), then retire
-      // the rest. drizzle throws on values([]).
-      if (creditCategorySeeds.length > 0) {
-        await tx
-          .insert(creditCategories)
-          .values(creditCategorySeeds.map((name) => ({ name })))
-          .onConflictDoUpdate({
-            target: creditCategories.name,
-            set: { retiredAt: null, updatedAt: sql`now()` },
-          });
-      }
-      await retireMissing(
-        tx,
-        creditCategories,
-        creditCategories.name,
-        creditCategorySeeds,
-        'retired credit categories no longer in seed',
-      );
+      const categoryCount = await upsertCards(tx);
+      await upsertCreditCategories(tx);
 
       // Retire cards no longer in the file; their categories are left as-is
       // since matchCard skips retired cards.
@@ -215,27 +248,12 @@ async function main() {
         'retired cards no longer in seed',
       );
 
-      // Re-match accounts to cards by Plaid account name. Only accounts.card_id
-      // is written; a null match never clears saved categories.
-      const cardList = await tx.select().from(cards).orderBy(cards.id);
-      const accountList = await tx.select().from(accounts);
-      let matched = 0;
-      for (const account of accountList) {
-        const card = matchCard(cardList, account.name);
-        if (card) matched++;
-        if ((card?.id ?? null) !== account.cardId) {
-          await tx
-            .update(accounts)
-            .set({ cardId: card?.id ?? null, updatedAt: sql`now()` })
-            .where(eq(accounts.id, account.id));
-          console.log(`  account "${account.name}" -> ${card ? card.slug : 'no card'}`);
-        }
-      }
+      const { matched, total } = await rematchAccounts(tx);
 
       console.log(
         `Seeded ${cardSeeds.length} card(s), ${categoryCount} categories, ` +
           `${creditCategorySeeds.length} credit categories. ` +
-          `${matched}/${accountList.length} account(s) matched to a card.`,
+          `${matched}/${total} account(s) matched to a card.`,
       );
     });
   } finally {

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { SyncResponse } from '@/lib/api-types';
-import { readJson } from '@/lib/http';
+import { errorMessage, readJson } from '@/lib/http';
 import { skippedSyncNotice } from '@/lib/sync-messages';
 
 // The "Sync all" action and its status line.
@@ -36,7 +36,7 @@ export function useSyncAll(refresh: () => Promise<void>) {
         setSyncSucceededAt(Date.now());
       void refresh();
     } catch (err) {
-      setSyncStatus(`Sync failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      setSyncStatus(`Sync failed: ${errorMessage(err, 'unknown error')}`);
     } finally {
       // Released when the POST settles; the refresh above is not awaited.
       setSyncing(false);

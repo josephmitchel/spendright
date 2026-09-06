@@ -77,7 +77,7 @@ function fail(where: string): never {
   return process.exit(1);
 }
 
-export async function assertLoopbackOnly(logVerdict: boolean): Promise<void> {
+async function assertLoopbackOnly(logVerdict: boolean): Promise<void> {
   // Primary check: this process's own bind addresses. Only a wildcard bind
   // fails directly — that can only be a listening server socket. A specific
   // non-loopback bind is confirmed by the connect probe below instead, so a

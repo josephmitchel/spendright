@@ -2,6 +2,8 @@
 
 import type { ApiCard, ApiCreditCategory, ApiTransaction } from '@/lib/api-types';
 import { isInflowAmount } from '@/lib/amounts';
+// Type-only, so the server module never reaches the client bundle.
+import type { CategoryKind } from '@/lib/categories';
 
 // One picker for both category kinds. Placeholders are disabled+hidden: a
 // transaction keeps a category once one is assigned (design: no-category-clear).
@@ -63,7 +65,7 @@ export function TransactionTable({
   transactionList: ApiTransaction[];
   // Design: stale-lists-disable-editing.
   categoriesMayBeStale: boolean;
-  onSelectCategory: (row: ApiTransaction, kind: 'card' | 'credit', categoryId: number) => void;
+  onSelectCategory: (row: ApiTransaction, kind: CategoryKind, categoryId: number) => void;
 }) {
   const rateHeader = card.type === 'points' ? 'Multiplier' : 'Cashback %';
   return (

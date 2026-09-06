@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
 import type { ExchangeResponse, LinkTokenResponse } from '@/lib/api-types';
-import { readJson } from '@/lib/http';
+import { errorMessage, readJson } from '@/lib/http';
 import { skippedSyncNotice } from '@/lib/sync-messages';
 
 export default function PlaidLinkButton({
@@ -18,7 +18,7 @@ export default function PlaidLinkButton({
 }) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'exchanging' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
   // Partial-failure notice after a successful link (the institution IS
   // connected). Design: initial-sync-reported-not-thrown.
   const [syncNotice, setSyncNotice] = useState<{
@@ -58,7 +58,7 @@ export default function PlaidLinkButton({
         onConnectedAction();
       } catch (err) {
         setStatus('error');
-        setErrorMessage(err instanceof Error ? err.message : 'Exchange failed');
+        setLinkError(errorMessage(err, 'Exchange failed'));
       }
     },
     [onConnectedAction],
@@ -76,7 +76,7 @@ export default function PlaidLinkButton({
 
   const connect = async () => {
     setStatus('loading');
-    setErrorMessage(null);
+    setLinkError(null);
     setSyncNotice(null);
     try {
       const res = await fetch('/api/link-token', { method: 'POST' });
@@ -86,7 +86,7 @@ export default function PlaidLinkButton({
       setStatus('idle');
     } catch (err) {
       setStatus('error');
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to create link token');
+      setLinkError(errorMessage(err, 'Failed to create link token'));
     }
   };
 
@@ -99,7 +99,7 @@ export default function PlaidLinkButton({
       {status === 'exchanging' && (
         <span> Connecting and syncing transactions… (this can take a minute)</span>
       )}
-      {status === 'error' && <span> Error: {errorMessage}</span>}
+      {status === 'error' && <span> Error: {linkError}</span>}
       {syncNotice && noticeIsCurrent && (
         <span> Connected, but the first sync didn&apos;t finish: {syncNotice.message}</span>
       )}

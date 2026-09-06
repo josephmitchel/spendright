@@ -1,6 +1,13 @@
 // Client-side response reader; the only way components read API bodies.
 // Design: single-response-reader. No server imports — bundled into client code.
 
+// The one rendering of a caught client-side failure: the Error's own message
+// (readJson only throws messages that came through the server's allow-listed
+// envelope or a caller's fallback), else the caller's fallback.
+export function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
 // A non-JSON body (Next's HTML error page, a proxy 502) must not surface as a
 // SyntaxError; `failureMessage` is used when the response carries no JSON
 // error. T is the route's response type from src/lib/api-types.ts — the type
@@ -18,8 +25,9 @@ export async function readJson<T>(res: Response, failureMessage: string): Promis
 // `succeeded` is the per-read gate for messages that assert what the database
 // holds, and `error` folds the failures (each also logged) into one on-screen
 // message, null when nothing failed. Every data hook loads through this and
-// exposes the same shape: `settled`, `error`, `clearError`, and a `loaded`
-// object with one boolean per read. Design: partial-load-rendering.
+// exposes the same shape — `settled`, `error`, `clearError`, and a `loaded`
+// object with one boolean per read — packaged by useLoadProtocol in
+// src/components/useLoadProtocol.ts. Design: partial-load-rendering.
 // The constraint is not Record<string, Promise<unknown>>: that would
 // contextually type each read as Promise<unknown> and collapse the inferred
 // value types; Awaited<T[K]> does the unwrapping instead.
@@ -43,7 +51,7 @@ export async function settleReads<T extends Record<string, unknown>>(
     succeeded[key] = outcome.status === 'fulfilled';
     if (outcome.status === 'rejected') {
       console.error(outcome.reason);
-      messages.push(outcome.reason instanceof Error ? outcome.reason.message : 'Failed to load');
+      messages.push(errorMessage(outcome.reason, 'Failed to load'));
     }
   });
   return { results, succeeded, error: messages.length > 0 ? messages.join('; ') : null };

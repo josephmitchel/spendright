@@ -7,7 +7,9 @@ import type {
   ApiTransaction,
   TransactionPatchResponse,
 } from '@/lib/api-types';
-import { readJson } from '@/lib/http';
+// Type-only, so the server module never reaches the client bundle.
+import type { CategoryKind } from '@/lib/categories';
+import { errorMessage, readJson } from '@/lib/http';
 import { serializeByKey } from '@/lib/serialize';
 
 // The category columns a PATCH can change. Reconciliation merges only these
@@ -47,7 +49,7 @@ export function useCategoryPatches(
   );
   const patchChain = useRef(new Map<string, Promise<void>>());
 
-  const setCategory = async (row: ApiTransaction, kind: 'card' | 'credit', categoryId: number) => {
+  const setCategory = async (row: ApiTransaction, kind: CategoryKind, categoryId: number) => {
     const transactionId = row.transactionId;
     const inFlight = patchState.current.get(transactionId);
     if (inFlight) inFlight.pending++;
@@ -89,7 +91,7 @@ export function useCategoryPatches(
         // In-order responses mean the latest one is always the newest.
         if (state) state.committed = { ...state.baseline, ...data.transaction };
       } catch (err) {
-        failure = err instanceof Error ? err.message : 'Failed to update category';
+        failure = errorMessage(err, 'Failed to update category');
       }
 
       const state = patchState.current.get(transactionId);

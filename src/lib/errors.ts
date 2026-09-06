@@ -65,6 +65,13 @@ export function pgErrorCode(err: unknown): string | undefined {
 }
 
 export function errorResponse(err: unknown): NextResponse {
+  // 4xx PublicErrors are ordinary rejections (validation, not-found, sign
+  // rules) — part of normal operation, so not logged as server failures.
+  // 5xx PublicErrors (BAD_CONFIG, NOT_READY) fall through to the log below.
+  if (err instanceof PublicError && err.status < 500) {
+    return jsonError(err.code, err.message, err.status);
+  }
+
   // Redacted: a raw Plaid error carries the client secret and the
   // decrypted access token in its axios config. Design: plaid-error-log-redaction.
   console.error(loggableError(err));
@@ -80,6 +87,18 @@ export function errorResponse(err: unknown): NextResponse {
 
   if (err instanceof PublicError) {
     return jsonError(err.code, err.message, err.status);
+  }
+
+  // App-wide, not route-specific: any route that writes under a lock can lose
+  // to a running sync or seed run. 55P03 lock_not_available (lock_timeout
+  // expired) and 40P01 deadlock_detected are both retryable.
+  const code = pgErrorCode(err);
+  if (code === '55P03' || code === '40P01') {
+    return jsonError(
+      'LOCKED',
+      'This record is being synced right now — try again in a moment',
+      503,
+    );
   }
 
   // Never echo err.message: drizzle's carries the SQL and bound parameters.

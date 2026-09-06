@@ -6,3 +6,5 @@ date: 2026-09-04
 ---
 
 A sync first refreshes each account row (name, balances, card match per [[rematch-on-every-sync]]) and only then pulls transactions. Each account's upsert is wrapped in its own database transaction so its row locks stay short and one failing account neither rolls back its siblings nor the cursor. A failure is logged and skipped; that account's transactions are then handled by [[bounded-cursor-hold]]. The accounts call itself is best-effort: if it fails, the sync proceeds against the accounts already stored. Replaces [[whole-sync-single-transaction]].
+
+Each account batch has exactly one store owner (confirmed 2026-09-06, replacing the link flow's store-sync-restore-reconcile shape): when a caller passes `plaidAccounts` to `syncItem` it asserts it already fetched _and stored_ them, and the sync skips its whole refresh. The link flow therefore stores its accounts once, reports the failures directly ([[initial-sync-reported-not-thrown]]), and a transiently failed account is simply re-stored by the next sync, its rows held by [[bounded-cursor-hold]] until then.

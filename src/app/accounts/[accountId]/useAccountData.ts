@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLoadProtocol } from '@/components/useLoadProtocol';
 import type {
   AccountsResponse,
   ApiAccount,
@@ -17,11 +18,10 @@ export function useAccountData(accountId: string, reloadKey: number) {
   const [account, setAccount] = useState<ApiAccount | null>(null);
   const [card, setCard] = useState<ApiCard | null>(null);
   const [creditCategories, setCreditCategories] = useState<ApiCreditCategory[]>([]);
-  // True once the load effect has settled, success or failure.
-  const [settled, setSettled] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Which reads actually came back; a failed read is not evidence of anything.
-  const [loaded, setLoaded] = useState({ account: false, cards: false });
+  const { settled, setSettled, error, setError, loaded, setLoaded, clearError } = useLoadProtocol({
+    account: false,
+    cards: false,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -61,8 +61,7 @@ export function useAccountData(accountId: string, reloadKey: number) {
     return () => {
       cancelled = true;
     };
-  }, [accountId, reloadKey]);
+  }, [accountId, reloadKey, setError, setLoaded, setSettled]);
 
-  const clearError = () => setError(null);
   return { account, card, creditCategories, settled, error, clearError, loaded };
 }

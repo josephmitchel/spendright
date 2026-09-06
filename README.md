@@ -1,4 +1,8 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SpendRight
+
+A single-user personal finance app centered on credit card spending
+optimization: it links bank accounts through Plaid, syncs credit card
+transactions, and tracks which reward category each purchase earned.
 
 ## Getting Started
 
@@ -124,10 +128,3 @@ reachable from anywhere else.
   host with a tight request timeout (Vercel's hobby limit is 10s) can fail a
   link that actually succeeded. Finishing the job means running the first sync
   as a background job the client polls.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.

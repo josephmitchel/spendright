@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { TransactionPatchPayload } from '@/lib/api-types';
 import { setTransactionCategory, type CategoryKind } from '@/lib/categories';
-import { badRequest, errorResponse, jsonError, pgErrorCode, PublicError } from '@/lib/errors';
+import { badRequest, errorResponse, jsonError, pgErrorCode } from '@/lib/errors';
 
 // Postgres serial ids are int32; anything past that cannot exist.
 const MAX_INT32 = 2147483647;
@@ -54,26 +54,11 @@ export async function PATCH(
     const transaction = await setTransactionCategory(transactionId, parsed.kind, parsed.categoryId);
     return NextResponse.json<TransactionPatchPayload>({ transaction });
   } catch (err) {
-    // Rejections decided inside the write's transaction (404, sign and
-    // ownership 400s) arrive as PublicError; returned directly so an
-    // ordinary rejection is not logged as a server failure.
-    if (err instanceof PublicError) {
-      return jsonError(err.code, err.message, err.status);
-    }
-    const code = pgErrorCode(err);
-    // 55P03 lock_not_available (lock_timeout expired) and 40P01
-    // deadlock_detected (against the seed backfill or a sync upsert): both
-    // are retryable.
-    if (code === '55P03' || code === '40P01') {
-      return jsonError(
-        'LOCKED',
-        'This transaction is being synced right now — try again in a moment',
-        503,
-      );
-    }
     // 23503 foreign_key_violation: the category was deleted (by hand; the seed
-    // only retires) between validation and the update.
-    if (code === '23503') {
+    // only retires) between validation and the update. Route-local because the
+    // meaning of a broken FK is this route's alone; PublicError rejections and
+    // the app-wide lock/deadlock mapping live in errorResponse.
+    if (pgErrorCode(err) === '23503') {
       return jsonError(
         'CATEGORY_REMOVED',
         'That category no longer exists — reload the page and pick again',

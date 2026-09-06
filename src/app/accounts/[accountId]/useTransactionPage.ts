@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLoadProtocol } from '@/components/useLoadProtocol';
 import type { ApiTransaction, TransactionsResponse } from '@/lib/api-types';
 import { readJson, settleReads } from '@/lib/http';
 
@@ -24,12 +25,11 @@ export function useTransactionPage(accountId: string, reloadKey: number, reload:
   const [settledRequest, setSettledRequest] = useState<{ page: number; reloadKey: number } | null>(
     null,
   );
-  // True once the first load has settled, success or failure.
-  const [settled, setSettled] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Whether the latest transactions read succeeded; a failed read is not
-  // evidence of an empty account.
-  const [loaded, setLoaded] = useState({ transactions: false });
+  // `loaded.transactions` is whether the latest read succeeded; a failed
+  // read is not evidence of an empty account.
+  const { settled, setSettled, error, setError, loaded, setLoaded, clearError } = useLoadProtocol({
+    transactions: false,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +66,7 @@ export function useTransactionPage(accountId: string, reloadKey: number, reload:
     return () => {
       cancelled = true;
     };
-  }, [accountId, page, reloadKey]);
+  }, [accountId, page, reloadKey, setError, setLoaded, setSettled]);
 
   // Separate from the page-level loading flag so a page turn keeps the old
   // rows up with the pager disabled instead of blanking the account body.
@@ -81,7 +81,6 @@ export function useTransactionPage(accountId: string, reloadKey: number, reload:
     else setPage(next);
   };
 
-  const clearError = () => setError(null);
   return {
     transactionList,
     setTransactionList,

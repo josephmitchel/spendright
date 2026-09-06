@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { ItemDeleteResponse } from '@/lib/api-types';
-import { readJson } from '@/lib/http';
+import { errorMessage, readJson } from '@/lib/http';
 
 // Removing an institution (and, by cascade, its accounts and transactions),
 // behind a browser confirm. Design: item-delete-plaid-first.
@@ -16,7 +16,7 @@ export function useItemRemoval(refresh: () => Promise<void>) {
       const res = await fetch(`/api/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
       await readJson<ItemDeleteResponse>(res, 'Failed to remove item');
     } catch (err) {
-      setRemoveError(err instanceof Error ? err.message : 'Failed to remove item');
+      setRemoveError(errorMessage(err, 'Failed to remove item'));
       return;
     }
     void refresh();

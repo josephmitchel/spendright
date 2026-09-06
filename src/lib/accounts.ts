@@ -26,10 +26,14 @@ function toAccountRow(plaidAccount: AccountBase, itemId: string, cardId: number 
   };
 }
 
-// The single definition of how one Plaid account is written, shared by
-// /api/exchange and syncItem. Callers treat a failure here as this account's
-// problem alone. Design: accounts-refreshed-per-sync.
-export async function upsertAccount(
+// One failed account store, with the caught error kept for the caller's
+// user-facing message.
+export type StoreFailure = { account: AccountBase; error: unknown };
+
+// The single definition of how one Plaid account is written; every caller
+// goes through storeAccounts below. Callers treat a failure here as this
+// account's problem alone. Design: accounts-refreshed-per-sync.
+async function upsertAccount(
   tx: DbTransaction,
   plaidAccount: AccountBase,
   itemId: string,
@@ -59,8 +63,8 @@ export async function storeAccounts(
   plaidAccounts: AccountBase[],
   itemId: string,
   cardList: CardRow[],
-): Promise<{ account: AccountBase; error: unknown }[]> {
-  const failures: { account: AccountBase; error: unknown }[] = [];
+): Promise<StoreFailure[]> {
+  const failures: StoreFailure[] = [];
   for (const plaidAccount of plaidAccounts) {
     try {
       await db.transaction(async (tx) => {

@@ -3,7 +3,6 @@ import { AccountBase, Transaction as PlaidTransaction } from 'plaid';
 import {
   accounts,
   cardCategories,
-  cards,
   creditCategories,
   items,
   transactions,
@@ -11,11 +10,12 @@ import {
 } from '@/db/schema';
 import { storeAccounts, type DbTransaction } from '@/lib/accounts';
 import { isInflowAmount } from '@/lib/amounts';
+import { loadCardCatalog } from '@/lib/card-catalog';
 import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { plaidErrorBody, publicErrorMessage } from '@/lib/errors';
-import { loggableError } from '@/lib/log';
 import { globalSingleton } from '@/lib/global-singleton';
+import { loggableError } from '@/lib/log';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
 import { serializeByKey } from '@/lib/serialize';
 import { MAX_SKIPPED_SYNCS, skippedItemErrorMessage } from '@/lib/sync-messages';
@@ -49,7 +49,9 @@ export interface SyncItemResult {
 }
 
 export interface SyncItemOptions {
-  // Already-fetched accounts, so the accountsGet call is skipped.
+  // Accounts the caller already fetched AND stored (the link flow does both);
+  // the sync then skips its own accountsGet and account-store pass, so each
+  // link stores its accounts exactly once. Design: accounts-refreshed-per-sync.
   plaidAccounts?: AccountBase[];
   // Passed through to syncTransactions.
   notReadyRetries?: number;
@@ -288,10 +290,11 @@ async function recordSyncOutcome(
 async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
   const accessToken = decrypt(item.accessToken);
   // Plaid calls stay outside the DB transaction. The account refresh is
-  // best-effort: on failure the sync proceeds against stored accounts.
-  // Design: accounts-refreshed-per-sync
-  let plaidAccounts: AccountBase[] = options?.plaidAccounts ?? [];
+  // best-effort: on failure the sync proceeds against stored accounts. When
+  // the caller passed accounts it already stored them, so the whole refresh
+  // is skipped. Design: accounts-refreshed-per-sync
   if (!options?.plaidAccounts) {
+    let plaidAccounts: AccountBase[] = [];
     try {
       plaidAccounts = await getAccounts(accessToken);
     } catch (err) {
@@ -300,12 +303,13 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
         loggableError(err),
       );
     }
+    if (plaidAccounts.length > 0) {
+      const cardList = await loadCardCatalog(db);
+      // Committed before the sync transaction opens; failures are the
+      // known-account guard's problem.
+      await storeAccounts(plaidAccounts, item.itemId, cardList);
+    }
   }
-  // Ordered so card matching never depends on physical row order.
-  const cardList = plaidAccounts.length > 0 ? await db.select().from(cards).orderBy(cards.id) : [];
-  // Committed before the sync transaction opens; failures are the known-account
-  // guard's problem.
-  await storeAccounts(plaidAccounts, item.itemId, cardList);
 
   const { added, modified, removed, cursor } = await syncTransactions(accessToken, item.cursor, {
     notReadyRetries: options?.notReadyRetries,

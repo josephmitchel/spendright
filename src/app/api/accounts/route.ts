@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { accounts } from '@/db/schema';
-import { db } from '@/lib/db';
 import type { AccountsPayload } from '@/lib/api-types';
+import { db } from '@/lib/db';
 import { badRequest, errorResponse } from '@/lib/errors';
 
 export async function GET(req: NextRequest) {

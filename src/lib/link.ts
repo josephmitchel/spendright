@@ -1,7 +1,8 @@
-import { eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type { AccountBase } from 'plaid';
-import { accounts, cards, items, type CardRow, type ItemRow } from '@/db/schema';
-import { storeAccounts } from '@/lib/accounts';
+import { items, type ItemRow } from '@/db/schema';
+import { storeAccounts, type StoreFailure } from '@/lib/accounts';
+import { loadCardCatalog } from '@/lib/card-catalog';
 import { encrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { publicErrorMessage } from '@/lib/errors';
@@ -11,7 +12,6 @@ import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
 
 type PlaidItem = Awaited<ReturnType<typeof getItem>>;
 type Institution = Awaited<ReturnType<typeof getInstitutionById>>;
-type StoreFailure = { account: AccountBase; error: unknown };
 
 export interface LinkResult {
   itemId: string;
@@ -35,6 +35,21 @@ async function fetchInstitution(
     console.error('institutionsGetById failed (continuing without metadata):', loggableError(err));
     return null;
   }
+}
+
+// Persists the freshly exchanged token before anything else can fail: from
+// here the item is visible locally (it can be synced or removed), so a
+// transient failure in the enrichment calls below can no longer orphan a
+// live Plaid Item behind a discarded token. Design: token-stored-before-enrichment.
+async function storeItemShell(itemId: string, accessToken: string): Promise<void> {
+  const encrypted = encrypt(accessToken);
+  await db
+    .insert(items)
+    .values({ itemId, accessToken: encrypted })
+    .onConflictDoUpdate({
+      target: items.itemId,
+      set: { accessToken: encrypted, updatedAt: sql`now()` },
+    });
 }
 
 // Upserts the item row and returns it as written. The full row comes back via
@@ -92,19 +107,6 @@ async function storeItem(
   return storedItem;
 }
 
-// Best-effort, like the sync path's account refresh: the initial sync
-// re-reads cards and re-upserts every account, so a failure here only
-// defers the card match. Design: initial-sync-reported-not-thrown.
-async function loadCardCatalog(itemId: string): Promise<CardRow[]> {
-  try {
-    // Ordered so card matching never depends on physical row order.
-    return await db.select().from(cards).orderBy(cards.id);
-  } catch (err) {
-    console.error(`Could not read cards for item ${itemId} — storing accounts unmatched:`, err);
-    return [];
-  }
-}
-
 // The link is committed by now; a failed first sync is recorded on the item
 // row and in the result, and the link still succeeds.
 // Design: initial-sync-reported-not-thrown.
@@ -113,8 +115,9 @@ async function runInitialSync(
   plaidAccounts: AccountBase[],
 ): Promise<{ result: SyncItemResult | null; error: string | null }> {
   try {
-    // Reuses the accountsGet result (all accounts, including any that failed
-    // to store) and caps the not-ready poll. Design: not-ready-poll-budgets.
+    // Passes the accountsGet result so the sync stores nothing itself — the
+    // link flow already stored these accounts — and caps the not-ready poll.
+    // Design: not-ready-poll-budgets, accounts-refreshed-per-sync.
     const result = await syncItem(storedItem, { plaidAccounts, notReadyRetries: 3 });
     return { result, error: null };
   } catch (err) {
@@ -128,51 +131,39 @@ async function runInitialSync(
   }
 }
 
-// Re-checks the store failures against the database — the initial sync
-// re-upserts every account, so it may have stored accounts that failed the
-// first pass — and renders the ones still missing as user-facing messages.
-// If the re-check read fails, the original list stands.
-async function unresolvedAccountFailures(
-  itemId: string,
-  failures: StoreFailure[],
-): Promise<string[]> {
-  if (failures.length === 0) return [];
-  const messageFor = (failure: StoreFailure) =>
-    `${failure.account.name ?? failure.account.account_id}: ${publicErrorMessage(failure.error, 'could not be stored')}`;
-  try {
-    const storedIds = new Set(
-      (
-        await db
-          .select({ accountId: accounts.accountId })
-          .from(accounts)
-          .where(eq(accounts.itemId, itemId))
-      ).map((row) => row.accountId),
-    );
-    return failures.filter((failure) => !storedIds.has(failure.account.account_id)).map(messageFor);
-  } catch (err) {
-    console.error(`Could not re-check stored accounts for item ${itemId}:`, err);
-    return failures.map(messageFor);
-  }
+// Renders the store failures as user-facing messages. There is no second
+// store pass to reconcile against: the link flow is the sole owner of this
+// batch's account storage, and a transiently failed account is re-stored by
+// the next sync, its rows held by the known-account guard until then.
+// Design: accounts-refreshed-per-sync, bounded-cursor-hold.
+function accountFailureMessages(failures: StoreFailure[]): string[] {
+  return failures.map(
+    (failure) =>
+      `${failure.account.name ?? failure.account.account_id}: ${publicErrorMessage(failure.error, 'could not be stored')}`,
+  );
 }
 
 // The whole link-onboarding flow behind POST /api/exchange: exchange the
 // public token, store the item and its accounts, run the first sync inline
-// and reconcile the store failures against what that sync stored.
+// and report the store failures alongside the sync outcome.
 // Design: inline-initial-sync, initial-sync-reported-not-thrown.
 export async function linkItem(publicToken: string): Promise<LinkResult> {
   const { accessToken, itemId } = await exchangePublicToken(publicToken);
+  // Stored immediately: everything after this line may fail without
+  // orphaning the Plaid Item. Design: token-stored-before-enrichment.
+  await storeItemShell(itemId, accessToken);
   const plaidItem = await getItem(accessToken);
   const plaidAccounts = await getAccounts(accessToken);
   const institution = await fetchInstitution(plaidItem.institution_id);
   const storedItem = await storeItem(itemId, accessToken, plaidItem, institution);
 
-  const cardList = await loadCardCatalog(itemId);
-  // Failures are reported, not thrown; the initial sync below retries every
-  // account, so the list is reconciled after it.
-  // Design: initial-sync-reported-not-thrown.
+  const cardList = await loadCardCatalog(db);
+  // Failures are reported, not thrown. This is the batch's only store pass;
+  // the initial sync is told the accounts are already stored.
+  // Design: initial-sync-reported-not-thrown, accounts-refreshed-per-sync.
   const storeFailures = await storeAccounts(plaidAccounts, itemId, cardList);
   const sync = await runInitialSync(storedItem, plaidAccounts);
-  const accountErrors = await unresolvedAccountFailures(itemId, storeFailures);
+  const accountErrors = accountFailureMessages(storeFailures);
 
   return {
     itemId,

@@ -13,8 +13,12 @@ import { PublicError } from '@/lib/errors';
 
 export type CategoryKind = 'card' | 'credit';
 
-// Every column except the raw Plaid payload. Design: raw-plaid-payload-stored-not-served.
+// Every column except the raw Plaid payload — the single definition of which
+// transaction columns are served, shared by every query that projects
+// transaction rows toward the client. A column that must not be served is
+// excluded here and nowhere else. Design: raw-plaid-payload-stored-not-served.
 const { plaidTransaction: _plaidTransaction, ...returnedColumns } = getTableColumns(transactions);
+export const servedTransactionColumns = returnedColumns;
 
 // The updated row with both joined category names; the kind not written is
 // null by the sign constraint, so no second lookup is made.
@@ -93,7 +97,7 @@ async function resolveCategoryPick(
 // Sets a transaction's category. The row is locked for the whole
 // read-validate-write: a concurrent sync can flip the amount's sign or delete
 // the row. The lock wait is bounded so a long sync or seed run yields a
-// retryable failure (the route maps 55P03 to a 503) instead of pinning a
+// retryable failure (errorResponse maps 55P03 to a 503) instead of pinning a
 // connection. Design: category-write-contract, no-category-clear.
 export async function setTransactionCategory(
   transactionId: string,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLoadProtocol } from '@/components/useLoadProtocol';
 import type { AccountsResponse, ApiAccount, ApiItem, ItemsResponse } from '@/lib/api-types';
 import { readJson, settleReads } from '@/lib/http';
 
@@ -11,16 +12,15 @@ import { readJson, settleReads } from '@/lib/http';
 export function useHomeData() {
   const [itemList, setItemList] = useState<ApiItem[]>([]);
   const [accountList, setAccountList] = useState<ApiAccount[]>([]);
-  // True once the first refresh has settled, success or failure.
-  const [settled, setSettled] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Which reads actually came back; a failed read is not evidence of anything.
-  // The two flags deliberately differ in stickiness: `items` follows the
+  // The `loaded` flags deliberately differ in stickiness: `items` follows the
   // latest refresh, because the "No institutions" message needs current
   // evidence, while `accounts` stays true once any refresh succeeded, so a
   // later failed refresh keeps rendering the rows that did load.
   // Design: partial-load-rendering.
-  const [loaded, setLoaded] = useState({ items: false, accounts: false });
+  const { settled, setSettled, error, setError, loaded, setLoaded, clearError } = useLoadProtocol({
+    items: false,
+    accounts: false,
+  });
 
   // Generation counter: a refresh superseded by a later one writes nothing.
   const refreshSeq = useRef(0);
@@ -50,7 +50,7 @@ export function useHomeData() {
     }));
     setError(failureMessage);
     setSettled(true);
-  }, []);
+  }, [setError, setLoaded, setSettled]);
 
   // Wrapped so react-hooks/set-state-in-effect can see the async boundary.
   useEffect(() => {
@@ -74,6 +74,5 @@ export function useHomeData() {
     };
   }, [refresh]);
 
-  const clearError = () => setError(null);
   return { itemList, accountList, settled, error, clearError, loaded, refresh };
 }

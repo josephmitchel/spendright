@@ -45,7 +45,13 @@ function getCredential(name: 'PLAID_CLIENT_ID' | 'PLAID_SECRET'): string {
   return value;
 }
 
+// Built once per process: the configuration is immutable after validation,
+// so per-call construction only re-allocates the SDK client. If validation
+// throws, nothing is cached and the next call re-validates.
+let cachedClient: PlaidApi | null = null;
+
 function getClient(): PlaidApi {
+  if (cachedClient) return cachedClient;
   const configuration = new Configuration({
     basePath: getBasePath(),
     baseOptions: {
@@ -56,7 +62,8 @@ function getClient(): PlaidApi {
       },
     },
   });
-  return new PlaidApi(configuration);
+  cachedClient = new PlaidApi(configuration);
+  return cachedClient;
 }
 
 // Comma-separated env list: entries trimmed, blanks dropped, and the fallback
@@ -83,7 +90,7 @@ function getEnvEnumList<T extends string>(
   if (valid.length !== entries.length) {
     const invalid = entries.filter((entry) => !allowed.has(entry));
     throw new PublicError(
-      `${name} contains ${invalid.join(', ')} — use of: ${allowedValues.join(', ')}`,
+      `${name} contains ${invalid.join(', ')} — use one of: ${allowedValues.join(', ')}`,
       { status: 500, code: 'BAD_CONFIG' },
     );
   }
@@ -119,12 +126,11 @@ export async function createLinkToken(): Promise<string> {
 // https://plaid.com/docs/api/items/#itempublic_tokenexchange
 export async function exchangePublicToken(
   publicToken: string,
-): Promise<{ accessToken: string; itemId: string; requestId: string }> {
+): Promise<{ accessToken: string; itemId: string }> {
   const response = await getClient().itemPublicTokenExchange({ public_token: publicToken });
   return {
     accessToken: response.data.access_token,
     itemId: response.data.item_id,
-    requestId: response.data.request_id,
   };
 }
 
