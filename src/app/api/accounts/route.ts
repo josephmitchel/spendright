@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { accounts } from '@/db/schema';
 import { db } from '@/lib/db';
+import type { AccountsPayload } from '@/lib/api-types';
 import { badRequest, errorResponse } from '@/lib/errors';
 
 export async function GET(req: NextRequest) {
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
         ? eq(accounts.itemId, itemId)
         : undefined;
     const rows = await db.select().from(accounts).where(filter);
-    return NextResponse.json({ accounts: rows });
+    return NextResponse.json<AccountsPayload>({ accounts: rows });
   } catch (err) {
     return errorResponse(err);
   }

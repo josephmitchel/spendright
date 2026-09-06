@@ -18,16 +18,7 @@ function itemErrorMessage(error: NonNullable<ApiItem['error']>): string {
 
 // Thin view over the home hooks, mirroring the account page's shape.
 export default function HomeClient() {
-  const {
-    itemList,
-    accountList,
-    loading,
-    loadError,
-    clearLoadError,
-    itemsLoaded,
-    accountsLoaded,
-    refresh,
-  } = useHomeData();
+  const { itemList, accountList, settled, error, clearError, loaded, refresh } = useHomeData();
   const { syncAll, syncing, syncStatus, syncSucceededAt } = useSyncAll(refresh);
   const { removeItem, removeError } = useItemRemoval(refresh);
 
@@ -36,19 +27,19 @@ export default function HomeClient() {
       <h1>SpendRight</h1>
       <p>
         <PlaidLinkButton onConnectedAction={refresh} syncSucceededAt={syncSucceededAt} />{' '}
-        <button onClick={syncAll} disabled={syncing || (itemsLoaded && itemList.length === 0)}>
+        <button onClick={syncAll} disabled={syncing || (loaded.items && itemList.length === 0)}>
           Sync all
         </button>
         {syncStatus && <span> {syncStatus}</span>}
       </p>
 
-      {loading && <p>Loading…</p>}
-      {loadError && (
+      {!settled && <p>Loading…</p>}
+      {error && (
         <p>
-          Error: {loadError}{' '}
+          Error: {error}{' '}
           <button
             onClick={() => {
-              clearLoadError();
+              clearError();
               void refresh();
             }}
           >
@@ -57,7 +48,7 @@ export default function HomeClient() {
         </p>
       )}
       {removeError && <p>Error: {removeError}</p>}
-      {!loading && itemsLoaded && itemList.length === 0 && <p>No institutions connected yet.</p>}
+      {settled && loaded.items && itemList.length === 0 && <p>No institutions connected yet.</p>}
 
       {itemList.map((item) => {
         const itemAccounts = accountList.filter((a) => a.itemId === item.itemId);
@@ -77,8 +68,8 @@ export default function HomeClient() {
               <button onClick={() => removeItem(item.itemId)}>Remove</button>
             </h2>
             {item.error != null && <p>Item error: {itemErrorMessage(item.error)}</p>}
-            {!accountsLoaded && <p>Accounts couldn&apos;t be loaded — use Retry above.</p>}
-            {accountsLoaded && (
+            {!loaded.accounts && <p>Accounts couldn&apos;t be loaded — use Retry above.</p>}
+            {loaded.accounts && (
               <table border={1}>
                 <thead>
                   <tr>

@@ -8,7 +8,7 @@ import type {
   ApiCreditCategory,
   CardsResponse,
 } from '@/lib/api-types';
-import { joinedFailureMessage, readJson } from '@/lib/http';
+import { readJson, settleReads } from '@/lib/http';
 
 // The account + card catalog half of the account page's data. Not keyed on
 // the transaction page: paging only re-reads transactions. `reloadKey` re-runs
@@ -26,33 +26,36 @@ export function useAccountData(accountId: string, reloadKey: number) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // allSettled so one failure doesn't discard the sibling that did arrive
-      // (design: partial-load-rendering).
-      const [accountResult, cardsResult] = await Promise.allSettled([
-        fetch(`/api/accounts?accountId=${encodeURIComponent(accountId)}`).then((res) =>
+      // Settled together so one failure doesn't discard the sibling that did
+      // arrive (design: partial-load-rendering).
+      const {
+        results,
+        succeeded,
+        error: failureMessage,
+      } = await settleReads({
+        account: fetch(`/api/accounts?accountId=${encodeURIComponent(accountId)}`).then((res) =>
           readJson<AccountsResponse>(res, 'Failed to load account'),
         ),
-        fetch('/api/cards').then((res) => readJson<CardsResponse>(res, 'Failed to load cards')),
-      ]);
+        cards: fetch('/api/cards').then((res) =>
+          readJson<CardsResponse>(res, 'Failed to load cards'),
+        ),
+      });
       if (cancelled) return;
 
       const loadedAccount =
-        accountResult.status === 'fulfilled' ? (accountResult.value.accounts[0] ?? null) : null;
-      if (accountResult.status === 'fulfilled') setAccount(loadedAccount);
-      if (cardsResult.status === 'fulfilled') {
-        setCreditCategories(cardsResult.value.creditCategories ?? []);
+        results.account.status === 'fulfilled' ? (results.account.value.accounts[0] ?? null) : null;
+      if (results.account.status === 'fulfilled') setAccount(loadedAccount);
+      if (results.cards.status === 'fulfilled') {
+        setCreditCategories(results.cards.value.creditCategories ?? []);
         // The card depends on both reads, so it is only recomputed when both
         // succeeded; otherwise it is left as it was.
-        if (accountResult.status === 'fulfilled') {
-          const cards = cardsResult.value.cards ?? [];
+        if (results.account.status === 'fulfilled') {
+          const cards = results.cards.value.cards ?? [];
           setCard(cards.find((c) => c.id === loadedAccount?.cardId) ?? null);
         }
       }
-      setLoaded({
-        account: accountResult.status === 'fulfilled',
-        cards: cardsResult.status === 'fulfilled',
-      });
-      setError(joinedFailureMessage([accountResult, cardsResult]));
+      setLoaded(succeeded);
+      setError(failureMessage);
       setSettled(true);
     })();
     return () => {

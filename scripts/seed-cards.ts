@@ -4,8 +4,9 @@
 // Must stay the first import so env is loaded before the modules below evaluate.
 import './load-env';
 
-import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { and, eq, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
 import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
@@ -77,6 +78,40 @@ function assertUniqueSlugs() {
   }
 }
 
+// The handle drizzle passes to a rootDb.transaction callback (this script's
+// schemaless client, not src/lib/db's schema-typed one).
+type SeedTransaction = Parameters<Parameters<NodePgDatabase['transaction']>[0]>[0];
+
+// The one implementation of "retire what left the seed file": stamps
+// retired_at on every live row in scope whose key column is no longer among
+// `keptKeys`, and logs what it retired. An empty kept list retires everything
+// in scope, because drizzle can't render notInArray([]); `retired_at is null`
+// keeps the original stamp on already-retired rows.
+// Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
+async function retireMissing(
+  tx: SeedTransaction,
+  table: typeof cards | typeof cardCategories | typeof creditCategories,
+  keyColumn: AnyPgColumn,
+  keptKeys: string[],
+  label: string,
+  scope?: SQL,
+): Promise<void> {
+  const retired = await tx
+    .update(table)
+    .set({ retiredAt: sql`now()`, updatedAt: sql`now()` })
+    .where(
+      and(
+        isNull(table.retiredAt),
+        scope,
+        keptKeys.length > 0 ? notInArray(keyColumn, keptKeys) : undefined,
+      ),
+    )
+    .returning({ key: keyColumn });
+  if (retired.length > 0) {
+    console.log(`  ${label}: ${retired.map((row) => row.key).join(', ')}`);
+  }
+}
+
 async function main() {
   assertUniqueSlugs();
   assertUniqueAccountMatchers();
@@ -141,25 +176,14 @@ async function main() {
           categoryCount++;
         }
 
-        // Empty seed list = retire every category (drizzle can't render
-        // notInArray([])). `retired_at is null` keeps the original stamp.
-        const seedNames = seed.categories.map((c) => c.name);
-        const retired = await tx
-          .update(cardCategories)
-          .set({ retiredAt: sql`now()`, updatedAt: sql`now()` })
-          .where(
-            and(
-              eq(cardCategories.cardId, card.id),
-              isNull(cardCategories.retiredAt),
-              seedNames.length > 0 ? notInArray(cardCategories.name, seedNames) : undefined,
-            ),
-          )
-          .returning({ name: cardCategories.name });
-        if (retired.length > 0) {
-          console.log(
-            `  ${seed.slug}: retired categories no longer in seed: ${retired.map((r) => r.name).join(', ')}`,
-          );
-        }
+        await retireMissing(
+          tx,
+          cardCategories,
+          cardCategories.name,
+          seed.categories.map((c) => c.name),
+          `${seed.slug}: retired categories no longer in seed`,
+          eq(cardCategories.cardId, card.id),
+        );
       }
 
       // Credit categories: upsert by name (revives retired ones), then retire
@@ -173,42 +197,23 @@ async function main() {
             set: { retiredAt: null, updatedAt: sql`now()` },
           });
       }
-      const retiredCredit = await tx
-        .update(creditCategories)
-        .set({ retiredAt: sql`now()`, updatedAt: sql`now()` })
-        .where(
-          and(
-            isNull(creditCategories.retiredAt),
-            creditCategorySeeds.length > 0
-              ? notInArray(creditCategories.name, creditCategorySeeds)
-              : undefined,
-          ),
-        )
-        .returning({ name: creditCategories.name });
-      if (retiredCredit.length > 0) {
-        console.log(
-          `  retired credit categories no longer in seed: ${retiredCredit.map((r) => r.name).join(', ')}`,
-        );
-      }
+      await retireMissing(
+        tx,
+        creditCategories,
+        creditCategories.name,
+        creditCategorySeeds,
+        'retired credit categories no longer in seed',
+      );
 
       // Retire cards no longer in the file; their categories are left as-is
       // since matchCard skips retired cards.
-      const seedSlugs = cardSeeds.map((s) => s.slug);
-      const retiredCards = await tx
-        .update(cards)
-        .set({ retiredAt: sql`now()`, updatedAt: sql`now()` })
-        .where(
-          and(
-            isNull(cards.retiredAt),
-            seedSlugs.length > 0 ? notInArray(cards.slug, seedSlugs) : undefined,
-          ),
-        )
-        .returning({ slug: cards.slug });
-      if (retiredCards.length > 0) {
-        console.log(
-          `  retired cards no longer in seed: ${retiredCards.map((c) => c.slug).join(', ')}`,
-        );
-      }
+      await retireMissing(
+        tx,
+        cards,
+        cards.slug,
+        cardSeeds.map((s) => s.slug),
+        'retired cards no longer in seed',
+      );
 
       // Re-match accounts to cards by Plaid account name. Only accounts.card_id
       // is written; a null match never clears saved categories.

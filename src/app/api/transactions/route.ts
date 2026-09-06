@@ -2,6 +2,7 @@ import { desc, eq, getTableColumns, sql } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { cardCategories, creditCategories, transactions } from '@/db/schema';
 import { db } from '@/lib/db';
+import type { TransactionsPayload } from '@/lib/api-types';
 import { badRequest, errorResponse } from '@/lib/errors';
 
 export async function GET(req: NextRequest) {
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
       .where(eq(transactions.accountId, accountId));
     const total = countRow?.total ?? 0;
 
-    return NextResponse.json({ transactions: rows, total, limit, offset });
+    return NextResponse.json<TransactionsPayload>({ transactions: rows, total, limit, offset });
   } catch (err) {
     return errorResponse(err);
   }

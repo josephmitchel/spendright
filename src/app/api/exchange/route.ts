@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { ExchangeResponse } from '@/lib/api-types';
 import { badRequest, errorResponse } from '@/lib/errors';
 import { linkItem } from '@/lib/link';
 
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await linkItem(publicToken);
-    return NextResponse.json({
+    return NextResponse.json<ExchangeResponse>({
       item_id: result.itemId,
       institution_name: result.institutionName,
       accounts: result.accountsStored,

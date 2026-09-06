@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { ApiTransaction, TransactionsResponse } from '@/lib/api-types';
-import { readJson } from '@/lib/http';
+import { readJson, settleReads } from '@/lib/http';
 
 // Rows per page; always sent explicitly rather than relying on the API default.
 export const PAGE_SIZE = 20;
@@ -27,38 +27,39 @@ export function useTransactionPage(accountId: string, reloadKey: number, reload:
   // True once the first load has settled, success or failure.
   const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Whether a transactions read ever succeeded; a failed read is not evidence
-  // of an empty account.
-  const [loaded, setLoadedFlag] = useState(false);
+  // Whether the latest transactions read succeeded; a failed read is not
+  // evidence of an empty account.
+  const [loaded, setLoaded] = useState({ transactions: false });
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [txnResult] = await Promise.allSettled([
-        fetch(
+      const {
+        results,
+        succeeded,
+        error: failureMessage,
+      } = await settleReads({
+        transactions: fetch(
           `/api/transactions?accountId=${encodeURIComponent(accountId)}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
         ).then((res) => readJson<TransactionsResponse>(res, 'Failed to load transactions')),
-      ]);
+      });
       if (cancelled) return;
 
-      if (txnResult.status === 'fulfilled') {
-        setTransactionList(txnResult.value.transactions ?? []);
-        setTotal(txnResult.value.total);
-        setLoadedFlag(true);
-        setError(null);
+      if (results.transactions.status === 'fulfilled') {
+        setTransactionList(results.transactions.value.transactions ?? []);
+        setTotal(results.transactions.value.total);
         setLoadedPage(page);
-      } else {
-        console.error(txnResult.reason);
-        setLoadedFlag(false);
-        setError(txnResult.reason instanceof Error ? txnResult.reason.message : 'Failed to load');
-        // loadedPage is left alone: the rows on screen are still its rows.
       }
+      // On failure loadedPage is left alone: the rows on screen are still its
+      // rows. `failureMessage` is null on success, so this also clears.
+      setError(failureMessage);
+      setLoaded(succeeded);
       setSettledRequest({ page, reloadKey });
       setSettled(true);
 
       // Clamp back onto the last real page if the account shrank under the pager.
-      if (txnResult.status === 'fulfilled') {
-        const lastPage = Math.max(0, Math.ceil(txnResult.value.total / PAGE_SIZE) - 1);
+      if (results.transactions.status === 'fulfilled') {
+        const lastPage = Math.max(0, Math.ceil(results.transactions.value.total / PAGE_SIZE) - 1);
         if (page > lastPage) setPage(lastPage);
       }
     })();

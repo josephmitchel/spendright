@@ -16,6 +16,11 @@ export default function AccountPage({ params }: { params: Promise<{ accountId: s
   return <AccountView key={accountId} accountId={accountId} />;
 }
 
+// The page body renders exactly one of these below the account identity and
+// error line. Derived in deriveView so the legal states are enumerated once,
+// instead of each render branch re-encoding its own conjunction of flags.
+type View = 'loading' | 'not-found' | 'unsupported' | 'ready' | 'unresolved';
+
 function AccountView({ accountId }: { accountId: string }) {
   // Bumped by Retry (and by a same-page reload) to re-run both load effects.
   const [reloadKey, setReloadKey] = useState(0);
@@ -39,7 +44,7 @@ function AccountView({ accountId }: { accountId: string }) {
     settled: transactionsSettled,
     error: transactionsError,
     clearError: clearTransactionsError,
-    loaded: transactionsLoaded,
+    loaded: { transactions: transactionsLoaded },
     goToPage,
   } = useTransactionPage(accountId, reloadKey, reload);
   const { setCategory, patchError } = useCategoryPatches(
@@ -54,6 +59,24 @@ function AccountView({ accountId }: { accountId: string }) {
   const error = [accountError, transactionsError].filter(Boolean).join('; ') || null;
   // Design: stale-lists-disable-editing.
   const categoriesMayBeStale = !loaded.cards || !loaded.account;
+
+  const deriveView = (): View => {
+    if (loading) return 'loading';
+    // Not-found needs positive evidence: this pass's account read succeeded
+    // and found nothing. A stale `account` surviving a failed re-read renders
+    // as ready below instead. Design: partial-load-rendering.
+    if (loaded.account && !account) return 'not-found';
+    // Unsupported needs both reads current, because the card is only
+    // recomputed when both succeeded. Design: supported-account-rule.
+    if (loaded.account && loaded.cards && account && !card) return 'unsupported';
+    // Ready renders the (possibly stale) card content; failures show beside
+    // it rather than blanking it.
+    if (card) return 'ready';
+    // Nothing loaded well enough to assert anything: identity and the error
+    // line are all that render.
+    return 'unresolved';
+  };
+  const view = deriveView();
 
   return (
     <main>
@@ -77,7 +100,7 @@ function AccountView({ accountId }: { accountId: string }) {
           {account.isoCurrencyCode ? ` ${account.isoCurrencyCode}` : ''}
         </p>
       )}
-      {loading && <p>Loading…</p>}
+      {view === 'loading' && <p>Loading…</p>}
       {error && (
         <p>
           Error: {error}{' '}
@@ -92,12 +115,10 @@ function AccountView({ accountId }: { accountId: string }) {
           </button>
         </p>
       )}
-      {!loading && loaded.account && !account && (
+      {view === 'not-found' && (
         <p>Account not found. It may have been disconnected — check the list on the home page.</p>
       )}
-      {/* Unsupported account: identity and balances only. Gated on both reads
-          because the card is only recomputed when both succeeded. */}
-      {!loading && account && loaded.account && loaded.cards && !card && (
+      {view === 'unsupported' && (
         <p>
           <strong>Card not supported.</strong> This account doesn&apos;t match any card definition,
           so SpendRight can&apos;t show or categorize its transactions. Add its Plaid account name
@@ -105,7 +126,8 @@ function AccountView({ accountId }: { accountId: string }) {
           <code>npm run seed:cards</code>.
         </p>
       )}
-      {!loading && card && (
+      {/* card is non-null whenever view is 'ready'; the check is for the compiler. */}
+      {view === 'ready' && card && (
         <>
           <p>{`Card: ${card.name} (${card.type})`}</p>
           <h2>Transactions</h2>

@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { items } from '@/db/schema';
+import type { ItemDeleteResponse } from '@/lib/api-types';
 import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { errorResponse, jsonError, plaidErrorBody } from '@/lib/errors';
@@ -26,7 +27,7 @@ export async function DELETE(
     }
 
     await db.delete(items).where(eq(items.itemId, itemId));
-    return NextResponse.json({ deleted: itemId });
+    return NextResponse.json<ItemDeleteResponse>({ deleted: itemId });
   } catch (err) {
     return errorResponse(err);
   }

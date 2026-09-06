@@ -2,6 +2,7 @@ import { desc, isNull } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { cardCategories, cards, creditCategories } from '@/db/schema';
 import { db } from '@/lib/db';
+import type { CardsPayload } from '@/lib/api-types';
 import { errorResponse } from '@/lib/errors';
 
 export async function GET() {
@@ -25,7 +26,7 @@ export async function GET() {
       ...card,
       categories: categoryRows.filter((category) => category.cardId === card.id),
     }));
-    return NextResponse.json({ cards: result, creditCategories: creditCategoryRows });
+    return NextResponse.json<CardsPayload>({ cards: result, creditCategories: creditCategoryRows });
   } catch (err) {
     return errorResponse(err);
   }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { TransactionPatchPayload } from '@/lib/api-types';
 import { setTransactionCategory, type CategoryKind } from '@/lib/categories';
 import { badRequest, errorResponse, jsonError, pgErrorCode, PublicError } from '@/lib/errors';
 
@@ -51,7 +52,7 @@ export async function PATCH(
     }
 
     const transaction = await setTransactionCategory(transactionId, parsed.kind, parsed.categoryId);
-    return NextResponse.json({ transaction });
+    return NextResponse.json<TransactionPatchPayload>({ transaction });
   } catch (err) {
     // Rejections decided inside the write's transaction (404, sign and
     // ownership 400s) arrive as PublicError; returned directly so an

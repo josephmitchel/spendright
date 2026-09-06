@@ -13,15 +13,38 @@ export async function readJson<T>(res: Response, failureMessage: string): Promis
   return data as T;
 }
 
-// Folds a load's allSettled failures into one on-screen message (null when
-// nothing failed), logging each. Design: partial-load-rendering.
-export function joinedFailureMessage(results: PromiseSettledResult<unknown>[]): string | null {
-  const failures = results.filter(
-    (result): result is PromiseRejectedResult => result.status === 'rejected',
-  );
-  for (const failure of failures) console.error(failure.reason);
-  if (failures.length === 0) return null;
-  return failures
-    .map((failure) => (failure.reason instanceof Error ? failure.reason.message : 'Failed to load'))
-    .join('; ');
+// Settles a keyed set of reads together, so one failure never discards a
+// sibling that did arrive. `results` carries each read's typed outcome,
+// `succeeded` is the per-read gate for messages that assert what the database
+// holds, and `error` folds the failures (each also logged) into one on-screen
+// message, null when nothing failed. Every data hook loads through this and
+// exposes the same shape: `settled`, `error`, `clearError`, and a `loaded`
+// object with one boolean per read. Design: partial-load-rendering.
+// The constraint is not Record<string, Promise<unknown>>: that would
+// contextually type each read as Promise<unknown> and collapse the inferred
+// value types; Awaited<T[K]> does the unwrapping instead.
+export async function settleReads<T extends Record<string, unknown>>(
+  reads: T,
+): Promise<{
+  results: { [K in keyof T]: PromiseSettledResult<Awaited<T[K]>> };
+  succeeded: { [K in keyof T]: boolean };
+  error: string | null;
+}> {
+  const keys = Object.keys(reads) as Array<keyof T & string>;
+  const outcomes = await Promise.allSettled(keys.map((key) => reads[key]));
+  const results = {} as { [K in keyof T]: PromiseSettledResult<Awaited<T[K]>> };
+  const succeeded = {} as { [K in keyof T]: boolean };
+  const messages: string[] = [];
+  keys.forEach((key, index) => {
+    // allSettled yields one outcome per input; satisfies the checked index.
+    const outcome = outcomes[index];
+    if (!outcome) return;
+    results[key] = outcome as (typeof results)[typeof key];
+    succeeded[key] = outcome.status === 'fulfilled';
+    if (outcome.status === 'rejected') {
+      console.error(outcome.reason);
+      messages.push(outcome.reason instanceof Error ? outcome.reason.message : 'Failed to load');
+    }
+  });
+  return { results, succeeded, error: messages.length > 0 ? messages.join('; ') : null };
 }

@@ -2,6 +2,7 @@ import { getTableColumns } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { items } from '@/db/schema';
 import { db } from '@/lib/db';
+import type { ItemsPayload } from '@/lib/api-types';
 import { errorResponse } from '@/lib/errors';
 
 export async function GET() {
@@ -9,7 +10,7 @@ export async function GET() {
     // Exclude the encrypted access token from the response
     const { accessToken: _accessToken, ...publicColumns } = getTableColumns(items);
     const rows = await db.select(publicColumns).from(items);
-    return NextResponse.json({ items: rows });
+    return NextResponse.json<ItemsPayload>({ items: rows });
   } catch (err) {
     return errorResponse(err);
   }

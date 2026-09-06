@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { SyncResponse } from '@/lib/api-types';
 import { errorResponse } from '@/lib/errors';
 import { syncAllItems } from '@/lib/sync-all';
 
@@ -8,7 +9,7 @@ import { syncAllItems } from '@/lib/sync-all';
 export async function POST() {
   try {
     const results = await syncAllItems();
-    return NextResponse.json({ results });
+    return NextResponse.json<SyncResponse>({ results });
   } catch (err) {
     return errorResponse(err);
   }
