@@ -2,10 +2,9 @@ import { sql } from 'drizzle-orm';
 import type { AccountBase } from 'plaid';
 import { accounts, type CardRow } from '@/db/schema';
 import { matchCard } from '@/lib/cards';
-import type { db } from '@/lib/db';
+import { db } from '@/lib/db';
 
-// The handle drizzle passes to a db.transaction callback. Callers open one per
-// account; this module never opens its own.
+// The handle drizzle passes to a db.transaction callback.
 export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function toAccountRow(plaidAccount: AccountBase, itemId: string, cardId: number | null) {
@@ -49,4 +48,31 @@ export async function upsertAccount(
       target: accounts.accountId,
       set: { ...accountValues, updatedAt: sql`now()` },
     });
+}
+
+// Stores each account in its own transaction, committed independently, so one
+// failing account costs only its own rows. Failures are logged and returned,
+// never thrown — shared by /api/exchange (which reports them) and syncItem
+// (whose known-account guard covers the missing rows).
+// Design: accounts-refreshed-per-sync, initial-sync-reported-not-thrown.
+export async function storeAccounts(
+  plaidAccounts: AccountBase[],
+  itemId: string,
+  cardList: CardRow[],
+): Promise<{ account: AccountBase; error: unknown }[]> {
+  const failures: { account: AccountBase; error: unknown }[] = [];
+  for (const plaidAccount of plaidAccounts) {
+    try {
+      await db.transaction(async (tx) => {
+        await upsertAccount(tx, plaidAccount, itemId, cardList);
+      });
+    } catch (err) {
+      console.error(
+        `Failed to store account ${plaidAccount.account_id} for item ${itemId} — continuing:`,
+        err,
+      );
+      failures.push({ account: plaidAccount, error: err });
+    }
+  }
+  return failures;
 }

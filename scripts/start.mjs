@@ -1,11 +1,11 @@
 // `next start` runs instrumentation.ts — the loopback bind assertion and the
-// sync scheduler — lazily, on the first incoming request (2026-09-05 audit:
-// outside dev, NextServer.prepare() is a no-op and register() waits for
-// handleRequest). This wrapper starts the server and immediately sends that
+// sync scheduler — lazily, on the first incoming request (outside dev,
+// NextServer.prepare() is a no-op and register() waits for handleRequest).
+// This wrapper starts the server and immediately sends that
 // first request itself, so both jobs run at startup as the design records
 // require. If the warm-up cannot be delivered, the wrapper stops the server:
 // serving with the assertion and the scheduler dormant is exactly the state
-// the records say must not go unnoticed (2026-09-06 audit).
+// the records say must not go unnoticed.
 // Design: non-local-request-guard, scheduled-sync.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -36,7 +36,7 @@ if (existsSync(nextDir)) {
 // `--port=3001`, last one wins, PORT as fallback. Every accepted form must be
 // parsed here or the warm-up aims at the wrong port — worst case another local
 // server answers there and this one keeps serving with instrumentation dormant
-// (2026-09-06 audit). A form Next rejects (e.g. `-p=3001`) parses to NaN here,
+//. A form Next rejects (e.g. `-p=3001`) parses to NaN here,
 // but Next itself then exits, which stops the wrapper too.
 const args = process.argv.slice(2);
 let port = Number(process.env.PORT) || 3000;
@@ -49,7 +49,7 @@ for (let i = 0; i < args.length; i++) {
 
 // The loopback bind comes after the user's args: commander's last-wins
 // semantics make it unconditional, so a stray `-H 0.0.0.0` cannot override it
-// (2026-09-06 audit; the instrumentation bind assertion remains the backstop).
+// (the instrumentation bind assertion remains the backstop).
 const child = spawn(process.execPath, [nextBin, 'start', ...args, '-H', '127.0.0.1'], {
   stdio: 'inherit',
 });

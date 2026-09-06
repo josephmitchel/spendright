@@ -8,7 +8,7 @@ import type { NetworkInterfaceInfo } from 'os';
 // hostname only from -H — no env or config fallback). Second, the sync
 // scheduler (design: scheduled-sync). The assertion timers are scheduled
 // before the scheduler's fallible import, so no failure in the sync module
-// graph can disable the assertion (2026-09-05 audit).
+// graph can disable the assertion.
 // Design: non-local-request-guard.
 
 const PROBE_DELAYS_MS = [3000, 15000];
@@ -29,7 +29,7 @@ interface TcpHandle {
 }
 
 // This process's own listening TCP sockets. Reading the bind address beats
-// probing from outside (2026-09-05 audit): it sees the real port (`next dev`
+// probing from outside: it sees the real port (`next dev`
 // walks the port forward on EADDRINUSE without setting PORT, and -p is not
 // visible here), it sees a wildcard bind even when no non-loopback interface
 // exists yet (Wi-Fi off, VPN not up), and it can never blame another
@@ -137,7 +137,7 @@ export async function register(): Promise<void> {
   // Dynamically imported so the module graph (db, Plaid SDK) loads only in
   // the nodejs runtime. A broken config (say, an unset DATABASE_URL) throws
   // here, and Next does not treat a rejected register() as fatal (verified
-  // 2026-09-05: it logs and keeps serving), so the exit is explicit — better
+  // on Next 16.3.4: it logs and keeps serving), so the exit is explicit — better
   // than a live server whose every sync would fail.
   // Design: config-validated-not-assumed.
   try {

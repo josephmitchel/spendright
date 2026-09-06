@@ -1,7 +1,7 @@
 ---
 name: accounts-refreshed-per-sync
 description: Every sync re-upserts the item's accounts from Plaid, each in its own database transaction, before the transaction pull; a failing account costs only its own rows
-tags: [upsertAccount, src/lib/accounts.ts, syncItem, getAccounts, db.transaction]
+tags: [upsertAccount, storeAccounts, src/lib/accounts.ts, syncItem, getAccounts, db.transaction]
 date: 2026-09-04
 ---
 

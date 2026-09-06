@@ -3,11 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { accounts, cardCategories, creditCategories, transactions } from '@/db/schema';
 import { isInflowAmount } from '@/lib/amounts';
 import { db } from '@/lib/db';
-import { errorResponse, pgErrorCode } from '@/lib/errors';
-
-function badRequest(message: string) {
-  return NextResponse.json({ error: { code: 'BAD_REQUEST', message } }, { status: 400 });
-}
+import { badRequest, errorResponse, jsonError, pgErrorCode } from '@/lib/errors';
 
 // Every column except the raw Plaid payload. Design: raw-plaid-payload-stored-not-served.
 const { plaidTransaction: _plaidTransaction, ...returnedColumns } = getTableColumns(transactions);
@@ -69,12 +65,7 @@ export async function PATCH(
         .where(eq(transactions.transactionId, transactionId))
         .for('update');
       if (!transaction) {
-        throw new RejectedRequest(
-          NextResponse.json(
-            { error: { code: 'NOT_FOUND', message: 'Transaction not found' } },
-            { status: 404 },
-          ),
-        );
+        throw new RejectedRequest(jsonError('NOT_FOUND', 'Transaction not found', 404));
       }
       const isInflow = isInflowAmount(transaction.amount);
 
@@ -159,27 +150,19 @@ export async function PATCH(
     // deadlock_detected (against the seed backfill or a sync upsert): both
     // are retryable.
     if (code === '55P03' || code === '40P01') {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'LOCKED',
-            message: 'This transaction is being synced right now — try again in a moment',
-          },
-        },
-        { status: 503 },
+      return jsonError(
+        'LOCKED',
+        'This transaction is being synced right now — try again in a moment',
+        503,
       );
     }
     // 23503 foreign_key_violation: the category was deleted (by hand; the seed
     // only retires) between validation and the update.
     if (code === '23503') {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'CATEGORY_REMOVED',
-            message: 'That category no longer exists — reload the page and pick again',
-          },
-        },
-        { status: 409 },
+      return jsonError(
+        'CATEGORY_REMOVED',
+        'That category no longer exists — reload the page and pick again',
+        409,
       );
     }
     return errorResponse(err);

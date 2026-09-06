@@ -2,8 +2,8 @@ import { loggableError } from '@/lib/log';
 import { syncAllItems } from '@/lib/sync-all';
 
 // The automatic sync path: an in-process timer, started once per server from
-// src/instrumentation.ts. It replaced the Plaid webhook + tunnel (retired
-// 2026-09-05) — with no internet-reachable route, the app has no exposed
+// src/instrumentation.ts. It replaced the retired Plaid webhook + tunnel
+// — with no internet-reachable route, the app has no exposed
 // origin at all. Runs shortly after startup (data is fresh when the app is
 // opened) and then hourly, comfortably ahead of Plaid's few-times-a-day
 // refresh cadence. Design: scheduled-sync, automatic-sync.

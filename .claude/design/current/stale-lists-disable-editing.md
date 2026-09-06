@@ -1,7 +1,7 @@
 ---
 name: stale-lists-disable-editing
 description: Category pickers are disabled, not hidden, whenever the category lists may be stale
-tags: [categoriesMayBeStale, CategorySelect, src/app/accounts/[accountId]/page.tsx]
+tags: [categoriesMayBeStale, CategorySelect, src/app/accounts/[accountId]/page.tsx, src/app/accounts/[accountId]/TransactionTable.tsx]
 date: 2026-09-04
 ---
 

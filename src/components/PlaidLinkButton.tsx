@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
+import type { ExchangeResponse, LinkTokenResponse } from '@/lib/api-types';
 import { readJson } from '@/lib/http';
+import { skippedSyncNotice } from '@/lib/sync-messages';
 
 export default function PlaidLinkButton({
   // The Action suffix is Next's TypeScript-plugin convention for a function
@@ -38,25 +40,16 @@ export default function PlaidLinkButton({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ public_token: publicToken }),
         });
-        const data = await readJson(res, 'Exchange failed');
+        const data = await readJson<ExchangeResponse>(res, 'Exchange failed');
         setStatus('idle');
-        const accountErrors: string[] = Array.isArray(data.account_errors)
-          ? data.account_errors.filter((e: unknown): e is string => typeof e === 'string')
-          : [];
+        const accountErrors = data.account_errors ?? [];
         // A re-linked item keeps its stored skip streak, so the exchange-time
         // sync can be the one that drops the held rows. Design: bounded-cursor-hold.
-        const skipped =
-          typeof data.transactions?.skipped === 'number' ? data.transactions.skipped : 0;
+        const skipped = data.transactions?.skipped ?? 0;
         const dropped = data.transactions?.dropped === true;
         const notices = [
-          ...(typeof data.sync_error === 'string' ? [data.sync_error] : []),
-          ...(skipped > 0
-            ? [
-                dropped
-                  ? `${skipped} transaction(s) dropped after repeated failures — not recoverable (see the server log)`
-                  : `${skipped} transaction(s) held for accounts that aren’t stored yet — they’ll be retried on the next sync`,
-              ]
-            : []),
+          ...(data.sync_error ? [data.sync_error] : []),
+          ...(skipped > 0 ? [skippedSyncNotice(skipped, dropped)] : []),
           ...(accountErrors.length > 0
             ? [`${accountErrors.length} account(s) not stored — ${accountErrors.join('; ')}`]
             : []),
@@ -87,7 +80,7 @@ export default function PlaidLinkButton({
     setSyncNotice(null);
     try {
       const res = await fetch('/api/link-token', { method: 'POST' });
-      const data = await readJson(res, 'Failed to create link token');
+      const data = await readJson<LinkTokenResponse>(res, 'Failed to create link token');
       pendingOpen.current = true;
       setLinkToken(data.link_token);
       setStatus('idle');

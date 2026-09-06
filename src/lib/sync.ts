@@ -9,12 +9,14 @@ import {
   transactions,
   type ItemRow,
 } from '@/db/schema';
-import { upsertAccount } from '@/lib/accounts';
+import { storeAccounts, type DbTransaction } from '@/lib/accounts';
 import { isInflowAmount } from '@/lib/amounts';
 import { decrypt } from '@/lib/crypto';
-import { loggableError } from '@/lib/log';
 import { db } from '@/lib/db';
+import { plaidErrorBody, publicErrorMessage } from '@/lib/errors';
+import { loggableError } from '@/lib/log';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
+import { MAX_SKIPPED_SYNCS, skippedItemErrorMessage } from '@/lib/sync-messages';
 
 function toTransactionRow(txn: PlaidTransaction, itemId: string) {
   return {
@@ -31,10 +33,6 @@ function toTransactionRow(txn: PlaidTransaction, itemId: string) {
     plaidTransaction: txn,
   };
 }
-
-// Consecutive syncs a cursor may be held back before the skipped rows are
-// dropped. Design: bounded-cursor-hold
-export const MAX_SKIPPED_SYNCS = 5;
 
 export interface SyncItemResult {
   itemId: string;
@@ -81,6 +79,225 @@ export function syncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sync
   return run;
 }
 
+// Records a sync failure on the item row and returns the user-facing message.
+// The message goes through the allow-list because it is stored on items.error
+// and shown on every load; the write is best-effort because the caller's flow
+// must finish either way. Shared by syncAllItems and the exchange route's
+// inline initial sync. Design: error-message-allow-list.
+export async function recordSyncFailure(
+  itemId: string,
+  err: unknown,
+  fallback: string,
+): Promise<string> {
+  const message = publicErrorMessage(err, fallback);
+  const plaidError = plaidErrorBody(err);
+  try {
+    await db
+      .update(items)
+      // { message } is the non-Plaid shape of items.error.
+      .set({ error: plaidError ?? { message }, updatedAt: sql`now()` })
+      .where(eq(items.itemId, itemId));
+  } catch (writeErr) {
+    console.error(`Could not record the sync failure for item ${itemId}:`, writeErr);
+  }
+  return message;
+}
+
+// Guard for the transactions.account_id FK: a rejected insert would abort
+// the whole sync transaction, cursor included, and wedge the item. Must
+// mirror the FK exactly, so keyed on account_id alone (not item_id) and read
+// from the DB rather than from the Plaid account refresh.
+// Design: bounded-cursor-hold.
+async function knownAccountIdsFor(
+  tx: DbTransaction,
+  batch: PlaidTransaction[],
+): Promise<Set<string>> {
+  const batchAccountIds = [...new Set(batch.map((txn) => txn.account_id))];
+  if (batchAccountIds.length === 0) return new Set();
+  const rows = await tx
+    .select({ accountId: accounts.accountId })
+    .from(accounts)
+    .where(inArray(accounts.accountId, batchAccountIds));
+  return new Set(rows.map((row) => row.accountId));
+}
+
+interface CarriedSelection {
+  cardCategoryId: number | null;
+  rewardRate: string | null;
+  creditCategoryId: number | null;
+}
+
+// Ids from `candidateIds` whose category row still exists. A carry is a fresh
+// insert, so a stale id would abort the whole sync.
+async function liveCategoryIds(
+  tx: DbTransaction,
+  table: typeof cardCategories | typeof creditCategories,
+  candidateIds: (number | null)[],
+): Promise<Set<number>> {
+  const ids = [...new Set(candidateIds.filter((id): id is number => id !== null))];
+  if (ids.length === 0) return new Set();
+  const rows = await tx
+    .select({ id: table.id })
+    // The cast only widens the overload; the runtime table is the one passed in.
+    .from(table as typeof cardCategories)
+    .where(inArray(table.id, ids));
+  return new Set(rows.map((row) => row.id));
+}
+
+// Plaid reposts a pending transaction under a new id (old id in `removed`,
+// new one in `added` with pending_transaction_id). Resolves the selections to
+// carry over before the pending rows are deleted, keyed by pending id.
+// Design: pending-to-posted-carry.
+async function resolveCarriedSelections(
+  tx: DbTransaction,
+  added: PlaidTransaction[],
+): Promise<Map<string, CarriedSelection>> {
+  const carried = new Map<string, CarriedSelection>();
+  const pendingIds = added
+    .map((txn) => txn.pending_transaction_id)
+    .filter((id): id is string => Boolean(id));
+  if (pendingIds.length === 0) return carried;
+
+  // Locked: a concurrent PATCH on a pending row would otherwise commit a
+  // selection after this read decided there was nothing to carry, then lose
+  // it when the row is deleted. With the lock, PATCH blocks and gets a 404
+  // (row gone) or a 503 (lock timeout) instead of a false 200.
+  const pendingRows = await tx
+    .select({
+      transactionId: transactions.transactionId,
+      accountId: transactions.accountId,
+      cardCategoryId: transactions.cardCategoryId,
+      rewardRate: transactions.rewardRate,
+      creditCategoryId: transactions.creditCategoryId,
+    })
+    .from(transactions)
+    .where(inArray(transactions.transactionId, pendingIds))
+    .for('update');
+
+  const liveCardCategoryIds = await liveCategoryIds(
+    tx,
+    cardCategories,
+    pendingRows.map((row) => row.cardCategoryId),
+  );
+  const liveCreditCategoryIds = await liveCategoryIds(
+    tx,
+    creditCategories,
+    pendingRows.map((row) => row.creditCategoryId),
+  );
+
+  for (const row of pendingRows) {
+    const cardCategoryExists =
+      row.cardCategoryId !== null && liveCardCategoryIds.has(row.cardCategoryId);
+    const creditCategoryExists =
+      row.creditCategoryId !== null && liveCreditCategoryIds.has(row.creditCategoryId);
+    // A rate carries on its own, without a live category link: it is a
+    // historical snapshot of what the purchase earned.
+    if (cardCategoryExists || creditCategoryExists || row.rewardRate !== null) {
+      carried.set(row.transactionId, {
+        cardCategoryId: cardCategoryExists ? row.cardCategoryId : null,
+        rewardRate: row.rewardRate,
+        creditCategoryId: creditCategoryExists ? row.creditCategoryId : null,
+      });
+    }
+  }
+  return carried;
+}
+
+// Carry only the kind matching the posted amount's sign; a sign flip drops
+// the carry. Spend side carries on either column so an orphaned rate
+// survives. Design: category-kind-sign-rule.
+function carriedColumns(
+  carry: CarriedSelection | undefined,
+  isInflow: boolean,
+):
+  | { creditCategoryId: number }
+  | { cardCategoryId: number | null; rewardRate: string | null }
+  | null {
+  if (!carry) return null;
+  if (isInflow) {
+    return carry.creditCategoryId != null ? { creditCategoryId: carry.creditCategoryId } : null;
+  }
+  return carry.cardCategoryId != null || carry.rewardRate != null
+    ? { cardCategoryId: carry.cardCategoryId, rewardRate: carry.rewardRate }
+    : null;
+}
+
+// Upserts the batch. Rows for accounts outside `knownAccountIds` are skipped
+// (not inserted, counted, logged) instead of aborting the sync; returns the
+// skip count. Design: bounded-cursor-hold.
+async function upsertTransactions(
+  tx: DbTransaction,
+  itemId: string,
+  upserts: PlaidTransaction[],
+  knownAccountIds: Set<string>,
+  carried: Map<string, CarriedSelection>,
+): Promise<number> {
+  let skipped = 0;
+  for (const txn of upserts) {
+    if (!knownAccountIds.has(txn.account_id)) {
+      skipped++;
+      console.error(
+        `sync ${itemId}: transaction ${txn.transaction_id} references unknown account ${txn.account_id} — skipped`,
+      );
+      continue;
+    }
+    const row = toTransactionRow(txn, itemId);
+    const carry = txn.pending_transaction_id ? carried.get(txn.pending_transaction_id) : undefined;
+    const isInflow = isInflowAmount(row.amount);
+    const carriedValues = carriedColumns(carry, isInflow);
+    await tx
+      .insert(transactions)
+      .values(carriedValues ? { ...row, ...carriedValues } : row)
+      .onConflictDoUpdate({
+        target: transactions.transactionId,
+        // Re-syncs never touch the matching kind's selection; only the
+        // wrong-kind columns are cleared, which the DB sign constraint
+        // requires on a sign flip.
+        set: {
+          ...row,
+          updatedAt: sql`now()`,
+          ...(isInflow ? { cardCategoryId: null, rewardRate: null } : { creditCategoryId: null }),
+        },
+      });
+  }
+  return skipped;
+}
+
+// The cursor/skip-counter/error bookkeeping on the item row. The counter is
+// read under lock rather than from the caller's possibly stale ItemRow; a
+// clean sync or a drop resets it to 0. The cursor advances only on a clean
+// sync or a drop. items.error is written on the first skip and cleared by a
+// clean sync. Design: bounded-cursor-hold.
+async function recordSyncOutcome(
+  tx: DbTransaction,
+  itemId: string,
+  skipped: number,
+  cursor: string | null,
+): Promise<{ consecutiveSkippedSyncs: number; dropped: boolean }> {
+  const [itemState] = await tx
+    .select({ skippedSyncs: items.skippedSyncs })
+    .from(items)
+    .where(eq(items.itemId, itemId))
+    .for('update');
+  const consecutiveSkippedSyncs = skipped === 0 ? 0 : (itemState?.skippedSyncs ?? 0) + 1;
+  const dropped = consecutiveSkippedSyncs >= MAX_SKIPPED_SYNCS;
+
+  await tx
+    .update(items)
+    .set({
+      ...(skipped === 0 || dropped ? { cursor } : {}),
+      skippedSyncs: dropped ? 0 : consecutiveSkippedSyncs,
+      error:
+        skipped === 0
+          ? null
+          : { message: skippedItemErrorMessage(skipped, consecutiveSkippedSyncs, dropped) },
+      updatedAt: sql`now()`,
+    })
+    .where(eq(items.itemId, itemId));
+
+  return { consecutiveSkippedSyncs, dropped };
+}
+
 async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
   const accessToken = decrypt(item.accessToken);
   // Plaid calls stay outside the DB transaction. The account refresh is
@@ -99,156 +316,22 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
   }
   // Ordered so card matching never depends on physical row order.
   const cardList = plaidAccounts.length > 0 ? await db.select().from(cards).orderBy(cards.id) : [];
-
-  // Each account in its own transaction, committed before the sync transaction
-  // opens, so one failing account costs only its own rows (handled by the
-  // known-account guard below).
-  for (const plaidAccount of plaidAccounts) {
-    try {
-      await db.transaction(async (tx) => {
-        await upsertAccount(tx, plaidAccount, item.itemId, cardList);
-      });
-    } catch (err) {
-      console.error(
-        `sync ${item.itemId}: could not store account ${plaidAccount.account_id} — continuing:`,
-        err,
-      );
-    }
-  }
+  // Committed before the sync transaction opens; failures are the known-account
+  // guard's problem.
+  await storeAccounts(plaidAccounts, item.itemId, cardList);
 
   const { added, modified, removed, cursor } = await syncTransactions(accessToken, item.cursor, {
     notReadyRetries: options?.notReadyRetries,
   });
+
   let skipped = 0;
-  let dropped = false;
-  let consecutiveSkippedSyncs = 0;
-
+  let outcome = { consecutiveSkippedSyncs: 0, dropped: false };
   await db.transaction(async (tx) => {
-    // Guard for the transactions.account_id FK: a rejected insert would abort
-    // the whole transaction, cursor included, and wedge the item. Must mirror
-    // the FK exactly, so keyed on account_id alone (not item_id) and read from
-    // the DB rather than from plaidAccounts. Design: bounded-cursor-hold
-    const batchAccountIds = [...new Set([...added, ...modified].map((txn) => txn.account_id))];
-    const knownAccountIds = new Set(
-      batchAccountIds.length > 0
-        ? (
-            await tx
-              .select({ accountId: accounts.accountId })
-              .from(accounts)
-              .where(inArray(accounts.accountId, batchAccountIds))
-          ).map((row) => row.accountId)
-        : [],
-    );
-
-    // Plaid reposts a pending transaction under a new id (old id in `removed`,
-    // new one in `added` with pending_transaction_id). Carry the user's
-    // selection over before the pending row is deleted below.
-    // Design: pending-to-posted-carry
-    const pendingIds = added
-      .map((txn) => txn.pending_transaction_id)
-      .filter((id): id is string => Boolean(id));
-    const carried = new Map<
-      string,
-      { cardCategoryId: number | null; rewardRate: string | null; creditCategoryId: number | null }
-    >();
-    if (pendingIds.length > 0) {
-      // Locked: a concurrent PATCH on a pending row would otherwise commit a
-      // selection after this read decided there was nothing to carry, then lose
-      // it when the row is deleted below. With the lock, PATCH blocks and gets
-      // a 404 (row gone) or a 503 (lock timeout) instead of a false 200.
-      const pendingRows = await tx
-        .select({
-          transactionId: transactions.transactionId,
-          accountId: transactions.accountId,
-          cardCategoryId: transactions.cardCategoryId,
-          rewardRate: transactions.rewardRate,
-          creditCategoryId: transactions.creditCategoryId,
-        })
-        .from(transactions)
-        .where(inArray(transactions.transactionId, pendingIds))
-        .for('update');
-
-      // Only check that the category rows still exist: a carry is a fresh
-      // insert, so a stale id would abort the whole sync.
-      const pendingCardCategoryIds = [
-        ...new Set(pendingRows.map((r) => r.cardCategoryId).filter((id) => id !== null)),
-      ];
-      const liveCardCategoryIds = new Set<number>();
-      if (pendingCardCategoryIds.length > 0) {
-        const categoryRows = await tx
-          .select({ id: cardCategories.id })
-          .from(cardCategories)
-          .where(inArray(cardCategories.id, pendingCardCategoryIds));
-        for (const category of categoryRows) liveCardCategoryIds.add(category.id);
-      }
-      const pendingCreditCategoryIds = [
-        ...new Set(pendingRows.map((r) => r.creditCategoryId).filter((id) => id !== null)),
-      ];
-      const liveCreditCategoryIds = new Set<number>();
-      if (pendingCreditCategoryIds.length > 0) {
-        const creditRows = await tx
-          .select({ id: creditCategories.id })
-          .from(creditCategories)
-          .where(inArray(creditCategories.id, pendingCreditCategoryIds));
-        for (const category of creditRows) liveCreditCategoryIds.add(category.id);
-      }
-
-      for (const row of pendingRows) {
-        const cardCategoryExists =
-          row.cardCategoryId !== null && liveCardCategoryIds.has(row.cardCategoryId);
-        const creditCategoryExists =
-          row.creditCategoryId !== null && liveCreditCategoryIds.has(row.creditCategoryId);
-        // A rate carries on its own, without a live category link: it is a
-        // historical snapshot of what the purchase earned.
-        if (cardCategoryExists || creditCategoryExists || row.rewardRate !== null) {
-          carried.set(row.transactionId, {
-            cardCategoryId: cardCategoryExists ? row.cardCategoryId : null,
-            rewardRate: row.rewardRate,
-            creditCategoryId: creditCategoryExists ? row.creditCategoryId : null,
-          });
-        }
-      }
-    }
-
     const upserts = [...added, ...modified];
-    for (const txn of upserts) {
-      if (!knownAccountIds.has(txn.account_id)) {
-        skipped++;
-        console.error(
-          `sync ${item.itemId}: transaction ${txn.transaction_id} references unknown account ${txn.account_id} — skipped`,
-        );
-        continue;
-      }
-      const row = toTransactionRow(txn, item.itemId);
-      const carry = txn.pending_transaction_id
-        ? carried.get(txn.pending_transaction_id)
-        : undefined;
-      // Carry only the kind matching the posted amount's sign; a sign flip
-      // drops the carry. Spend side carries on either column so an orphaned
-      // rate survives. Design: category-kind-sign-rule
-      const isInflow = isInflowAmount(row.amount);
-      const carriedValues = isInflow
-        ? carry?.creditCategoryId != null
-          ? { creditCategoryId: carry.creditCategoryId }
-          : null
-        : carry?.cardCategoryId != null || carry?.rewardRate != null
-          ? { cardCategoryId: carry.cardCategoryId, rewardRate: carry.rewardRate }
-          : null;
-      await tx
-        .insert(transactions)
-        .values(carriedValues ? { ...row, ...carriedValues } : row)
-        .onConflictDoUpdate({
-          target: transactions.transactionId,
-          // Re-syncs never touch the matching kind's selection; only the
-          // wrong-kind columns are cleared, which the DB sign constraint
-          // requires on a sign flip.
-          set: {
-            ...row,
-            updatedAt: sql`now()`,
-            ...(isInflow ? { cardCategoryId: null, rewardRate: null } : { creditCategoryId: null }),
-          },
-        });
-    }
+    const knownAccountIds = await knownAccountIdsFor(tx, upserts);
+    // The carry must resolve before the pending rows are deleted below.
+    const carried = await resolveCarriedSelections(tx, added);
+    skipped = await upsertTransactions(tx, item.itemId, upserts, knownAccountIds, carried);
 
     const removedIds = removed
       .map((r) => r.transaction_id)
@@ -257,46 +340,18 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
       await tx.delete(transactions).where(inArray(transactions.transactionId, removedIds));
     }
 
-    // Consecutive-skip counter, read under lock rather than from the caller's
-    // possibly stale ItemRow. A clean sync or a drop resets it to 0.
-    const [itemState] = await tx
-      .select({ skippedSyncs: items.skippedSyncs })
-      .from(items)
-      .where(eq(items.itemId, item.itemId))
-      .for('update');
-    consecutiveSkippedSyncs = skipped === 0 ? 0 : (itemState?.skippedSyncs ?? 0) + 1;
-    dropped = consecutiveSkippedSyncs >= MAX_SKIPPED_SYNCS;
-
-    // Cursor advances only on a clean sync or a drop. items.error is written on
-    // the first skip and cleared by a clean sync.
-    await tx
-      .update(items)
-      .set({
-        ...(skipped === 0 || dropped ? { cursor } : {}),
-        skippedSyncs: dropped ? 0 : consecutiveSkippedSyncs,
-        // { message } is the non-Plaid shape of items.error.
-        error:
-          skipped === 0
-            ? null
-            : {
-                message: dropped
-                  ? `${skipped} transaction(s) arrived for accounts that are not stored, for the ${MAX_SKIPPED_SYNCS}th consecutive sync. They have been dropped so this connection keeps syncing, and they cannot be recovered — check the server log for the accounts involved.`
-                  : `${skipped} transaction(s) arrived for accounts that are not stored — they are being held and re-offered on every sync (${consecutiveSkippedSyncs} of ${MAX_SKIPPED_SYNCS}). If this line does not clear, the account cannot be stored: check the server log. On the ${MAX_SKIPPED_SYNCS}th consecutive sync they are dropped so the connection keeps working.`,
-              },
-        updatedAt: sql`now()`,
-      })
-      .where(eq(items.itemId, item.itemId));
+    outcome = await recordSyncOutcome(tx, item.itemId, skipped, cursor);
   });
 
   // On a drop this log line is the only lasting record of what was lost.
   if (skipped > 0) {
-    if (dropped) {
+    if (outcome.dropped) {
       console.error(
         `sync ${item.itemId}: ${skipped} transaction(s) reference accounts that are not stored — held back for ${MAX_SKIPPED_SYNCS - 1} syncs and now DROPPED, cursor advanced; these rows are gone (see the per-row lines above for the accounts)`,
       );
     } else {
       console.warn(
-        `sync ${item.itemId}: ${skipped} transaction(s) reference accounts that are not stored — cursor held back, this batch will be re-offered on the next sync (${MAX_SKIPPED_SYNCS - consecutiveSkippedSyncs} more before it is dropped)`,
+        `sync ${item.itemId}: ${skipped} transaction(s) reference accounts that are not stored — cursor held back, this batch will be re-offered on the next sync (${MAX_SKIPPED_SYNCS - outcome.consecutiveSkippedSyncs} more before it is dropped)`,
       );
     }
   }
@@ -307,6 +362,6 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
     modified: modified.length,
     removed: removed.length,
     skipped,
-    dropped,
+    dropped: outcome.dropped,
   };
 }

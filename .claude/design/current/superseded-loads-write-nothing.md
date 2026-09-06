@@ -1,7 +1,7 @@
 ---
 name: superseded-loads-write-nothing
 description: A load superseded by a newer one writes nothing; every fetch effect is guarded by a generation counter or a cancelled flag
-tags: [refreshSeq, HomeClient refresh, cancelled, settledRequest, src/app/accounts/[accountId]/page.tsx]
+tags: [refreshSeq, HomeClient refresh, cancelled, settledRequest, src/app/accounts/[accountId]/useAccountData.ts, src/app/accounts/[accountId]/useTransactionPage.ts]
 date: 2026-09-04
 ---
 

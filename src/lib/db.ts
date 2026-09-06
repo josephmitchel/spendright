@@ -1,22 +1,19 @@
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from '@/db/schema';
+import { requireDatabaseUrl } from '@/lib/env';
 import { PublicError } from '@/lib/errors';
 
-// pg treats a missing connectionString as "use PG* env vars and libpq
-// defaults", so an unset DATABASE_URL must fail here, not connect elsewhere.
-// Design: config-validated-not-assumed. Runs at module load; never logs the value.
-const DATABASE_URL_PATTERN = /^postgres(ql)?:\/\//;
-
+// The shared guard from src/lib/env.ts, rethrown as PublicError so the
+// failure reaches the user with BAD_CONFIG. Runs at module load, so it
+// surfaces in the dev server log and overlay rather than through
+// errorResponse. Design: config-validated-not-assumed.
 function getConnectionString(): string {
-  const url = process.env.DATABASE_URL;
-  if (!url || !DATABASE_URL_PATTERN.test(url)) {
-    throw new PublicError(
-      'DATABASE_URL must be a postgresql:// connection URL — set it in .env.local',
-      { status: 500, code: 'BAD_CONFIG' },
-    );
+  try {
+    return requireDatabaseUrl();
+  } catch (err) {
+    throw new PublicError((err as Error).message, { status: 500, code: 'BAD_CONFIG' });
   }
-  return url;
 }
 
 // Keep a single pool per process. The cache is unconditional, not dev-only:

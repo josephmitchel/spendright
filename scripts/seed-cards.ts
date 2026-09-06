@@ -10,6 +10,7 @@ import { Pool } from 'pg';
 import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
 import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
 import { matchCard } from '../src/lib/cards';
+import { requireDatabaseUrl } from '../src/lib/env';
 
 // Design: seed-validation. A blank matcher would match a whitespace-only Plaid
 // account name, since matchCard normalizes both sides the same way.
@@ -82,16 +83,9 @@ async function main() {
   assertUniqueCategoryNames();
   assertUniqueCreditCategoryNames();
 
-  // pg treats a missing connectionString as "use libpq defaults", not an
-  // error, and parses a wrong-scheme URL scheme-agnostically rather than
-  // rejecting it. Same guard as src/lib/db.ts. Design: config-validated-not-assumed.
-  if (!process.env.DATABASE_URL || !/^postgres(ql)?:\/\//.test(process.env.DATABASE_URL)) {
-    throw new Error(
-      'DATABASE_URL must be a postgresql:// connection URL — set it in .env.local (or .env) before running the seed',
-    );
-  }
-
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  // Shared guard — the seed must never run against whatever is on localhost.
+  // Design: config-validated-not-assumed.
+  const pool = new Pool({ connectionString: requireDatabaseUrl() });
   const rootDb = drizzle(pool);
 
   try {

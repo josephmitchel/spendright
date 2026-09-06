@@ -1,7 +1,7 @@
 ---
 name: pager-keeps-stale-rows
 description: A page turn keeps the previous page's rows on screen with the pager disabled instead of blanking the list
-tags: [loadedPage, shownPage, pageLoading, src/app/accounts/[accountId]/page.tsx]
+tags: [loadedPage, shownPage, pageLoading, src/app/accounts/[accountId]/useTransactionPage.ts]
 date: 2026-09-04
 ---
 

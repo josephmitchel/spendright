@@ -3,43 +3,32 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
-import { readJson } from '@/lib/http';
-
-interface Item {
-  itemId: string;
-  institutionName: string | null;
-  institutionLogo: string | null;
-  error: unknown;
-}
-
-interface Account {
-  accountId: string;
-  itemId: string;
-  name: string | null;
-  officialName: string | null;
-  mask: string | null;
-  type: string | null;
-  subtype: string | null;
-  balanceAvailable: string | null;
-  balanceCurrent: string | null;
-  balanceLimit: string | null;
-  isoCurrencyCode: string | null;
-}
+import type {
+  AccountsResponse,
+  ApiAccount,
+  ApiItem,
+  ItemDeleteResponse,
+  ItemsResponse,
+  SyncResponse,
+} from '@/lib/api-types';
+import { joinedFailureMessage, readJson } from '@/lib/http';
+import { plaidErrorMessage } from '@/lib/plaid-errors';
+import { skippedSyncNotice } from '@/lib/sync-messages';
 
 // items.error is either a Plaid error body or { message }; stringify is the
-// fallback for an unrecognized shape.
+// fallback for an unrecognized shape. Design: error-message-allow-list.
 function itemErrorMessage(error: unknown): string {
-  const body = error as {
+  const body = (error ?? {}) as {
     display_message?: string | null;
     error_message?: string;
     message?: string;
   };
-  return body?.display_message || body?.error_message || body?.message || JSON.stringify(error);
+  return plaidErrorMessage(body, body.message || JSON.stringify(error));
 }
 
 export default function HomeClient() {
-  const [itemList, setItemList] = useState<Item[]>([]);
-  const [accountList, setAccountList] = useState<Account[]>([]);
+  const [itemList, setItemList] = useState<ApiItem[]>([]);
+  const [accountList, setAccountList] = useState<ApiAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   // Guards against a second concurrent POST /api/sync.
@@ -48,6 +37,7 @@ export default function HomeClient() {
   // it to expire its connect-time notice.
   const [syncSucceededAt, setSyncSucceededAt] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   // Whether /api/items succeeded; gates the "No institutions" message.
   const [itemsLoaded, setItemsLoaded] = useState(false);
   // Whether /api/accounts has ever succeeded; gates the per-institution
@@ -61,8 +51,12 @@ export default function HomeClient() {
     const seq = ++refreshSeq.current;
     // Design: partial-load-rendering — each endpoint settles on its own.
     const [itemsResult, accountsResult] = await Promise.allSettled([
-      fetch('/api/items').then((res) => readJson(res, 'Failed to load institutions')),
-      fetch('/api/accounts').then((res) => readJson(res, 'Failed to load accounts')),
+      fetch('/api/items').then((res) =>
+        readJson<ItemsResponse>(res, 'Failed to load institutions'),
+      ),
+      fetch('/api/accounts').then((res) =>
+        readJson<AccountsResponse>(res, 'Failed to load accounts'),
+      ),
     ]);
     if (seq !== refreshSeq.current) return;
     if (itemsResult.status === 'fulfilled') setItemList(itemsResult.value.items ?? []);
@@ -72,17 +66,7 @@ export default function HomeClient() {
       setAccountsLoaded(true);
     }
     setItemsLoaded(itemsResult.status === 'fulfilled');
-    const failures = [itemsResult, accountsResult].filter(
-      (result): result is PromiseRejectedResult => result.status === 'rejected',
-    );
-    for (const failure of failures) console.error(failure.reason);
-    setLoadError(
-      failures.length > 0
-        ? failures
-            .map((f) => (f.reason instanceof Error ? f.reason.message : 'Failed to load'))
-            .join('; ')
-        : null,
-    );
+    setLoadError(joinedFailureMessage([itemsResult, accountsResult]));
     setLoading(false);
   }, []);
 
@@ -98,14 +82,14 @@ export default function HomeClient() {
   // it. Superseded loads write nothing, so a poll can never clobber a
   // fresher read. Design: home-reflects-background-sync.
   useEffect(() => {
-    const onVisibilityChange = () => {
+    const refreshIfVisible = () => {
       if (!document.hidden) void refresh();
     };
-    const interval = setInterval(onVisibilityChange, 60_000);
-    document.addEventListener('visibilitychange', onVisibilityChange);
+    const interval = setInterval(refreshIfVisible, 60_000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
     return () => {
       clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
     };
   }, [refresh]);
 
@@ -114,32 +98,22 @@ export default function HomeClient() {
     setSyncStatus('Syncing…');
     try {
       const res = await fetch('/api/sync', { method: 'POST' });
-      const data = await readJson(res, 'Sync failed');
-      const results: {
-        itemId: string;
-        added?: number;
-        skipped?: number;
-        dropped?: boolean;
-        error?: string;
-      }[] = data.results ?? [];
+      const data = await readJson<SyncResponse>(res, 'Sync failed');
+      const results = data.results ?? [];
       // `skipped` rows were held back (cursor not advanced) unless `dropped`,
       // in which case the sync gave up on them. Design: bounded-cursor-hold.
-      const parts = results.map((r) =>
-        r.error
-          ? `${r.itemId}: ${r.error}`
-          : `+${r.added} added${
-              r.skipped
-                ? r.dropped
-                  ? `, ${r.skipped} dropped after repeated failures — not recoverable (see the server log)`
-                  : `, ${r.skipped} skipped — will retry next sync (see the server log)`
-                : ''
+      const parts = results.map((result) =>
+        'error' in result
+          ? `${result.itemId}: ${result.error}`
+          : `+${result.added} added${
+              result.skipped ? `, ${skippedSyncNotice(result.skipped, result.dropped)}` : ''
             }`,
       );
       setSyncStatus(`Sync complete. ${parts.join(', ') || 'No items.'}`);
       // Clean means every item finished with no error and no held/dropped rows.
-      if (results.length > 0 && results.every((r) => !r.error && !r.skipped))
+      if (results.length > 0 && results.every((result) => !('error' in result) && !result.skipped))
         setSyncSucceededAt(Date.now());
-      refresh();
+      void refresh();
     } catch (err) {
       setSyncStatus(`Sync failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     } finally {
@@ -150,14 +124,15 @@ export default function HomeClient() {
 
   const removeItem = async (itemId: string) => {
     if (!confirm('Remove this institution and all of its accounts and transactions?')) return;
+    setRemoveError(null);
     try {
       const res = await fetch(`/api/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
-      await readJson(res, 'Failed to remove item');
+      await readJson<ItemDeleteResponse>(res, 'Failed to remove item');
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to remove item');
+      setRemoveError(err instanceof Error ? err.message : 'Failed to remove item');
       return;
     }
-    refresh();
+    void refresh();
   };
 
   return (
@@ -178,13 +153,14 @@ export default function HomeClient() {
           <button
             onClick={() => {
               setLoadError(null);
-              refresh();
+              void refresh();
             }}
           >
             Retry
           </button>
         </p>
       )}
+      {removeError && <p>Error: {removeError}</p>}
       {!loading && itemsLoaded && itemList.length === 0 && <p>No institutions connected yet.</p>}
 
       {itemList.map((item) => {

@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { loggableError } from '@/lib/log';
+import { pickPlaidErrorFields, plaidErrorMessage, type PlaidErrorFields } from '@/lib/plaid-errors';
 
-interface PlaidErrorBody {
-  error_type?: string;
-  error_code?: string;
-  error_message?: string;
-  display_message?: string | null;
-  request_id?: string;
+// The single constructor of the `{ error: { code, message } }` envelope, for
+// thrown paths (errorResponse below) and returned paths (routes) alike.
+// Design: error-message-allow-list.
+export function jsonError(code: string, message: string, status: number): NextResponse {
+  return NextResponse.json({ error: { code, message } }, { status });
+}
+
+export function badRequest(message: string): NextResponse {
+  return jsonError('BAD_REQUEST', message, 400);
 }
 
 // Plaid's error body, or null if this is not a Plaid SDK failure. error_code
@@ -15,16 +19,10 @@ interface PlaidErrorBody {
 // on items.error and GET /api/items serves it, so the allow-list must be
 // structural rather than trust whatever Plaid's response happens to carry.
 // Design: error-message-allow-list.
-export function plaidErrorBody(err: unknown): PlaidErrorBody | null {
-  const data = (err as { response?: { data?: PlaidErrorBody } })?.response?.data;
+export function plaidErrorBody(err: unknown): PlaidErrorFields | null {
+  const data = (err as { response?: { data?: PlaidErrorFields } })?.response?.data;
   if (!data?.error_code) return null;
-  return {
-    error_type: data.error_type,
-    error_code: data.error_code,
-    error_message: data.error_message,
-    display_message: data.display_message,
-    request_id: data.request_id,
-  };
+  return pickPlaidErrorFields(data);
 }
 
 // An error whose message is safe to show to the user. Design:
@@ -43,7 +41,7 @@ export class PublicError extends Error {
 // (items.error) instead of returning it.
 export function publicErrorMessage(err: unknown, fallback: string): string {
   const plaid = plaidErrorBody(err);
-  if (plaid) return plaid.display_message || plaid.error_message || 'Plaid error';
+  if (plaid) return plaidErrorMessage(plaid, 'Plaid error');
   if (err instanceof PublicError) return err.message;
   return fallback;
 }
@@ -73,27 +71,17 @@ export function errorResponse(err: unknown): NextResponse {
 
   const plaidError = plaidErrorBody(err);
   if (plaidError) {
-    return NextResponse.json(
-      {
-        error: {
-          code: plaidError.error_code,
-          message: plaidError.display_message || plaidError.error_message || 'Plaid error',
-        },
-      },
-      { status: 502 },
+    return jsonError(
+      plaidError.error_code ?? 'PLAID',
+      plaidErrorMessage(plaidError, 'Plaid error'),
+      502,
     );
   }
 
   if (err instanceof PublicError) {
-    return NextResponse.json(
-      { error: { code: err.code, message: err.message } },
-      { status: err.status },
-    );
+    return jsonError(err.code, err.message, err.status);
   }
 
   // Never echo err.message: drizzle's carries the SQL and bound parameters.
-  return NextResponse.json(
-    { error: { code: 'INTERNAL', message: 'Internal server error' } },
-    { status: 500 },
-  );
+  return jsonError('INTERNAL', 'Internal server error', 500);
 }

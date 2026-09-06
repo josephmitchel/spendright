@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { items } from '@/db/schema';
 import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
-import { errorResponse, plaidErrorBody } from '@/lib/errors';
+import { errorResponse, jsonError, plaidErrorBody } from '@/lib/errors';
 import { itemRemove } from '@/lib/plaid';
 
 // Unauthenticated and destructive. Design: single-user-localhost-no-auth.
@@ -15,10 +15,7 @@ export async function DELETE(
     const { itemId } = await params;
     const [item] = await db.select().from(items).where(eq(items.itemId, itemId));
     if (!item) {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: 'Item not found' } },
-        { status: 404 },
-      );
+      return jsonError('NOT_FOUND', 'Item not found', 404);
     }
 
     // Plaid already having forgotten the item is not a failure.

@@ -2,16 +2,15 @@ import { desc, eq, getTableColumns, sql } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { cardCategories, creditCategories, transactions } from '@/db/schema';
 import { db } from '@/lib/db';
-import { errorResponse } from '@/lib/errors';
+import { badRequest, errorResponse } from '@/lib/errors';
 
 export async function GET(req: NextRequest) {
   try {
-    const accountId = req.nextUrl.searchParams.get('accountId');
-    if (!accountId || accountId.trim() === '') {
-      return NextResponse.json(
-        { error: { code: 'BAD_REQUEST', message: 'accountId is required' } },
-        { status: 400 },
-      );
+    // Trimmed before filtering so a padded id can never pass validation and
+    // then silently match nothing.
+    const accountId = req.nextUrl.searchParams.get('accountId')?.trim();
+    if (!accountId) {
+      return badRequest('accountId is required');
     }
 
     // Bounds are truncated to integers and clamped, never rejected. Absent,

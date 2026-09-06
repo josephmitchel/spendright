@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { jsonError } from '@/lib/errors';
 
 // SpendRight is a single-user tool with no authentication on any route, so
 // nothing but the local browser may reach the app: every path refuses any
 // request that did not arrive from loopback, with no exceptions. (The Plaid
-// webhook + tunnel that used to be exempt here was retired 2026-09-05 for a
+// webhook + tunnel that used to be exempt here was retired for a
 // scheduler — the app no longer has an internet-reachable origin at all.)
 // Design: non-local-request-guard, single-user-localhost-no-auth,
 // scheduled-sync.
@@ -86,10 +87,7 @@ export function proxy(req: NextRequest) {
     const origin = req.headers.get('origin');
     const host = req.headers.get('host');
     if (origin && (!host || !isSameOrigin(origin, host))) {
-      return NextResponse.json(
-        { error: { code: 'FORBIDDEN', message: 'Cross-origin requests are not allowed' } },
-        { status: 403 },
-      );
+      return jsonError('FORBIDDEN', 'Cross-origin requests are not allowed', 403);
     }
   }
 

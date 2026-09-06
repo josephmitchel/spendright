@@ -4,14 +4,7 @@
 // request body — so printing a raw Plaid error leaks both into the log.
 // Dependency-free (no next/server import) so scripts can use it too.
 // Design: plaid-error-log-redaction.
-
-interface PlaidErrorFields {
-  error_type?: unknown;
-  error_code?: unknown;
-  error_message?: unknown;
-  display_message?: unknown;
-  request_id?: unknown;
-}
+import { pickPlaidErrorFields, type PlaidErrorFields } from '@/lib/plaid-errors';
 
 export function loggableError(err: unknown): unknown {
   const axiosErr = err as {
@@ -29,14 +22,6 @@ export function loggableError(err: unknown): unknown {
     name: 'AxiosError',
     message: axiosErr.message,
     status: axiosErr.response?.status,
-    plaid: data?.error_code
-      ? {
-          error_type: data.error_type,
-          error_code: data.error_code,
-          error_message: data.error_message,
-          display_message: data.display_message,
-          request_id: data.request_id,
-        }
-      : undefined,
+    plaid: data?.error_code ? pickPlaidErrorFields(data) : undefined,
   };
 }
