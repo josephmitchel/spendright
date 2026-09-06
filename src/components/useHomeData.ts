@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useLoadProtocol } from '@/components/useLoadProtocol';
+import { useVisiblePoll } from '@/components/useVisiblePoll';
 import type { AccountsResponse, ApiAccount, ApiItem, ItemsResponse } from '@/lib/api-types';
-import { readJson } from '@/lib/http';
+import { getJson } from '@/lib/http';
 
 // The items + accounts half of the home page's data, re-read on demand and on
 // a visibility-gated poll: the hourly scheduled sync mutates items.error and
@@ -24,12 +25,8 @@ export function useHomeData() {
     () =>
       load(
         {
-          items: fetch('/api/items').then((res) =>
-            readJson<ItemsResponse>(res, 'Failed to load institutions'),
-          ),
-          accounts: fetch('/api/accounts').then((res) =>
-            readJson<AccountsResponse>(res, 'Failed to load accounts'),
-          ),
+          items: getJson<ItemsResponse>('/api/items', 'Failed to load institutions'),
+          accounts: getJson<AccountsResponse>('/api/accounts', 'Failed to load accounts'),
         },
         (results) => {
           if (results.items.status === 'fulfilled') setItemList(results.items.value.items);
@@ -49,19 +46,12 @@ export function useHomeData() {
   }, [refresh]);
 
   // Re-read every minute while the tab is visible and on return to it.
-  // Superseded loads write nothing, so a poll can never clobber a fresher
-  // read. Design: home-reflects-background-sync.
-  useEffect(() => {
-    const refreshIfVisible = () => {
-      if (!document.hidden) void refresh();
-    };
-    const interval = setInterval(refreshIfVisible, 60_000);
-    document.addEventListener('visibilitychange', refreshIfVisible);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', refreshIfVisible);
-    };
-  }, [refresh]);
+  // Design: home-reflects-background-sync.
+  useVisiblePoll(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
 
   return { itemList, accountList, settled, error, clearError, loaded, refresh };
 }

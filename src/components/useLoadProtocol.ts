@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { settleReads } from '@/lib/http';
+import { settleReads } from '@/lib/serialize';
 
 // The whole load lifecycle every data hook shares, owned here rather than
 // re-implemented per hook: `load` settles a keyed set of reads together
@@ -21,6 +21,13 @@ import { settleReads } from '@/lib/http';
 // succeeded (rendered rows survive a later failed refresh); every other key
 // follows the latest load (an empty-state claim needs current evidence).
 // Design: partial-load-rendering.
+//
+// Reloading is part of the protocol too: `reload()` bumps `reloadToken`, and
+// a hook keys its load effect on the token, so every hook re-runs the same
+// way (no caller-owned reload counters threaded through props). A hook that
+// also wants silent refreshes (polling) exposes the load call itself as a
+// `refresh` callback — same read, no token bump, so in-flight indicators
+// keyed on the token stay quiet. Design: home-reflects-background-sync.
 export function useLoadProtocol<K extends string>(
   initialLoaded: Record<K, boolean>,
   // NoInfer: K comes from initialLoaded alone, so a stickyKeys typo is an
@@ -30,6 +37,7 @@ export function useLoadProtocol<K extends string>(
   const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<Record<K, boolean>>(initialLoaded);
+  const [reloadToken, setReloadToken] = useState(0);
   const generation = useRef(0);
   // Captured once so `load` stays referentially stable across renders.
   const stickyKeys = useRef(options?.stickyKeys).current;
@@ -59,5 +67,6 @@ export function useLoadProtocol<K extends string>(
   );
 
   const clearError = useCallback(() => setError(null), []);
-  return { settled, error, loaded, clearError, load };
+  const reload = useCallback(() => setReloadToken((token) => token + 1), []);
+  return { settled, error, loaded, clearError, load, reload, reloadToken };
 }

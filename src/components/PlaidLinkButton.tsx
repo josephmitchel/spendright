@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
 import type { ExchangeResponse, LinkTokenResponse } from '@/lib/api-types';
-import { errorMessage, readJson } from '@/lib/http';
+import { errorMessage, sendJson } from '@/lib/http';
 import { skippedSyncNotice } from '@/lib/sync-messages';
 
 export default function PlaidLinkButton({
@@ -34,13 +34,14 @@ export default function PlaidLinkButton({
   const onSuccess = useCallback(
     async (publicToken: string) => {
       setStatus('exchanging');
+      const failure = 'Exchange failed';
       try {
-        const res = await fetch('/api/exchange', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ public_token: publicToken }),
-        });
-        const data = await readJson<ExchangeResponse>(res, 'Exchange failed');
+        const data = await sendJson<ExchangeResponse>(
+          '/api/exchange',
+          'POST',
+          { public_token: publicToken },
+          failure,
+        );
         setStatus('idle');
         const accountErrors = data.account_errors ?? [];
         // A re-linked item keeps its stored skip streak, so the exchange-time
@@ -58,7 +59,7 @@ export default function PlaidLinkButton({
         onConnectedAction();
       } catch (err) {
         setStatus('error');
-        setLinkError(errorMessage(err, 'Exchange failed'));
+        setLinkError(errorMessage(err, failure));
       }
     },
     [onConnectedAction],
@@ -78,15 +79,15 @@ export default function PlaidLinkButton({
     setStatus('loading');
     setLinkError(null);
     setSyncNotice(null);
+    const failure = 'Failed to create link token';
     try {
-      const res = await fetch('/api/link-token', { method: 'POST' });
-      const data = await readJson<LinkTokenResponse>(res, 'Failed to create link token');
+      const data = await sendJson<LinkTokenResponse>('/api/link-token', 'POST', undefined, failure);
       pendingOpen.current = true;
       setLinkToken(data.link_token);
       setStatus('idle');
     } catch (err) {
       setStatus('error');
-      setLinkError(errorMessage(err, 'Failed to create link token'));
+      setLinkError(errorMessage(err, failure));
     }
   };
 

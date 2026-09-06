@@ -25,3 +25,17 @@ const pool = globalSingleton('pool', () => new Pool({ connectionString: getConne
 export const db: NodePgDatabase<typeof schema> = globalSingleton('db', () =>
   drizzle(pool, { schema }),
 );
+
+// The handle drizzle passes to a transaction callback, derived once here for
+// any drizzle client (the seed script's schemaless one included) instead of
+// each consumer re-spelling the Parameters<Parameters<...>> gymnastics.
+type TransactionCallbackOf<Db> = Db extends {
+  transaction: (fn: infer Callback, ...rest: never[]) => unknown;
+}
+  ? Callback
+  : never;
+export type DrizzleTransaction<Db> =
+  TransactionCallbackOf<Db> extends (tx: infer Tx) => unknown ? Tx : never;
+
+// The app db's own transaction handle, the one domain modules take.
+export type DbTransaction = DrizzleTransaction<typeof db>;

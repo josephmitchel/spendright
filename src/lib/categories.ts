@@ -6,7 +6,7 @@ import {
   transactions,
   type TransactionRow,
 } from '@/db/schema';
-import type { DbTransaction } from '@/lib/accounts';
+import type { DbTransaction } from '@/lib/db';
 import { isInflowAmount, type CategoryKind } from '@/lib/amounts';
 import { db } from '@/lib/db';
 import { PublicError } from '@/lib/public-error';

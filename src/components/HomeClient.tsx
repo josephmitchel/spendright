@@ -5,6 +5,7 @@ import PlaidLinkButton from '@/components/PlaidLinkButton';
 import { useHomeData } from '@/components/useHomeData';
 import { useItemRemoval } from '@/components/useItemRemoval';
 import { useSyncAll } from '@/components/useSyncAll';
+import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
 import type { ApiItem } from '@/lib/api-types';
 import { plaidErrorMessage } from '@/lib/plaid-errors';
 
@@ -49,6 +50,11 @@ export default function HomeClient() {
       )}
       {removeError && <p>Error: {removeError}</p>}
       {settled && loaded.items && itemList.length === 0 && <p>No institutions connected yet.</p>}
+      {/* Above the per-institution sections, so a failed accounts read shows
+          one line rather than one per institution. */}
+      {itemList.length > 0 && !loaded.accounts && (
+        <p>Accounts couldn&apos;t be loaded — use Retry above.</p>
+      )}
 
       {itemList.map((item) => {
         const itemAccounts = accountList.filter((a) => a.itemId === item.itemId);
@@ -68,7 +74,6 @@ export default function HomeClient() {
               <button onClick={() => removeItem(item.itemId)}>Remove</button>
             </h2>
             {item.error != null && <p>Item error: {itemErrorMessage(item.error)}</p>}
-            {!loaded.accounts && <p>Accounts couldn&apos;t be loaded — use Retry above.</p>}
             {loaded.accounts && (
               <table border={1}>
                 <thead>
@@ -86,14 +91,11 @@ export default function HomeClient() {
                     <tr key={account.accountId}>
                       <td>
                         <Link href={`/accounts/${account.accountId}`}>
-                          {account.name ?? account.officialName ?? account.accountId}
+                          {accountDisplayName(account)}
                         </Link>
                       </td>
                       <td>{account.mask}</td>
-                      <td>
-                        {account.type}
-                        {account.subtype ? ` / ${account.subtype}` : ''}
-                      </td>
+                      <td>{accountTypeLabel(account)}</td>
                       <td>{account.balanceCurrent}</td>
                       <td>{account.balanceAvailable}</td>
                       <td>{account.balanceLimit}</td>

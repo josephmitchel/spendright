@@ -9,6 +9,7 @@
 // like src/lib/sync-scheduler.ts. Design: non-local-request-guard.
 import { connect } from 'net';
 import { networkInterfaces, type NetworkInterfaceInfo } from 'os';
+import { logError } from '@/lib/log';
 
 const PROBE_DELAYS_MS = [3000, 15000];
 const PROBE_TIMEOUT_MS = 1500;
@@ -111,10 +112,13 @@ async function assertLoopbackOnly(logVerdict: boolean): Promise<void> {
   ).find((endpoint) => endpoint !== null);
   if (reachable) fail(reachable);
   // "Passed" is only claimed when the primary sensor saw the bind. With no
-  // listening socket visible (another process holds it, or a Node upgrade
-  // changed the report shape), the probes above aimed at PORT/3000 — which
-  // may not be the real port, since Next walks the port forward on
-  // EADDRINUSE — so the verdict is "could not verify", never a silent pass.
+  // listening socket visible at the final probe (a Node upgrade changed the
+  // report shape, or the socket lives in another process), the probes above
+  // aimed at PORT/3000 — which may not be the real port, since Next walks
+  // the port forward on EADDRINUSE — so "could not verify" is fatal: serving
+  // with the primary sensor blind is serving unasserted. Verified on Node 20
+  // that both `next dev` and `next start` listen in the process register()
+  // runs in, so a healthy server always reaches the passed branch.
   if (logVerdict) {
     if (endpoints.length > 0) {
       console.log(
@@ -123,12 +127,16 @@ async function assertLoopbackOnly(logVerdict: boolean): Promise<void> {
           .join(', ')})`,
       );
     } else {
-      console.warn(
-        `bind assertion could not verify the bind: no listening TCP socket is visible in this ` +
-          `process's diagnostic report. External probes of port(s) ${ports.join(', ')} found ` +
-          'nothing reachable, but that port may not be the one actually served — confirm the ' +
-          'server was started with `npm run dev` or `npm run start` (which pass -H 127.0.0.1).',
+      console.error(
+        'FATAL: the bind assertion could not verify the bind — no listening TCP socket is ' +
+          `visible in this process's diagnostic report. External probes of port(s) ` +
+          `${ports.join(', ')} found nothing reachable, but that port may not be the one ` +
+          'actually served, so this is not a pass. Likely a Node upgrade changed the ' +
+          'diagnostic-report shape (update listeningTcpEndpoints in ' +
+          'src/lib/bind-assertion.ts), or the server was not started with `npm run dev` / ' +
+          '`npm run start`. Refusing to serve unverified.',
       );
+      process.exit(1);
     }
   }
 }
@@ -136,17 +144,19 @@ async function assertLoopbackOnly(logVerdict: boolean): Promise<void> {
 // Probed twice because register() can run before the server is listening: a
 // wide-open bind not yet accepting at the first probe is caught by the
 // second, which also logs the verdict. unref() keeps the timers from
-// holding the process open. A rejection (say, process.report throwing) is
-// fail-closed like every other failure of this guard: serving with the
-// assertion silently dead is exactly what must not happen.
+// holding the process open.
+//
+// Every failure of this guard is fail-closed (confirmed by the user
+// 2026-09-06): a rejection (say, process.report throwing) exits here, and a
+// diagnostic report whose shape drifted (a Node upgrade renaming the libuv
+// handle fields) does not throw but leaves listeningTcpEndpoints() empty,
+// which the final probe treats as fatal in assertLoopbackOnly — serving
+// with the assertion blind is exactly what must not happen.
 export function scheduleBindAssertion(): void {
   PROBE_DELAYS_MS.forEach((delay, index) => {
     setTimeout(() => {
       assertLoopbackOnly(index === PROBE_DELAYS_MS.length - 1).catch((err: unknown) => {
-        console.error(
-          'FATAL: the bind assertion could not run — refusing to serve without it:',
-          err,
-        );
+        logError('FATAL: the bind assertion could not run — refusing to serve without it:', err);
         process.exit(1);
       });
     }, delay).unref();

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { logError } from '@/lib/log';
 import { pickPlaidErrorFields, plaidErrorMessage, type PlaidErrorFields } from '@/lib/plaid-errors';
 import { PublicError } from '@/lib/public-error';
@@ -56,10 +56,12 @@ export function pgErrorCode(err: unknown): string | undefined {
 }
 
 export function errorResponse(err: unknown): NextResponse {
-  // 4xx PublicErrors are ordinary rejections (validation, not-found, sign
-  // rules) — part of normal operation, so not logged as server failures.
-  // 5xx PublicErrors (BAD_CONFIG, NOT_READY) fall through to the log below.
-  if (err instanceof PublicError && err.status < 500) {
+  // The PublicError mapping is written once. 4xx PublicErrors are ordinary
+  // rejections (validation, not-found, sign rules) — part of normal
+  // operation, so not logged as server failures; 5xx PublicErrors
+  // (BAD_CONFIG, NOT_READY) are.
+  if (err instanceof PublicError) {
+    if (err.status >= 500) logError('request failed:', err);
     return jsonError(err.code, err.message, err.status);
   }
 
@@ -76,10 +78,6 @@ export function errorResponse(err: unknown): NextResponse {
     );
   }
 
-  if (err instanceof PublicError) {
-    return jsonError(err.code, err.message, err.status);
-  }
-
   // App-wide, not route-specific: any route that writes under a lock can lose
   // to a running sync or seed run. 55P03 lock_not_available (lock_timeout
   // expired) and 40P01 deadlock_detected are both retryable.
@@ -94,4 +92,31 @@ export function errorResponse(err: unknown): NextResponse {
 
   // Never echo err.message: drizzle's carries the SQL and bound parameters.
   return jsonError('INTERNAL', 'Internal server error', 500);
+}
+
+// Every route handler exports through this wrapper, so "everything funnels
+// into errorResponse" is structural rather than a per-file habit — a new
+// route cannot forget the catch and leak a raw stack trace. A route needing
+// its own error mapping (a route-local SQLSTATE branch) keeps an inner
+// try/catch and rethrows what it does not handle.
+export function withErrorResponse<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<NextResponse>,
+): (...args: Args) => Promise<NextResponse> {
+  return async (...args: Args) => {
+    try {
+      return await handler(...args);
+    } catch (err) {
+      return errorResponse(err);
+    }
+  };
+}
+
+// The one reader of a JSON request body. Throws the rejection as PublicError
+// so it surfaces through errorResponse as the same 400 badRequest builds.
+export async function readJsonBody(req: NextRequest): Promise<unknown> {
+  try {
+    return await req.json();
+  } catch {
+    throw new PublicError('Request body must be valid JSON', { status: 400, code: 'BAD_REQUEST' });
+  }
 }

@@ -6,12 +6,13 @@ import './load-env';
 
 import { and, eq, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
 import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
 import { loadCardCatalog } from '../src/lib/card-catalog';
 import { matchCard } from '../src/lib/cards';
+import type { DrizzleTransaction } from '../src/lib/db';
 import { requireDatabaseUrl } from '../src/lib/env';
 import { logError } from '../src/lib/log';
 
@@ -84,18 +85,23 @@ function assertSeedIsValid(): void {
 }
 
 // The handle drizzle passes to a rootDb.transaction callback (this script's
-// schemaless client, not src/lib/db's schema-typed one).
-type SeedTransaction = Parameters<Parameters<NodePgDatabase['transaction']>[0]>[0];
+// schemaless client, not src/lib/db's schema-typed one); the derivation is
+// shared with src/lib/db.ts.
+type SeedTransaction = DrizzleTransaction<NodePgDatabase>;
 
 // The seed tables retireMissing knows, each paired with its key column here
-// and nowhere else — the pairing is a single declaration, so a call site can
-// never hand the helper a column from the wrong table.
+// and nowhere else — a call site passes the whole pair, so it can never hand
+// the helper a column from the wrong table.
 type SeedTable = typeof cards | typeof cardCategories | typeof creditCategories;
-const retireKeyColumns = new Map<PgTable, AnyPgColumn>([
-  [cards, cards.slug],
-  [cardCategories, cardCategories.name],
-  [creditCategories, creditCategories.name],
-]);
+interface RetireTarget {
+  table: SeedTable;
+  keyColumn: AnyPgColumn;
+}
+const retireTargets = {
+  cards: { table: cards, keyColumn: cards.slug },
+  cardCategories: { table: cardCategories, keyColumn: cardCategories.name },
+  creditCategories: { table: creditCategories, keyColumn: creditCategories.name },
+} satisfies Record<string, RetireTarget>;
 
 // The one implementation of "retire what left the seed file": stamps
 // retired_at on every live row in scope whose key column is no longer among
@@ -105,14 +111,11 @@ const retireKeyColumns = new Map<PgTable, AnyPgColumn>([
 // Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
 async function retireMissing(
   tx: SeedTransaction,
-  table: SeedTable,
+  { table, keyColumn }: RetireTarget,
   keptKeys: string[],
   label: string,
   scope?: SQL,
 ): Promise<void> {
-  const keyColumn = retireKeyColumns.get(table);
-  // Unreachable while SeedTable and the map list the same tables.
-  if (!keyColumn) throw new Error('retireMissing: no key column declared for this table');
   const retired = await tx
     .update(table)
     .set({ retiredAt: sql`now()`, updatedAt: sql`now()` })
@@ -171,7 +174,7 @@ async function upsertCards(tx: SeedTransaction): Promise<number> {
 
     await retireMissing(
       tx,
-      cardCategories,
+      retireTargets.cardCategories,
       seed.categories.map((c) => c.name),
       `${seed.slug}: retired categories no longer in seed`,
       eq(cardCategories.cardId, card.id),
@@ -195,7 +198,7 @@ async function upsertCreditCategories(tx: SeedTransaction): Promise<void> {
   }
   await retireMissing(
     tx,
-    creditCategories,
+    retireTargets.creditCategories,
     creditCategorySeeds,
     'retired credit categories no longer in seed',
   );
@@ -226,6 +229,8 @@ async function main() {
   assertSeedIsValid();
 
   // Shared guard — the seed must never run against whatever is on localhost.
+  // Its own pool rather than src/lib/db's process-wide singleton: the script
+  // must end() it below so the process can exit.
   // Design: config-validated-not-assumed.
   const pool = new Pool({ connectionString: requireDatabaseUrl() });
   const rootDb = drizzle(pool);
@@ -253,7 +258,7 @@ async function main() {
       // since matchCard skips retired cards.
       await retireMissing(
         tx,
-        cards,
+        retireTargets.cards,
         cardSeeds.map((s) => s.slug),
         'retired cards no longer in seed',
       );

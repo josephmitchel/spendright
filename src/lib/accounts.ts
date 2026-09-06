@@ -2,11 +2,8 @@ import { sql } from 'drizzle-orm';
 import type { AccountBase } from 'plaid';
 import { accounts, type CardRow } from '@/db/schema';
 import { matchCard } from '@/lib/cards';
-import { db } from '@/lib/db';
+import { db, type DbTransaction } from '@/lib/db';
 import { logError } from '@/lib/log';
-
-// The handle drizzle passes to a db.transaction callback.
-export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function toAccountRow(plaidAccount: AccountBase, itemId: string, cardId: number | null) {
   return {

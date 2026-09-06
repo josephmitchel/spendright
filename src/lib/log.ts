@@ -14,7 +14,9 @@ export function logError(message: string, err: unknown): void {
   console.error(message, loggableError(err));
 }
 
-export function loggableError(err: unknown): unknown {
+// Not exported: logError above is the module's whole surface, and exporting
+// the redaction pass alone would invite call sites to bypass it.
+function loggableError(err: unknown): unknown {
   const axiosErr = err as {
     isAxiosError?: boolean;
     message?: string;

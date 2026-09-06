@@ -20,7 +20,8 @@ type CardCatalogSource = Pick<NodePgDatabase, 'select'>;
 // physical row order. A failure propagates to the caller's operation: storing
 // accounts against an empty catalog would overwrite their card matches with
 // null (card_id is re-matched on every write), so no caller stores accounts
-// without it. Design: account-card-matching-by-name, rematch-on-every-sync.
+// without it. Design: single-card-catalog-loader, account-card-matching-by-name,
+// rematch-on-every-sync.
 export function loadCardCatalog(source: CardCatalogSource): Promise<CardRow[]> {
   return source.select().from(cards).orderBy(cards.id);
 }

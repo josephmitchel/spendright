@@ -5,4 +5,4 @@ tags: [loadedPage, shownPage, pageLoading, src/app/accounts/[accountId]/useTrans
 date: 2026-09-04
 ---
 
-`pageLoading` is true until the request for the current `{page, reloadKey}` settles; while it is, the previous page's rows stay up and the pager is disabled rather than the account body blanking. `loadedPage` records which page the rows on screen actually came from (left alone on a failed read), and the pager's range and buttons are computed from it (`shownPage`), so the pager never describes rows that aren't showing. Extends [[transactions-paginated]].
+`pageLoading` is true until the request for the current `{page, reloadToken}` settles (the protocol-owned reload token since 2026-09-06; a silent poll refresh does not bump it, so background re-reads never disable the pager); while it is, the previous page's rows stay up and the pager is disabled rather than the account body blanking. `loadedPage` records which page the rows on screen actually came from (left alone on a failed read), and the pager's range and buttons are computed from it (`shownPage`), so the pager never describes rows that aren't showing. Extends [[transactions-paginated]].

@@ -1,7 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { use, useState } from 'react';
+import { use, useCallback } from 'react';
+import { useVisiblePoll } from '@/components/useVisiblePoll';
+import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
+import type { ApiAccount } from '@/lib/api-types';
 import { TransactionTable } from './TransactionTable';
 import { useAccountData } from './useAccountData';
 import { useCategoryPatches } from './useCategoryPatches';
@@ -21,11 +24,86 @@ export default function AccountPage({ params }: { params: Promise<{ accountId: s
 // instead of each render branch re-encoding its own conjunction of flags.
 type View = 'loading' | 'not-found' | 'unsupported' | 'ready' | 'unresolved';
 
-function AccountView({ accountId }: { accountId: string }) {
-  // Bumped by Retry (and by a same-page reload) to re-run both load effects.
-  const [reloadKey, setReloadKey] = useState(0);
-  const reload = () => setReloadKey((key) => key + 1);
+// Module-level and pure, so the state table reads on its own, apart from the
+// hooks that feed it.
+function deriveView(inputs: {
+  loading: boolean;
+  accountLoaded: boolean;
+  cardsLoaded: boolean;
+  account: ApiAccount | null;
+  hasCard: boolean;
+}): View {
+  const { loading, accountLoaded, cardsLoaded, account, hasCard } = inputs;
+  if (loading) return 'loading';
+  // Not-found needs positive evidence: this pass's account read succeeded
+  // and found nothing. A stale `account` surviving a failed re-read renders
+  // as ready below instead. Design: partial-load-rendering.
+  if (accountLoaded && !account) return 'not-found';
+  // Unsupported needs both reads current, because the card is only
+  // recomputed when both succeeded. Design: supported-account-rule.
+  if (accountLoaded && cardsLoaded && account && !hasCard) return 'unsupported';
+  // Ready renders the (possibly stale) card content; failures show beside
+  // it rather than blanking it.
+  if (hasCard) return 'ready';
+  // Nothing loaded well enough to assert anything: identity and the error
+  // line are all that render.
+  return 'unresolved';
+}
 
+// The identity line under the heading: official name (when it adds anything),
+// mask, type, balances.
+function AccountIdentity({ account }: { account: ApiAccount }) {
+  return (
+    <p>
+      {account.officialName && account.officialName !== account.name
+        ? `${account.officialName} — `
+        : ''}
+      {account.mask ? `••${account.mask} — ` : ''}
+      {accountTypeLabel(account)}
+      {' — current: '}
+      {account.balanceCurrent ?? '—'}
+      {', available: '}
+      {account.balanceAvailable ?? '—'}
+      {account.balanceLimit != null ? `, limit: ${account.balanceLimit}` : ''}
+      {account.isoCurrencyCode ? ` ${account.isoCurrencyCode}` : ''}
+    </p>
+  );
+}
+
+// The pager owns its range arithmetic. Shown even for a single page, so
+// "1–17 of 17" answers "is this all?". Range and buttons are based on
+// shownPage, the rows actually on screen. Design: pager-keeps-stale-rows.
+function Pager({
+  shownPage,
+  shownCount,
+  total,
+  pageLoading,
+  goToPage,
+}: {
+  shownPage: number;
+  shownCount: number;
+  total: number;
+  pageLoading: boolean;
+  goToPage: (next: number) => void;
+}) {
+  const rangeStart = shownPage * PAGE_SIZE + 1;
+  const rangeEnd = shownPage * PAGE_SIZE + shownCount;
+  const onLastPage = (shownPage + 1) * PAGE_SIZE >= total;
+  return (
+    <p>
+      Showing {rangeStart}–{rangeEnd} of {total}{' '}
+      <button onClick={() => goToPage(shownPage - 1)} disabled={shownPage === 0 || pageLoading}>
+        Previous
+      </button>{' '}
+      <button onClick={() => goToPage(shownPage + 1)} disabled={onLastPage || pageLoading}>
+        Next
+      </button>
+      {pageLoading && <span> Loading…</span>}
+    </p>
+  );
+}
+
+function AccountView({ accountId }: { accountId: string }) {
   const {
     account,
     card,
@@ -34,7 +112,9 @@ function AccountView({ accountId }: { accountId: string }) {
     error: accountError,
     clearError: clearAccountError,
     loaded,
-  } = useAccountData(accountId, reloadKey);
+    refresh: refreshAccount,
+    reload: reloadAccount,
+  } = useAccountData(accountId);
   const {
     transactionList,
     setTransactionList,
@@ -46,11 +126,29 @@ function AccountView({ accountId }: { accountId: string }) {
     clearError: clearTransactionsError,
     loaded: { transactions: transactionsLoaded },
     goToPage,
-  } = useTransactionPage(accountId, reloadKey, reload);
-  const { setCategory, patchError } = useCategoryPatches(
+    refresh: refreshTransactions,
+    reload: reloadTransactions,
+  } = useTransactionPage(accountId);
+  const { setCategory, patchErrors } = useCategoryPatches(
     card,
     creditCategories,
     setTransactionList,
+  );
+
+  // Retry re-runs both loads loudly (the hooks own their reload tokens).
+  const reload = () => {
+    reloadAccount();
+    reloadTransactions();
+  };
+
+  // Silent poll, same cadence and mechanism as the home page, so the hourly
+  // background sync's new transactions and balances show up on an open
+  // account page too. Design: home-reflects-background-sync.
+  useVisiblePoll(
+    useCallback(() => {
+      void refreshAccount();
+      void refreshTransactions();
+    }, [refreshAccount, refreshTransactions]),
   );
 
   // `loading` covers the first load only, and ends once both loads have settled.
@@ -60,46 +158,21 @@ function AccountView({ accountId }: { accountId: string }) {
   // Design: stale-lists-disable-editing.
   const categoriesMayBeStale = !loaded.cards || !loaded.account;
 
-  const deriveView = (): View => {
-    if (loading) return 'loading';
-    // Not-found needs positive evidence: this pass's account read succeeded
-    // and found nothing. A stale `account` surviving a failed re-read renders
-    // as ready below instead. Design: partial-load-rendering.
-    if (loaded.account && !account) return 'not-found';
-    // Unsupported needs both reads current, because the card is only
-    // recomputed when both succeeded. Design: supported-account-rule.
-    if (loaded.account && loaded.cards && account && !card) return 'unsupported';
-    // Ready renders the (possibly stale) card content; failures show beside
-    // it rather than blanking it.
-    if (card) return 'ready';
-    // Nothing loaded well enough to assert anything: identity and the error
-    // line are all that render.
-    return 'unresolved';
-  };
-  const view = deriveView();
+  const view = deriveView({
+    loading,
+    accountLoaded: loaded.account,
+    cardsLoaded: loaded.cards,
+    account,
+    hasCard: card !== null,
+  });
 
   return (
     <main>
       <p>
         <Link href="/">&larr; Back</Link>
       </p>
-      <h1>{account ? (account.name ?? account.officialName ?? account.accountId) : 'Account'}</h1>
-      {account && (
-        <p>
-          {account.officialName && account.officialName !== account.name
-            ? `${account.officialName} — `
-            : ''}
-          {account.mask ? `••${account.mask} — ` : ''}
-          {account.type}
-          {account.subtype ? ` / ${account.subtype}` : ''}
-          {' — current: '}
-          {account.balanceCurrent ?? '—'}
-          {', available: '}
-          {account.balanceAvailable ?? '—'}
-          {account.balanceLimit != null ? `, limit: ${account.balanceLimit}` : ''}
-          {account.isoCurrencyCode ? ` ${account.isoCurrencyCode}` : ''}
-        </p>
-      )}
+      <h1>{account ? accountDisplayName(account) : 'Account'}</h1>
+      {account && <AccountIdentity account={account} />}
       {view === 'loading' && <p>Loading…</p>}
       {error && (
         <p>
@@ -134,7 +207,6 @@ function AccountView({ accountId }: { accountId: string }) {
           {categoriesMayBeStale && (
             <p>Category lists may be out of date — editing is off until they refresh.</p>
           )}
-          {patchError && <p>Category update failed: {patchError}</p>}
           {/* total is the account's own count, so this can't fire on a page past the end. */}
           {transactionsLoaded && total === 0 && <p>No transactions.</p>}
           {transactionList.length > 0 && (
@@ -143,29 +215,18 @@ function AccountView({ accountId }: { accountId: string }) {
               creditCategories={creditCategories}
               transactionList={transactionList}
               categoriesMayBeStale={categoriesMayBeStale}
+              patchErrors={patchErrors}
               onSelectCategory={setCategory}
             />
           )}
-          {/* Shown even for a single page, so "1–17 of 17" answers "is this all?".
-              Range and buttons are based on shownPage, the rows actually on screen. */}
           {total !== null && total > 0 && transactionList.length > 0 && (
-            <p>
-              Showing {shownPage * PAGE_SIZE + 1}–{shownPage * PAGE_SIZE + transactionList.length}{' '}
-              of {total}{' '}
-              <button
-                onClick={() => goToPage(shownPage - 1)}
-                disabled={shownPage === 0 || pageLoading}
-              >
-                Previous
-              </button>{' '}
-              <button
-                onClick={() => goToPage(shownPage + 1)}
-                disabled={(shownPage + 1) * PAGE_SIZE >= total || pageLoading}
-              >
-                Next
-              </button>
-              {pageLoading && <span> Loading…</span>}
-            </p>
+            <Pager
+              shownPage={shownPage}
+              shownCount={transactionList.length}
+              total={total}
+              pageLoading={pageLoading}
+              goToPage={goToPage}
+            />
           )}
         </>
       )}

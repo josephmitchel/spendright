@@ -9,7 +9,7 @@
     "build": "next build",
     "postbuild": "chmod -R go-rwx .next",
     "start": "node scripts/start.mjs",
-    "lint": "eslint",
+    "lint": "eslint && node scripts/check-design-refs.mjs",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

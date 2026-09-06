@@ -11,7 +11,8 @@ function getKey(): Buffer {
   const hex = process.env.ENCRYPTION_KEY;
   if (!hex || !ENCRYPTION_KEY_PATTERN.test(hex)) {
     throw new PublicError(
-      'ENCRYPTION_KEY must be 64 hex characters (32 bytes) — generate one with `openssl rand -hex 32` and set it in .env.local',
+      'ENCRYPTION_KEY must be 64 hex characters (32 bytes) — generate one with ' +
+        '`openssl rand -hex 32` and set it in .env.local',
       { status: 500, code: 'BAD_CONFIG' },
     );
   }
@@ -34,7 +35,8 @@ const CIPHERTEXT_PATTERN = /^[0-9a-fA-F]+:[0-9a-fA-F]+:[0-9a-fA-F]*$/;
 export function decrypt(data: string): string {
   if (!CIPHERTEXT_PATTERN.test(data)) {
     throw new PublicError(
-      'A stored encrypted value is not in the iv:tag:ciphertext form this app writes — the column was edited by hand, or written by something else',
+      'A stored encrypted value is not in the iv:tag:ciphertext form this app writes — ' +
+        'the column was edited by hand, or written by something else',
       { status: 500, code: 'BAD_CONFIG' },
     );
   }
@@ -50,7 +52,9 @@ export function decrypt(data: string): string {
     // GCM auth failure = wrong key. Logged, never echoed.
     logError('decrypt failed:', err);
     throw new PublicError(
-      'Could not decrypt a stored value — ENCRYPTION_KEY is not the key it was encrypted with. Rotating it invalidates every stored Plaid access token: restore the previous key, or remove the affected institutions and link them again',
+      'Could not decrypt a stored value — ENCRYPTION_KEY is not the key it was encrypted ' +
+        'with. Rotating it invalidates every stored Plaid access token: restore the previous ' +
+        'key, or remove the affected institutions and link them again',
       { status: 500, code: 'BAD_CONFIG' },
     );
   }

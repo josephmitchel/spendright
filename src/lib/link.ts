@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { AccountBase } from 'plaid';
 import { items, type ItemRow } from '@/db/schema';
+import { accountDisplayName } from '@/lib/account-display';
 import { storeAccounts, type StoreFailure } from '@/lib/accounts';
 import { loadCardCatalog } from '@/lib/card-catalog';
 import { encrypt } from '@/lib/crypto';
@@ -12,6 +13,11 @@ import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
 
 type PlaidItem = Awaited<ReturnType<typeof getItem>>;
 type Institution = Awaited<ReturnType<typeof getInstitutionById>>;
+
+// The inline initial sync's cap on the not-ready poll (about 6s), named so
+// both poll budgets are equally discoverable next to plaid.ts's
+// DEFAULT_NOT_READY_RETRIES. Design: not-ready-poll-budgets.
+const INITIAL_SYNC_NOT_READY_RETRIES = 3;
 
 export interface LinkResult {
   itemId: string;
@@ -65,41 +71,43 @@ async function storeItem(
   plaidItem: PlaidItem,
   institution: Institution | null,
 ): Promise<ItemRow> {
-  const itemValues = {
+  // Split by update policy so the on-conflict set is derived, never a
+  // hand-restated subset that a new column could silently miss (the same
+  // derive-don't-restate rule as typed-api-contract): everything in
+  // `alwaysUpdated` is written on insert and re-link alike, while the
+  // institution columns are conditional — on re-link, ones whose fetch
+  // failed are left out rather than nulled.
+  // Design: relink-preserves-institution-metadata.
+  const alwaysUpdated = {
     itemId,
     accessToken: encryptedAccessToken,
+    availableProducts: plaidItem.available_products ?? [],
+    billedProducts: plaidItem.billed_products ?? [],
+  };
+  const institutionValues = {
     institutionId: plaidItem.institution_id ?? null,
     institutionName: institution?.name ?? plaidItem.institution_name ?? null,
     institutionLogo: institution?.logo ?? null,
     institutionPrimaryColor: institution?.primaryColor ?? null,
-    availableProducts: plaidItem.available_products ?? [],
-    billedProducts: plaidItem.billed_products ?? [],
   };
-  // On re-link, institution columns whose fetch failed are left out of the
-  // update rather than nulled. Design: relink-preserves-institution-metadata.
-  const institutionUpdate: Partial<typeof itemValues> = {};
-  if (itemValues.institutionId !== null) institutionUpdate.institutionId = itemValues.institutionId;
+  const institutionUpdate: Partial<typeof institutionValues> = {};
+  if (institutionValues.institutionId !== null) {
+    institutionUpdate.institutionId = institutionValues.institutionId;
+  }
   if (institution) {
-    institutionUpdate.institutionName = itemValues.institutionName;
-    institutionUpdate.institutionLogo = itemValues.institutionLogo;
-    institutionUpdate.institutionPrimaryColor = itemValues.institutionPrimaryColor;
-  } else if (itemValues.institutionName !== null) {
-    institutionUpdate.institutionName = itemValues.institutionName;
+    institutionUpdate.institutionName = institutionValues.institutionName;
+    institutionUpdate.institutionLogo = institutionValues.institutionLogo;
+    institutionUpdate.institutionPrimaryColor = institutionValues.institutionPrimaryColor;
+  } else if (institutionValues.institutionName !== null) {
+    institutionUpdate.institutionName = institutionValues.institutionName;
   }
 
   const [storedItem] = await db
     .insert(items)
-    .values(itemValues)
+    .values({ ...alwaysUpdated, ...institutionValues })
     .onConflictDoUpdate({
       target: items.itemId,
-      set: {
-        itemId: itemValues.itemId,
-        accessToken: itemValues.accessToken,
-        availableProducts: itemValues.availableProducts,
-        billedProducts: itemValues.billedProducts,
-        ...institutionUpdate,
-        updatedAt: sql`now()`,
-      },
+      set: { ...alwaysUpdated, ...institutionUpdate, updatedAt: sql`now()` },
     })
     .returning();
   if (!storedItem) {
@@ -121,7 +129,10 @@ async function runInitialSync(
     // Passes the accountsGet result so the sync stores nothing itself — the
     // link flow already stored these accounts — and caps the not-ready poll.
     // Design: not-ready-poll-budgets, accounts-refreshed-per-sync.
-    const result = await syncItem(storedItem, { plaidAccounts, notReadyRetries: 3 });
+    const result = await syncItem(storedItem, {
+      plaidAccounts,
+      notReadyRetries: INITIAL_SYNC_NOT_READY_RETRIES,
+    });
     return { result, error: null };
   } catch (err) {
     logError(`Initial sync failed for item ${storedItem.itemId}:`, err);
@@ -140,10 +151,14 @@ async function runInitialSync(
 // the next sync, its rows held by the known-account guard until then.
 // Design: accounts-refreshed-per-sync, bounded-cursor-hold.
 function accountFailureMessages(failures: StoreFailure[]): string[] {
-  return failures.map(
-    (failure) =>
-      `${failure.account.name ?? failure.account.account_id}: ${publicErrorMessage(failure.error, 'could not be stored')}`,
-  );
+  return failures.map((failure) => {
+    const name = accountDisplayName({
+      name: failure.account.name ?? null,
+      officialName: failure.account.official_name ?? null,
+      accountId: failure.account.account_id,
+    });
+    return `${name}: ${publicErrorMessage(failure.error, 'could not be stored')}`;
+  });
 }
 
 // The whole link-onboarding flow behind POST /api/exchange: exchange the

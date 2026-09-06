@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { SyncResponse } from '@/lib/api-types';
-import { errorMessage, readJson } from '@/lib/http';
+import { errorMessage, sendJson } from '@/lib/http';
 import { skippedSyncNotice } from '@/lib/sync-messages';
 
 // The "Sync all" action and its status line.
@@ -18,9 +18,8 @@ export function useSyncAll(refresh: () => Promise<void>) {
     setSyncing(true);
     setSyncStatus('Syncing…');
     try {
-      const res = await fetch('/api/sync', { method: 'POST' });
-      const data = await readJson<SyncResponse>(res, 'Sync failed');
-      const results = data.results ?? [];
+      const data = await sendJson<SyncResponse>('/api/sync', 'POST', undefined, 'Sync failed');
+      const results = data.results;
       // `skipped` rows were held back (cursor not advanced) unless `dropped`,
       // in which case the sync gave up on them. Design: bounded-cursor-hold.
       const parts = results.map((result) =>

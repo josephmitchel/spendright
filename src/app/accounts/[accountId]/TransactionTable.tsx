@@ -49,6 +49,16 @@ function CategorySelect({
   );
 }
 
+// The rate cell's three outcomes: inflow rows have no rate, a rate whose
+// category link is gone is legacy data (shown but marked), else the rate.
+function rateCellText(txn: ApiTransaction, kind: CategoryKind): string | null {
+  if (kind === 'credit') return '—';
+  if (txn.rewardRate !== null && txn.cardCategoryId === null) {
+    return `${txn.rewardRate} (unlinked)`;
+  }
+  return txn.rewardRate;
+}
+
 // The transaction rows for a matched card, category pickers included.
 // Design: supported-account-rule, category-kind-sign-rule.
 export function TransactionTable({
@@ -56,6 +66,7 @@ export function TransactionTable({
   creditCategories,
   transactionList,
   categoriesMayBeStale,
+  patchErrors,
   onSelectCategory,
 }: {
   card: ApiCard;
@@ -63,11 +74,16 @@ export function TransactionTable({
   transactionList: ApiTransaction[];
   // Design: stale-lists-disable-editing.
   categoriesMayBeStale: boolean;
+  // Per-row category-write failures, rendered inside the failing row.
+  // Design: optimistic-category-writes.
+  patchErrors: ReadonlyMap<string, string>;
   // Async so the type says what the handler is; the returned promise never
   // rejects (the patch hook folds failures into its own error state) and is
   // deliberately not awaited here.
   onSelectCategory: (row: ApiTransaction, kind: CategoryKind, categoryId: number) => Promise<void>;
 }) {
+  // The card's type decides how its rates are read; the header follows it.
+  // Design: card-type-decides-rate-unit.
   const rateHeader = card.type === 'points' ? 'Multiplier' : 'Cashback %';
   return (
     // Fixed layout so column widths don't shift between pages.
@@ -101,6 +117,7 @@ export function TransactionTable({
           const options = kind === 'credit' ? creditCategories : card.categories;
           const selectedId = kind === 'credit' ? txn.creditCategoryId : txn.cardCategoryId;
           const selectedName = kind === 'credit' ? txn.creditCategoryName : txn.cardCategoryName;
+          const patchError = patchErrors.get(txn.transactionId);
           return (
             <tr key={txn.transactionId}>
               <td>{txn.date}</td>
@@ -120,15 +137,11 @@ export function TransactionTable({
                 ) : (
                   (selectedName ?? 'none')
                 )}
+                {/* The select has already snapped back to the saved value;
+                    this says why. Cleared by the row's next pick. */}
+                {patchError && <div>Update failed: {patchError}</div>}
               </td>
-              {/* A rate with no category link is legacy data; shown but marked. */}
-              <td>
-                {kind === 'credit'
-                  ? '—'
-                  : txn.rewardRate !== null && txn.cardCategoryId === null
-                    ? `${txn.rewardRate} (unlinked)`
-                    : txn.rewardRate}
-              </td>
+              <td>{rateCellText(txn, kind)}</td>
               <td>{txn.pending ? 'yes' : ''}</td>
             </tr>
           );

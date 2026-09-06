@@ -8,17 +8,21 @@ import {
   transactions,
   type ItemRow,
 } from '@/db/schema';
-import { storeAccounts, type DbTransaction } from '@/lib/accounts';
+import { storeAccounts } from '@/lib/accounts';
 import { isInflowAmount } from '@/lib/amounts';
 import { loadCardCatalog } from '@/lib/card-catalog';
 import { decrypt } from '@/lib/crypto';
-import { db } from '@/lib/db';
+import { db, type DbTransaction } from '@/lib/db';
 import { plaidErrorBody, publicErrorMessage } from '@/lib/errors';
 import { globalSingleton } from '@/lib/global-singleton';
 import { logError } from '@/lib/log';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
 import { serializeByKey } from '@/lib/serialize';
-import { MAX_SKIPPED_SYNCS, skippedItemErrorMessage } from '@/lib/sync-messages';
+import {
+  MAX_SKIPPED_SYNCS,
+  skippedItemErrorMessage,
+  skippedSyncLogLine,
+} from '@/lib/sync-messages';
 
 function toTransactionRow(txn: PlaidTransaction, itemId: string) {
   return {
@@ -30,6 +34,8 @@ function toTransactionRow(txn: PlaidTransaction, itemId: string) {
     merchantName: txn.merchant_name ?? null,
     amount: String(txn.amount),
     isoCurrencyCode: txn.iso_currency_code ?? null,
+    // Stored and served but never rendered; reserved for future
+    // auto-categorization. Design: plaid-category-reserved.
     category: txn.personal_finance_category?.primary ?? txn.category?.[0] ?? null,
     pending: txn.pending ?? null,
     plaidTransaction: txn,
@@ -344,17 +350,17 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
     };
   });
 
-  // On a drop this log line is the only lasting record of what was lost.
+  // On a drop this log line is the only lasting record of what was lost. The
+  // wording lives in sync-messages.ts with the rest of the policy's strings.
   if (skipped > 0) {
-    if (outcome.dropped) {
-      console.error(
-        `sync ${item.itemId}: ${skipped} transaction(s) reference accounts that are not stored — held back for ${MAX_SKIPPED_SYNCS - 1} syncs and now DROPPED, cursor advanced; these rows are gone (see the per-row lines above for the accounts)`,
-      );
-    } else {
-      console.warn(
-        `sync ${item.itemId}: ${skipped} transaction(s) reference accounts that are not stored — cursor held back, this batch will be re-offered on the next sync (${MAX_SKIPPED_SYNCS - outcome.consecutiveSkippedSyncs} more before it is dropped)`,
-      );
-    }
+    const line = skippedSyncLogLine(
+      item.itemId,
+      skipped,
+      outcome.consecutiveSkippedSyncs,
+      outcome.dropped,
+    );
+    if (outcome.dropped) console.error(line);
+    else console.warn(line);
   }
 
   return {

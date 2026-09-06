@@ -8,7 +8,7 @@ import type {
   TransactionPatchResponse,
 } from '@/lib/api-types';
 import type { CategoryKind } from '@/lib/amounts';
-import { errorMessage, readJson } from '@/lib/http';
+import { errorMessage, sendJson } from '@/lib/http';
 import { serializeByKey } from '@/lib/serialize';
 
 // The category columns a PATCH can change. Reconciliation merges only these
@@ -29,14 +29,26 @@ function categoryFields(row: ApiTransaction) {
 // order; the pending counter therefore hits zero exactly when the burst's
 // newest patch settles, which is when the row reconciles — to the newest
 // committed response, or else the pre-burst baseline — and when that patch's
-// failure (only) is surfaced. Design: optimistic-category-writes.
+// failure (only) is surfaced, in that row. Design: optimistic-category-writes.
 export function useCategoryPatches(
   card: ApiCard | null,
   creditCategories: ApiCreditCategory[],
   setTransactionList: Dispatch<SetStateAction<ApiTransaction[]>>,
 ) {
-  // The newest burst outcome, surfaced inline next to the table.
-  const [patchError, setPatchError] = useState<string | null>(null);
+  // Each row's newest burst outcome, rendered inside the row it belongs to.
+  // Keyed like the rest of the bookkeeping, so rows edited concurrently can
+  // never clear or overwrite one another's failures.
+  const [patchErrors, setPatchErrors] = useState<ReadonlyMap<string, string>>(new Map());
+
+  const setRowError = (transactionId: string, message: string | null) => {
+    setPatchErrors((previous) => {
+      if (message === null && !previous.has(transactionId)) return previous;
+      const next = new Map(previous);
+      if (message === null) next.delete(transactionId);
+      else next.set(transactionId, message);
+      return next;
+    });
+  };
 
   // Per-row burst bookkeeping. Lives in refs, outside setState updaters,
   // which must be pure.
@@ -53,7 +65,7 @@ export function useCategoryPatches(
     const inFlight = patchState.current.get(transactionId);
     if (inFlight) inFlight.pending++;
     else patchState.current.set(transactionId, { pending: 1, baseline: row, committed: null });
-    setPatchError(null);
+    setRowError(transactionId, null);
 
     // Each kind touches only its own fields; a row never holds both kinds.
     let body: { cardCategoryId: number } | { creditCategoryId: number };
@@ -78,19 +90,20 @@ export function useCategoryPatches(
     );
 
     const send = async () => {
+      const failureMessage = 'Failed to update category';
       let failure: string | null = null;
       try {
-        const res = await fetch(`/api/transactions/${encodeURIComponent(transactionId)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = await readJson<TransactionPatchResponse>(res, 'Failed to update category');
+        const data = await sendJson<TransactionPatchResponse>(
+          `/api/transactions/${encodeURIComponent(transactionId)}`,
+          'PATCH',
+          body,
+          failureMessage,
+        );
         const state = patchState.current.get(transactionId);
         // In-order responses mean the latest one is always the newest.
-        if (state) state.committed = { ...state.baseline, ...data.transaction };
+        if (state) state.committed = data.transaction;
       } catch (err) {
-        failure = errorMessage(err, 'Failed to update category');
+        failure = errorMessage(err, failureMessage);
       }
 
       const state = patchState.current.get(transactionId);
@@ -103,8 +116,8 @@ export function useCategoryPatches(
           ),
         );
         // Zero pending means this send was the burst's newest patch, so this
-        // is the failure (or the all-clear) worth showing.
-        setPatchError(failure);
+        // is the failure (or the all-clear) worth showing for this row.
+        setRowError(transactionId, failure);
       }
     };
 
@@ -112,5 +125,5 @@ export function useCategoryPatches(
     await serializeByKey(patchChain.current, transactionId, send);
   };
 
-  return { setCategory, patchError };
+  return { setCategory, patchErrors };
 }

@@ -26,13 +26,11 @@ type Serialized<T> = T extends Date
       ? { [K in keyof T]: Serialized<T[K]> }
       : T;
 
-// The encrypted access token is never served; the type is derived from the
-// runtime column pick in src/lib/items.ts, never a separate Omit that could
-// drift from it. Design: access-tokens-encrypted.
-type PublicItem = PublicItemRow;
-
 export type ApiAccount = Serialized<AccountRow>;
-export type ApiItem = Serialized<PublicItem>;
+// The encrypted access token is never served; PublicItemRow is derived from
+// the runtime column pick in src/lib/items.ts, never a separate Omit that
+// could drift from it. Design: access-tokens-encrypted.
+export type ApiItem = Serialized<PublicItemRow>;
 export type ApiCard = Serialized<CardWithCategories>;
 export type ApiCreditCategory = Serialized<CreditCategoryRow>;
 // The raw Plaid payload is never served; the joined category names ride
@@ -48,7 +46,7 @@ export type AccountsResponse = Serialized<AccountsPayload>;
 
 // GET /api/items
 export interface ItemsPayload {
-  items: PublicItem[];
+  items: PublicItemRow[];
 }
 export type ItemsResponse = Serialized<ItemsPayload>;
 
