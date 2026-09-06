@@ -2,11 +2,9 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   experimental: {
-    // src/proxy.ts makes Next buffer every request body (10MB default), and
-    // /api/webhook is internet-reachable; nothing this app accepts is more
-    // than a few KB, so cap the buffer. An oversized body is truncated, which
-    // fails webhook verification closed (hash mismatch -> 401).
-    // Design: webhook-jwt-verification.
+    // src/proxy.ts makes Next buffer every request body (10MB default);
+    // nothing this app accepts is more than a few KB, so cap the buffer.
+    // Design: non-local-request-guard.
     proxyClientMaxBodySize: '128kb',
   },
   // The app must never render inside a frame: a hostile page iframing

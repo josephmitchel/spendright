@@ -3,16 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "mkdir -p .next && chmod -R go-rwx .next",
     "dev": "next dev -H 127.0.0.1",
+    "prebuild": "mkdir -p .next && chmod -R go-rwx .next",
     "build": "next build",
-    "start": "next start -H 127.0.0.1",
+    "postbuild": "chmod -R go-rwx .next",
+    "start": "node scripts/start.mjs",
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "seed:cards": "tsx scripts/seed-cards.ts",
-    "webhooks:update": "tsx scripts/update-webhooks.ts"
+    "seed:cards": "tsx scripts/seed-cards.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

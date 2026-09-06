@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // SpendRight is a single-user tool with no authentication on any route, so
-// nothing but the local browser may reach the app. POST /api/webhook is the
-// one exception — it must be internet-reachable through a tunnel and proves
-// its caller cryptographically (Plaid's JWT). A tunnel forwards the WHOLE
-// origin, not one route, so every other path refuses any request that did
-// not arrive from loopback. Design: non-local-request-guard,
-// single-user-localhost-no-auth, webhook-jwt-verification.
+// nothing but the local browser may reach the app: every path refuses any
+// request that did not arrive from loopback, with no exceptions. (The Plaid
+// webhook + tunnel that used to be exempt here was retired 2026-09-05 for a
+// scheduler — the app no longer has an internet-reachable origin at all.)
+// Design: non-local-request-guard, single-user-localhost-no-auth,
+// scheduled-sync.
 
 // IPv6 loopback appears only bracketed: URL.hostname keeps the brackets, and
 // an unbracketed ::1 in a Host header does not parse at all.
@@ -46,12 +46,12 @@ function isLoopbackIp(entry: string): boolean {
 }
 
 // Next fills x-forwarded-host/-for itself (from Host and the socket's remote
-// address) but with ??=, so a tunnel's values survive: locally they name
-// loopback, through ngrok they name the tunnel domain and the caller's real
-// IP. Presence means nothing; the values are the signal. x-forwarded-for can
-// be a comma chain, and only a chain that is loopback end-to-end is local —
-// a forged loopback entry still arrives alongside the proxy's appended real
-// address.
+// address) but with ??=, so a forwarding proxy's values survive: locally
+// they name loopback; through any proxy or tunnel someone puts in front of
+// the app they name the forwarded host and the caller's real IP. Presence
+// means nothing; the values are the signal. x-forwarded-for can be a comma
+// chain, and only a chain that is loopback end-to-end is local — a forged
+// loopback entry still arrives alongside the proxy's appended real address.
 function isLocalRequest(req: NextRequest): boolean {
   const host = req.headers.get('host');
   if (!host) return false;
@@ -71,20 +71,11 @@ function isLocalRequest(req: NextRequest): boolean {
 }
 
 export function proxy(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-
-  // The webhook verifies Plaid's signature itself; the caller does not
-  // matter. The exemption requires the raw request path and Next's
-  // normalized view to agree: /_next/data/<buildId>/api/webhook.json reaches
-  // the proxy with a normalized pathname of /api/webhook but is dispatched
-  // by the router as the literal path, so matching the normalized name alone
-  // would exempt a request that is not actually the webhook route.
-  if (pathname === '/api/webhook' && new URL(req.url).pathname === '/api/webhook') {
-    return NextResponse.next();
-  }
-
   // A uniform bodyless 404 for anything non-local tells a scanner nothing.
-  // The host check also defeats DNS rebinding.
+  // The host check also defeats DNS rebinding for every routed path — but
+  // not for `next dev`'s /__nextjs_* endpoints, which Next serves before the
+  // proxy runs (see non-local-request-guard: prefer production mode for
+  // everyday use).
   if (!isLocalRequest(req)) return new NextResponse(null, { status: 404 });
 
   // CSRF: a hostile page can fire preflight-free cross-origin POSTs at

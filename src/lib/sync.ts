@@ -55,7 +55,33 @@ export interface SyncItemOptions {
   notReadyRetries?: number;
 }
 
-export async function syncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
+// Per-item serialization for the cursor-write invariant: two concurrent
+// syncItem calls on one item would race the cursor write, and syncItem has two
+// entry points (syncAllItems and the exchange route's inline initial sync), so
+// the lock lives here, covering every caller by construction, rather than in
+// any one of them. Held on globalThis for the same reason as the sync-all
+// guard: the bundler emits separate copies of this module per import graph.
+// Design: scheduled-sync.
+const globalForSyncItem = globalThis as unknown as {
+  syncItemTails?: Map<string, Promise<void>>;
+};
+
+export function syncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
+  const tails = (globalForSyncItem.syncItemTails ??= new Map<string, Promise<void>>());
+  const previous = tails.get(item.itemId) ?? Promise.resolve();
+  const run = previous.then(() => runSyncItem(item, options));
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  tails.set(item.itemId, tail);
+  tail.then(() => {
+    if (tails.get(item.itemId) === tail) tails.delete(item.itemId);
+  });
+  return run;
+}
+
+async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
   const accessToken = decrypt(item.accessToken);
   // Plaid calls stay outside the DB transaction. The account refresh is
   // best-effort: on failure the sync proceeds against stored accounts.

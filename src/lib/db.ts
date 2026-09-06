@@ -19,7 +19,10 @@ function getConnectionString(): string {
   return url;
 }
 
-// Keep a single pool across Next.js dev HMR reloads
+// Keep a single pool per process. The cache is unconditional, not dev-only:
+// dev HMR reloads this module, and the bundler duplicates it across chunks
+// in any mode (the same duplication sync-all.ts guards against), so every
+// copy must land on the same pool.
 const globalForDb = globalThis as unknown as {
   pool?: Pool;
   db?: NodePgDatabase<typeof schema>;
@@ -29,7 +32,5 @@ const pool = globalForDb.pool ?? new Pool({ connectionString: getConnectionStrin
 
 export const db: NodePgDatabase<typeof schema> = globalForDb.db ?? drizzle(pool, { schema });
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForDb.pool = pool;
-  globalForDb.db = db;
-}
+globalForDb.pool = pool;
+globalForDb.db = db;

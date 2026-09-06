@@ -93,6 +93,22 @@ export default function HomeClient() {
     })();
   }, [refresh]);
 
+  // The hourly scheduled sync mutates items.error and balances behind an open
+  // page, so re-read every minute while the tab is visible and on return to
+  // it. Superseded loads write nothing, so a poll can never clobber a
+  // fresher read. Design: home-reflects-background-sync.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (!document.hidden) void refresh();
+    };
+    const interval = setInterval(onVisibilityChange, 60_000);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [refresh]);
+
   const syncAll = async () => {
     setSyncing(true);
     setSyncStatus('Syncing…');

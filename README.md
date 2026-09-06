@@ -2,21 +2,19 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+Run the production server — this is the everyday mode:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm run start
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
+`npm run dev` is for short-lived, attended development work only: the dev
+bundler's own `/__nextjs_*` endpoints sit ahead of the request guard and are
+reachable from a hostile web page via DNS rebinding, while `next start` does
+not mount them (details under "Automatic sync" below).
 
 ## Database
 
@@ -83,37 +81,29 @@ values ('baseline-0001_same_bruce_banner', 1788309102608);
 `hash` is written by the migrator but never read back by it, so any marker that
 tells the next reader where the row came from will do.
 
-## Webhooks (automatic sync)
+## Automatic sync
 
-Syncing is automatic when Plaid can reach `POST /api/webhook`: set
-`PLAID_WEBHOOK_URL` to a public http(s) URL for that route (on localhost that
-means a tunnel, e.g. `ngrok http 3000`, with `/api/webhook` appended to the
-tunnel URL). Left unset, webhooks are off and the app is manual-sync only
-(the "Sync all" button).
+Syncing is automatic: an in-process scheduler (`src/lib/sync-scheduler.ts`,
+started once per server from `src/instrumentation.ts`) syncs every linked item
+shortly after the server starts and then hourly. The "Sync all" button remains
+for impatience; it shares a single-flight runner with the scheduler
+(`src/lib/sync-all.ts`), so a press during a scheduled run joins that run
+rather than racing it. Per-item failures are logged and recorded on the item,
+where the UI surfaces them.
 
-A tunnel forwards every route, not just the webhook, so `src/proxy.ts` answers
-404 to any request that did not arrive at a loopback host (or that came
-through a forwarding proxy) — through the tunnel, only `POST /api/webhook`
-responds. That protection depends on the tunnel injecting real forwarding
-headers, which HTTP tunnels like ngrok and cloudflared do (a non-loopback
-`Host` and the caller's real IP on `X-Forwarded-For`). **Use only such a
-tunnel.** A raw TCP forward — `ssh -R`, socat, an editor's port forwarding —
-injects nothing: it connects from loopback (so the bind does not apply) and
-hands the remote caller full control of every header, which would expose the
-whole unauthenticated API, not just the webhook. Against direct connections
-the headers are forgeable anyway, so there the real enforcement is the bind:
-both `dev` and `start` run with `-H 127.0.0.1`, and `src/instrumentation.ts`
-exits the server if it finds itself reachable on a non-loopback interface
-(e.g. after a bare `next dev` without the flag). If a tunnel URL was ever
-exposed without this guard, treat `PLAID_SECRET` as leaked and rotate it in
-the Plaid dashboard.
+Nothing about syncing is internet-reachable. The previous design — Plaid
+transaction webhooks delivered through a tunnel to `POST /api/webhook` — was
+retired 2026-09-05: a security audit found that `next dev`'s internal
+`/__nextjs_*` endpoints bypassed the request guard entirely, so the tunnel
+exposed more than the one verified route. With the scheduler there is no
+exposed origin at all: every route answers loopback callers only. Do not put
+a tunnel or any other forwarder in front of this app.
 
-The URL reaches newly linked items on its own, through the link token. Items
-linked before it was set (or after it changed) need a one-off push:
-
-```bash
-npm run webhooks:update
-```
+For everyday use, run the production server (`npm run build && npm run
+start`), not `next dev`: the dev bundler's own `/__nextjs_*` endpoints sit
+ahead of the request guard, and a hostile page can reach them through the
+local browser via DNS rebinding — no tunnel required. `next start` does not
+mount them. Treat dev sessions as short-lived, attended work.
 
 ## Before deploying
 
@@ -125,8 +115,8 @@ reachable from anywhere else.
   the route that mints and stores a Plaid access token, the route that deletes an
   institution and all of its data, and the reads that return the account's whole
   transaction history. The `items` table holds encrypted bank credentials.
-  (The loopback bind keeps the LAN out and `src/proxy.ts` refuses requests a
-  tunnel forwards — but that is a guard, not authentication.)
+  (The loopback bind keeps the LAN out and `src/proxy.ts` refuses any
+  non-loopback request — but that is a guard, not authentication.)
 - **`POST /api/exchange` can run long.** It makes several Plaid calls before it
   answers and runs the first sync inline. That sync pulls a few days of history
   at most, so volume is not the concern — the in-request retry sleeping is: the
@@ -141,11 +131,3 @@ To learn more about Next.js, take a look at the following resources:
 
 - [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
 - [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
