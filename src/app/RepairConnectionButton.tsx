@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { usePlaidLink } from 'react-plaid-link';
+import { useCallback } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
+import { usePlaidLinkOpen } from '@/hooks/usePlaidLinkOpen';
 import { apiPaths } from '@/lib/api-paths';
 import type { LinkTokenResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
@@ -18,8 +18,7 @@ export function RepairConnectionButton({
   itemId: string;
   onRepairedAction: () => void;
 }) {
-  const [linkToken, setLinkToken] = useState<string | null>(null);
-  const pendingOpen = useRef(false);
+  const openWithToken = usePlaidLinkOpen(useCallback(() => onRepairedAction(), [onRepairedAction]));
 
   const connect = useAsyncAction(async () => {
     const data = await sendJson<LinkTokenResponse>(
@@ -28,23 +27,8 @@ export function RepairConnectionButton({
       undefined,
       'Failed to start the repair',
     );
-    pendingOpen.current = true;
-    setLinkToken(data.link_token);
+    openWithToken(data.link_token);
   }, 'Failed to start the repair');
-
-  const linkConfig = useMemo(
-    () => ({ token: linkToken, onSuccess: () => onRepairedAction() }),
-    [linkToken, onRepairedAction],
-  );
-  const { open, ready } = usePlaidLink(linkConfig);
-
-  // usePlaidLink only becomes ready after it has the token, so defer opening.
-  useEffect(() => {
-    if (ready && pendingOpen.current) {
-      pendingOpen.current = false;
-      open();
-    }
-  }, [ready, open]);
 
   return (
     <span>

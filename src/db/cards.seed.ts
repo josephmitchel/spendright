@@ -1,11 +1,12 @@
 // Edit this file, then run: npm run seed:cards
 // Design: card-catalog-in-code.
+import type { CardType } from '@/lib/card-types';
 
 interface CardSeed {
   slug: string;
   name: string;
   issuer?: string;
-  type: 'cashback' | 'points';
+  type: CardType;
   plaidAccountNames: string[];
   categories: { name: string; rate: number }[];
 }

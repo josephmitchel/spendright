@@ -10,6 +10,7 @@ import { getJson } from '@/lib/http';
 export function useHomeData() {
   const [itemList, setItemList] = useState<ApiItem[]>([]);
   const [accountList, setAccountList] = useState<ApiAccount[]>([]);
+  const [lastSync, setLastSync] = useState<ItemsResponse['lastSync']>(null);
   const protocol = useLoadProtocol(
     { items: false, accounts: false },
     useCallback(
@@ -20,7 +21,10 @@ export function useHomeData() {
             accounts: getJson<AccountsResponse>(apiPaths.accounts, 'Failed to load accounts'),
           },
           (bodies) => {
-            if (bodies.items) setItemList(bodies.items.items);
+            if (bodies.items) {
+              setItemList(bodies.items.items);
+              setLastSync(bodies.items.lastSync);
+            }
             if (bodies.accounts) setAccountList(bodies.accounts.accounts);
           },
         ),
@@ -29,5 +33,5 @@ export function useHomeData() {
     { stickyKeys: ['accounts'] },
   );
 
-  return { itemList, accountList, ...protocol };
+  return { itemList, accountList, lastSync, ...protocol };
 }

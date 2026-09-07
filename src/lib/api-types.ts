@@ -5,7 +5,9 @@ import type { ServedAccountRow } from '@/lib/accounts';
 import type { CardWithCategories } from '@/lib/card-catalog';
 import type { PublicItemRow } from '@/lib/items';
 import type { LinkResult } from '@/lib/link';
+import type { ItemErrorBody } from '@/lib/plaid-errors';
 import type { SyncAllResult } from '@/lib/sync-all';
+import type { LastSyncStatus } from '@/lib/sync-status';
 import type { CategorizedTransaction } from '@/lib/transactions';
 
 type Serialized<T> = T extends Date
@@ -29,15 +31,18 @@ export interface AccountsPayload {
 export type AccountsResponse = Serialized<AccountsPayload>;
 
 // GET /api/accounts/[accountId] — null account is a 200, not a 404.
-// Design: account-fetched-by-id.
+// The owning item's error rides along so the detail page can warn about
+// staleness. Design: account-fetched-by-id.
 export interface AccountPayload {
   account: ServedAccountRow | null;
+  itemError: ItemErrorBody | null;
 }
 export type AccountResponse = Serialized<AccountPayload>;
 
 // GET /api/items
 export interface ItemsPayload {
   items: PublicItemRow[];
+  lastSync: LastSyncStatus | null;
 }
 export type ItemsResponse = Serialized<ItemsPayload>;
 

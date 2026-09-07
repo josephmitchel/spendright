@@ -4,7 +4,18 @@ const globalStore = globalThis as unknown as {
   __spendrightSingletons?: Map<string, unknown>;
 };
 
-export function globalSingleton<T>(key: string, create: () => T): T {
+// Closed key set: a typo'd or undeclared key is a compile error instead of a
+// silently type-punned collision.
+export type SingletonKey =
+  | 'pool'
+  | 'db'
+  | 'plaidClient'
+  | 'syncItemTails'
+  | 'syncAllInFlight'
+  | 'syncScheduler'
+  | 'syncStatus';
+
+export function globalSingleton<T>(key: SingletonKey, create: () => T): T {
   const singletons = (globalStore.__spendrightSingletons ??= new Map<string, unknown>());
   if (!singletons.has(key)) singletons.set(key, create());
   return singletons.get(key) as T;

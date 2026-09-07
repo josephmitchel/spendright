@@ -11,7 +11,9 @@ export interface ProviderAccount {
   balanceAvailable: number | null;
   balanceCurrent: number | null;
   balanceLimit: number | null;
+  // Exactly one of these two is set by the provider.
   isoCurrencyCode: string | null;
+  unofficialCurrencyCode: string | null;
 }
 
 // Design: raw-plaid-payload-stored-not-served.
@@ -27,6 +29,7 @@ export interface ProviderTransaction {
   // Provider sign convention preserved: positive is money out.
   amount: number;
   isoCurrencyCode: string | null;
+  unofficialCurrencyCode: string | null;
   category: string | null;
   pending: boolean;
   pendingTransactionId: string | null;

@@ -57,6 +57,13 @@
       "when": 1788748196410,
       "tag": "0007_remarkable_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788818475086,
+      "tag": "0008_low_wendell_vaughn",
+      "breakpoints": true
     }
   ]
 }

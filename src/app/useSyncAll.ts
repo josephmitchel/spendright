@@ -26,7 +26,7 @@ export function useSyncAll(refresh: () => Promise<unknown>) {
       // Design: bounded-cursor-hold.
       const parts = results.map((result) =>
         isSyncFailure(result)
-          ? `${result.itemId}: ${result.error}`
+          ? `${result.institutionName ?? result.itemId}: ${result.error}`
           : `+${result.added} added${
               result.skipped ? `, ${skippedSyncNotice(result.skipped, result.dropped)}` : ''
             }`,

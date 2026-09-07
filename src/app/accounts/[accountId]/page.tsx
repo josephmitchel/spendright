@@ -7,6 +7,7 @@ import { combineLoadStates } from '@/hooks/useLoadProtocol';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
 import type { ApiAccount } from '@/lib/api-types';
+import { itemErrorMessage } from '@/lib/item-error-message';
 import { PAGE_SIZE } from '@/lib/pagination';
 import { CategoryWriteState } from './category-write-state';
 import { TransactionTable } from './TransactionTable';
@@ -54,7 +55,10 @@ function AccountIdentity({ account }: { account: ApiAccount }) {
       {', available: '}
       {account.balanceAvailable ?? '—'}
       {account.balanceLimit != null ? `, limit: ${account.balanceLimit}` : ''}
-      {account.isoCurrencyCode ? ` ${account.isoCurrencyCode}` : ''}
+      {(account.isoCurrencyCode ?? account.unofficialCurrencyCode)
+        ? ` ${account.isoCurrencyCode ?? account.unofficialCurrencyCode}`
+        : ''}
+      {` — updated ${new Date(account.updatedAt).toLocaleString()}`}
     </p>
   );
 }
@@ -96,7 +100,7 @@ function AccountView({ accountId }: { accountId: string }) {
   // Design: optimistic-category-writes.
   const [categoryWrites] = useState(() => new CategoryWriteState());
   const transactionPage = useTransactionPage(accountId, categoryWrites);
-  const { account, card, creditCategories, refresh: refreshAccount } = accountData;
+  const { account, itemError, card, creditCategories, refresh: refreshAccount } = accountData;
   const {
     transactionList,
     total,
@@ -145,7 +149,11 @@ function AccountView({ accountId }: { accountId: string }) {
       </p>
       <h1>{account ? accountDisplayName(account) : 'Account'}</h1>
       {account && <AccountIdentity account={account} />}
-      {view === 'loading' && <p>Loading…</p>}
+      {/* The owning item's warning must reach this page too — it's the one a
+          user checks before spending. */}
+      {itemError != null && <ErrorNotice error={itemErrorMessage(itemError)} />}
+      {/* Design: async-status-announced — wrapper must stay mounted. */}
+      <p role="status">{view === 'loading' ? 'Loading…' : null}</p>
       {error && <ErrorNotice error={error} onRetryAction={retry} />}
       {view === 'not-found' && (
         <p>Account not found. It may have been disconnected — check the list on the home page.</p>

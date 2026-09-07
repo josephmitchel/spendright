@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { items, transactions } from '@/db/schema';
 import { refreshItemAccounts } from '@/lib/accounts';
 import { serializeByKey } from '@/lib/async-coordination';
@@ -73,6 +73,9 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
   });
 
   const { skipped, outcome } = await db.transaction(async (tx) => {
+    // Bounds the row locks below, like the category PATCH path.
+    // Design: requests-have-deadlines.
+    await tx.execute(sql`set local lock_timeout = '10s'`);
     const upserts = [...added, ...modified];
     const knownAccountIds = await knownAccountIdsFor(tx, upserts);
     // The carry must resolve before the pending rows are deleted below.

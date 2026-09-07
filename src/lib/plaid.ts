@@ -67,6 +67,7 @@ function getClient(): PlaidApi {
             headers: {
               'PLAID-CLIENT-ID': getCredential('PLAID_CLIENT_ID'),
               'PLAID-SECRET': getCredential('PLAID_SECRET'),
+              // This pin matches the installed SDK's base version (Verified-on: plaid@41.4.0).
               'Plaid-Version': '2020-09-14',
             },
           },
@@ -112,6 +113,26 @@ function getCountryCodes(): CountryCode[] {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+// A missing response or a 5xx is transport-level; a 4xx is Plaid's real answer.
+// Design: transient-plaid-retry.
+const TRANSIENT_RETRY_DELAY_MS = 1000;
+
+function isTransientPlaidFailure(err: unknown): boolean {
+  const maybe = err as { isAxiosError?: boolean; response?: { status?: number } };
+  if (maybe?.isAxiosError !== true) return false;
+  return maybe.response?.status === undefined || maybe.response.status >= 500;
+}
+
+async function retryOnce<T>(task: () => Promise<T>): Promise<T> {
+  try {
+    return await task();
+  } catch (err) {
+    if (!isTransientPlaidFailure(err)) throw err;
+    await sleep(TRANSIENT_RETRY_DELAY_MS);
+    return task();
+  }
+}
+
 // With an access token, Plaid Link opens in update mode for that item
 // (products must be omitted). Design: connection-repair-update-mode.
 export async function createLinkToken(accessToken?: string): Promise<string> {
@@ -156,7 +177,9 @@ function toProviderAccount(account: AccountBase): ProviderAccount {
     balanceAvailable: account.balances.available,
     balanceCurrent: account.balances.current,
     balanceLimit: account.balances.limit,
+    // Plaid populates exactly one of these two.
     isoCurrencyCode: account.balances.iso_currency_code,
+    unofficialCurrencyCode: account.balances.unofficial_currency_code,
   };
 }
 
@@ -169,6 +192,7 @@ function toProviderTransaction(txn: PlaidTransaction): ProviderTransaction {
     merchantName: txn.merchant_name ?? null,
     amount: txn.amount,
     isoCurrencyCode: txn.iso_currency_code,
+    unofficialCurrencyCode: txn.unofficial_currency_code,
     // Design: plaid-category-reserved.
     category: txn.personal_finance_category?.primary ?? txn.category?.[0] ?? null,
     pending: txn.pending,
@@ -199,7 +223,7 @@ export async function getInstitutionById(
 }
 
 export async function getAccounts(accessToken: string): Promise<ProviderAccount[]> {
-  const response = await getClient().accountsGet({ access_token: accessToken });
+  const response = await retryOnce(() => getClient().accountsGet({ access_token: accessToken }));
   return response.data.accounts.map(toProviderAccount);
 }
 
@@ -229,9 +253,9 @@ export async function syncTransactions(
 ): Promise<ProviderSyncBatch> {
   const client = getClient();
   let cursor: string | null = initialCursor ?? null;
-  let added: ProviderTransaction[] = [];
-  let modified: ProviderTransaction[] = [];
-  let removed: ProviderRemovedTransaction[] = [];
+  const added: ProviderTransaction[] = [];
+  const modified: ProviderTransaction[] = [];
+  const removed: ProviderRemovedTransaction[] = [];
   let hasMore = true;
   let notReadyRetries = 0;
   const notReadyBudget = options?.notReadyRetries ?? DEFAULT_NOT_READY_RETRIES;
@@ -245,11 +269,13 @@ export async function syncTransactions(
         { status: 502, code: 'SYNC_PAGE_BUDGET' },
       );
     }
-    const response = await client.transactionsSync({
-      access_token: accessToken,
-      cursor: cursor ?? undefined,
-      count: SYNC_PAGE_SIZE,
-    });
+    const response = await retryOnce(() =>
+      client.transactionsSync({
+        access_token: accessToken,
+        cursor: cursor ?? undefined,
+        count: SYNC_PAGE_SIZE,
+      }),
+    );
     const data = response.data;
 
     // An empty next_cursor means Plaid hasn't finished preparing the item's
@@ -266,9 +292,9 @@ export async function syncTransactions(
     }
 
     cursor = data.next_cursor;
-    added = added.concat(data.added.map(toProviderTransaction));
-    modified = modified.concat(data.modified.map(toProviderTransaction));
-    removed = removed.concat(data.removed.map((r) => ({ transactionId: r.transaction_id })));
+    added.push(...data.added.map(toProviderTransaction));
+    modified.push(...data.modified.map(toProviderTransaction));
+    removed.push(...data.removed.map((r) => ({ transactionId: r.transaction_id })));
     hasMore = data.has_more;
   }
 

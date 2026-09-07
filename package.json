@@ -8,7 +8,7 @@
   "scripts": {
     "predev": "node scripts/tighten-next.mjs",
     "dev": "next dev -H 127.0.0.1",
-    "prebuild": "node scripts/tighten-next.mjs",
+    "prebuild": "node scripts/tighten-next.mjs && npm run lint && npm run typecheck",
     "build": "next build",
     "postbuild": "node scripts/tighten-next.mjs",
     "start": "node scripts/start.mjs",
@@ -18,7 +18,8 @@
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "seed:cards": "tsx scripts/seed-cards.ts"
+    "seed:cards": "tsx scripts/seed-cards.ts",
+    "rotate:key": "tsx --conditions=react-server scripts/rotate-encryption-key.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

@@ -13,8 +13,12 @@ import {
   timestamp,
   unique,
 } from 'drizzle-orm/pg-core';
+import { CARD_TYPES } from '@/lib/card-types';
 import type { ItemErrorBody } from '@/lib/plaid-errors';
 import type { RawProviderPayload } from '@/lib/provider-types';
+
+// Parsed textually by scripts/check-record-tags.mjs — keep each pgTable call
+// and its table-name literal together on one line.
 
 // Design: categories-retired-not-deleted, card-type-decides-rate-unit.
 export const cards = pgTable('cards', {
@@ -22,7 +26,7 @@ export const cards = pgTable('cards', {
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   issuer: text('issuer'),
-  type: text('type', { enum: ['cashback', 'points'] }).notNull(),
+  type: text('type', { enum: CARD_TYPES }).notNull(),
   plaidAccountNames: jsonb('plaid_account_names').$type<string[]>().notNull().default([]),
   retiredAt: timestamp('retired_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -87,6 +91,7 @@ export const accounts = pgTable(
     balanceCurrent: numeric('balance_current'),
     balanceLimit: numeric('balance_limit'),
     isoCurrencyCode: text('iso_currency_code'),
+    unofficialCurrencyCode: text('unofficial_currency_code'),
     // Design: account-card-matching-by-name.
     cardId: integer('card_id').references(() => cards.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -111,6 +116,7 @@ export const transactions = pgTable(
     merchantName: text('merchant_name'),
     amount: numeric('amount').notNull(),
     isoCurrencyCode: text('iso_currency_code'),
+    unofficialCurrencyCode: text('unofficial_currency_code'),
     category: text('category'),
     pending: boolean('pending'),
     // Design: categorization-is-a-historical-snapshot.

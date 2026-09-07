@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { usePlaidLink } from 'react-plaid-link';
+import { useState } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
+import { usePlaidLinkOpen } from '@/hooks/usePlaidLinkOpen';
 import { apiPaths } from '@/lib/api-paths';
 import type { ExchangeResponse, LinkTokenResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
@@ -17,7 +17,6 @@ export function PlaidLinkButton({
   onConnectedAction: () => void;
   syncSucceededAt: number | null;
 }) {
-  const [linkToken, setLinkToken] = useState<string | null>(null);
   // Design: initial-sync-reported-not-thrown.
   const [syncNotice, setSyncNotice] = useState<{
     message: string;
@@ -27,7 +26,6 @@ export function PlaidLinkButton({
   // Design: link-notice-expires-on-clean-sync.
   const noticeIsCurrent =
     syncNotice != null && (syncSucceededAt == null || syncSucceededAt < syncNotice.at);
-  const pendingOpen = useRef(false);
 
   const exchange = useAsyncAction(async (publicToken: string) => {
     const data = await sendJson<ExchangeResponse>(
@@ -51,6 +49,8 @@ export function PlaidLinkButton({
     onConnectedAction();
   }, 'Exchange failed');
 
+  const openWithToken = usePlaidLinkOpen(exchange.run);
+
   const connect = useAsyncAction(async () => {
     exchange.clearError();
     setSyncNotice(null);
@@ -60,23 +60,8 @@ export function PlaidLinkButton({
       undefined,
       'Failed to create link token',
     );
-    pendingOpen.current = true;
-    setLinkToken(data.link_token);
+    openWithToken(data.link_token);
   }, 'Failed to create link token');
-
-  const linkConfig = useMemo(
-    () => ({ token: linkToken, onSuccess: exchange.run }),
-    [linkToken, exchange.run],
-  );
-  const { open, ready } = usePlaidLink(linkConfig);
-
-  // usePlaidLink only becomes ready after it has the token, so defer opening.
-  useEffect(() => {
-    if (ready && pendingOpen.current) {
-      pendingOpen.current = false;
-      open();
-    }
-  }, [ready, open]);
 
   const linkError = connect.error ?? exchange.error;
 

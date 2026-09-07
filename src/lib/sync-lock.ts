@@ -14,6 +14,9 @@ export async function withItemSyncLock<T>(itemId: string, fn: () => Promise<T>):
   try {
     const started = Date.now();
     try {
+      // The pool-level statement_timeout would cancel the 60s advisory wait,
+      // so this session gets a higher one; release(true) destroys the session.
+      await client.query(`SET statement_timeout = ${LOCK_TIMEOUT_MS + 10_000}`);
       await client.query(`SET lock_timeout = ${LOCK_TIMEOUT_MS}`);
       await client.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [
         `spendright:item-sync:${itemId}`,

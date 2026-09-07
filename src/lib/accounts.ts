@@ -22,6 +22,7 @@ export const servedAccountColumns = {
   balanceCurrent: accountColumns.balanceCurrent,
   balanceLimit: accountColumns.balanceLimit,
   isoCurrencyCode: accountColumns.isoCurrencyCode,
+  unofficialCurrencyCode: accountColumns.unofficialCurrencyCode,
   cardId: accountColumns.cardId,
   createdAt: accountColumns.createdAt,
   updatedAt: accountColumns.updatedAt,
@@ -47,6 +48,7 @@ function toAccountRow(plaidAccount: ProviderAccount, itemId: string, cardId: num
       plaidAccount.balanceCurrent != null ? String(plaidAccount.balanceCurrent) : null,
     balanceLimit: plaidAccount.balanceLimit != null ? String(plaidAccount.balanceLimit) : null,
     isoCurrencyCode: plaidAccount.isoCurrencyCode,
+    unofficialCurrencyCode: plaidAccount.unofficialCurrencyCode,
     cardId,
   };
 }

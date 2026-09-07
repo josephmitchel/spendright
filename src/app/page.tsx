@@ -6,18 +6,14 @@ import { ErrorNotice } from '@/components/ErrorNotice';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
 import type { ApiAccount, ApiItem } from '@/lib/api-types';
-import { isPlaidItemError, plaidErrorMessage } from '@/lib/plaid-errors';
+import { base64ImageMime } from '@/lib/image-mime';
+import { itemErrorMessage } from '@/lib/item-error-message';
+import { isPlaidItemError } from '@/lib/plaid-errors';
 import { PlaidLinkButton } from './PlaidLinkButton';
 import { RepairConnectionButton } from './RepairConnectionButton';
 import { useHomeData } from './useHomeData';
 import { useItemRemoval } from './useItemRemoval';
 import { useSyncAll } from './useSyncAll';
-
-// Design: error-message-allow-list.
-function itemErrorMessage(error: NonNullable<ApiItem['error']>): string {
-  const fallback = JSON.stringify(error);
-  return isPlaidItemError(error) ? plaidErrorMessage(error, fallback) : error.message || fallback;
-}
 
 type View = 'loading' | 'no-institutions' | 'list' | 'unresolved';
 
@@ -35,12 +31,12 @@ function AccountsTable({ accounts }: { accounts: ApiAccount[] }) {
     <table border={1}>
       <thead>
         <tr>
-          <th>Account</th>
-          <th>Mask</th>
-          <th>Type</th>
-          <th>Current</th>
-          <th>Available</th>
-          <th>Limit</th>
+          <th scope="col">Account</th>
+          <th scope="col">Mask</th>
+          <th scope="col">Type</th>
+          <th scope="col">Current</th>
+          <th scope="col">Available</th>
+          <th scope="col">Limit</th>
         </tr>
       </thead>
       <tbody>
@@ -74,13 +70,15 @@ function InstitutionSection({
   onRemoveAction: (itemId: string) => void;
   onRepairedAction: () => void;
 }) {
+  // The logo's format is provider-supplied and unguaranteed, so sniff it.
+  const logoMime = item.institutionLogo ? base64ImageMime(item.institutionLogo) : null;
   return (
     <section>
       <h2>
-        {item.institutionLogo && (
+        {item.institutionLogo && logoMime && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={`data:image/png;base64,${item.institutionLogo}`}
+            src={`data:${logoMime};base64,${item.institutionLogo}`}
             alt=""
             width={24}
             height={24}
@@ -104,7 +102,7 @@ function InstitutionSection({
 
 // Design: client-pages-fetch-api.
 export default function Home() {
-  const { itemList, accountList, settled, error, loaded, refresh, retry } = useHomeData();
+  const { itemList, accountList, lastSync, settled, error, loaded, refresh, retry } = useHomeData();
   const { syncAll, syncing, syncStatus, syncError, syncSucceededAt } = useSyncAll(refresh);
   const { removeItem, removeError } = useItemRemoval(refresh);
 
@@ -135,9 +133,16 @@ export default function Home() {
         {/* Design: async-status-announced — wrapper must stay mounted. */}
         <span role="status">{syncStatus ? ` ${syncStatus}` : null}</span>
       </p>
+      {lastSync && (
+        <p>Last automatic sync finished {new Date(lastSync.finishedAt).toLocaleString()}.</p>
+      )}
 
-      {view === 'loading' && <p>Loading…</p>}
+      {/* Design: async-status-announced — wrapper must stay mounted. */}
+      <p role="status">{view === 'loading' ? 'Loading…' : null}</p>
       {error && <ErrorNotice error={error} onRetryAction={retry} />}
+      {lastSync?.error != null && (
+        <ErrorNotice error={`The last automatic sync failed: ${lastSync.error}`} />
+      )}
       {syncError && <ErrorNotice error={syncError} />}
       {removeError && <ErrorNotice error={removeError} />}
       {view === 'no-institutions' && <p>No institutions connected yet.</p>}

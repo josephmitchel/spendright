@@ -204,8 +204,15 @@ async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; 
 async function main() {
   assertSeedIsValid();
 
-  // Own pool, not src/lib/db's singleton — the script must end() it so the process can exit.
-  const pool = new Pool({ connectionString: requireDatabaseUrl() });
+  // Own pool, not src/lib/db's singleton — the script must end() it so the process
+  // can exit. Timeouts mirror src/lib/db's POOL_TIMEOUTS (that module is
+  // server-only). Design: requests-have-deadlines.
+  const pool = new Pool({
+    connectionString: requireDatabaseUrl(),
+    connectionTimeoutMillis: 10_000,
+    statement_timeout: 30_000,
+    query_timeout: 35_000,
+  });
   pool.on('error', (err) => logError('postgres pool: idle client error', err));
   const rootDb = drizzle(pool);
 

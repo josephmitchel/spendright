@@ -15,12 +15,15 @@ function CategorySelect({
   options,
   onSelect,
   disabled,
+  ariaLabel,
 }: {
   value: number | null;
   valueName: string | null;
   options: { id: number; name: string }[];
   onSelect: (id: number) => void;
   disabled?: boolean;
+  // The row context a screen reader can't get from the column header alone.
+  ariaLabel: string;
 }) {
   const stale = value !== null && !options.some((option) => option.id === value);
   return (
@@ -28,6 +31,7 @@ function CategorySelect({
       style={{ maxWidth: '100%' }}
       value={value ?? ''}
       disabled={disabled}
+      aria-label={ariaLabel}
       onChange={(e) => {
         if (!e.target.value) return;
         onSelect(Number(e.target.value));
@@ -108,14 +112,14 @@ export function TransactionTable({
       </colgroup>
       <thead>
         <tr>
-          <th>Date</th>
-          <th>Name</th>
-          <th>Merchant</th>
-          <th>Amount</th>
-          <th>Currency</th>
-          <th>Category</th>
-          <th>{rateHeader}</th>
-          <th>Pending</th>
+          <th scope="col">Date</th>
+          <th scope="col">Name</th>
+          <th scope="col">Merchant</th>
+          <th scope="col">Amount</th>
+          <th scope="col">Currency</th>
+          <th scope="col">Category</th>
+          <th scope="col">{rateHeader}</th>
+          <th scope="col">Pending</th>
         </tr>
       </thead>
       <tbody>
@@ -131,7 +135,7 @@ export function TransactionTable({
               <td>{txn.name}</td>
               <td>{txn.merchantName}</td>
               <td>{txn.amount}</td>
-              <td>{txn.isoCurrencyCode}</td>
+              <td>{txn.isoCurrencyCode ?? txn.unofficialCurrencyCode}</td>
               <td>
                 {options.length > 0 ? (
                   <CategorySelect
@@ -140,6 +144,7 @@ export function TransactionTable({
                     options={options}
                     onSelect={(id) => void onSelectCategoryAction(txn, kind, id)}
                     disabled={categoriesMayBeStale}
+                    ariaLabel={`Category for ${txn.name ?? txn.transactionId} on ${txn.date}`}
                   />
                 ) : (
                   (selectedName ?? 'none')

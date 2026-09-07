@@ -17,10 +17,18 @@ function getConnectionString(): string {
   }
 }
 
+// Every wait on Postgres is bounded; query_timeout > statement_timeout so the
+// server-side cancel wins and surfaces a clean pg error.
+// Design: requests-have-deadlines, db-pool-errors-logged.
+export const POOL_TIMEOUTS = {
+  connectionTimeoutMillis: 10_000,
+  statement_timeout: 30_000,
+  query_timeout: 35_000,
+} as const;
+
 // Inside the factory so bundler module-copies can't stack duplicate listeners.
-// Design: db-pool-errors-logged.
 export const pool = globalSingleton('pool', () => {
-  const created = new Pool({ connectionString: getConnectionString() });
+  const created = new Pool({ connectionString: getConnectionString(), ...POOL_TIMEOUTS });
   created.on('error', (err) => logError('postgres pool: idle client error', err));
   return created;
 });

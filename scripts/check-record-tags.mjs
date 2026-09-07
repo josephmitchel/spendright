@@ -73,7 +73,21 @@ function schemaTables() {
   }
   return tables;
 }
-const tables = schemaTables();
+/** @returns {Map<string, Set<string>>} */
+function schemaTablesOrExplain() {
+  try {
+    return schemaTables();
+  } catch (err) {
+    console.error(
+      'check-record-tags.mjs: the shape of src/db/schema.ts no longer matches what this ' +
+        "checker's textual parse expects (see the contract comment in schema.ts) — update " +
+        'schemaTables() alongside the schema refactor.',
+    );
+    console.error(`  ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
+const tables = schemaTablesOrExplain();
 
 const TABLE_COLUMN = /^([a-z0-9_]+)\.([a-z0-9_]+)$/;
 
