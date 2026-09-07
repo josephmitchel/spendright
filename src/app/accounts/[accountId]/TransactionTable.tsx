@@ -1,10 +1,15 @@
 'use client';
 
 import type { ApiCard, ApiCreditCategory, ApiTransaction } from '@/lib/api-types';
-import { isInflowAmount, type CategoryKind } from '@/lib/amounts';
+import {
+  assertNeverKind,
+  categoryKindKeys,
+  kindForAmount,
+  type CategoryKind,
+} from '@/lib/category-kinds';
 
 // One picker for both category kinds. Placeholders are disabled+hidden: a
-// transaction keeps a category once one is assigned (design: no-category-clear).
+// transaction keeps a category once one is assigned. Design: no-category-clear.
 function CategorySelect({
   value,
   valueName,
@@ -18,8 +23,8 @@ function CategorySelect({
   onSelect: (id: number) => void;
   disabled?: boolean;
 }) {
-  // A saved category the list no longer offers (retired/renamed) still renders
-  // as the current value, but is not selectable again.
+  // A saved category the list no longer offers still renders as the current
+  // value, but is not selectable again.
   const stale = value !== null && !options.some((option) => option.id === value);
   return (
     <select
@@ -52,11 +57,17 @@ function CategorySelect({
 // The rate cell's three outcomes: inflow rows have no rate, a rate whose
 // category link is gone is legacy data (shown but marked), else the rate.
 function rateCellText(txn: ApiTransaction, kind: CategoryKind): string | null {
-  if (kind === 'credit') return '—';
-  if (txn.rewardRate !== null && txn.cardCategoryId === null) {
-    return `${txn.rewardRate} (unlinked)`;
+  switch (kind) {
+    case 'credit':
+      return '—';
+    case 'card':
+      if (txn.rewardRate !== null && txn.cardCategoryId === null) {
+        return `${txn.rewardRate} (unlinked)`;
+      }
+      return txn.rewardRate;
+    default:
+      return assertNeverKind(kind);
   }
-  return txn.rewardRate;
 }
 
 // The transaction rows for a matched card, category pickers included.
@@ -67,7 +78,9 @@ export function TransactionTable({
   transactionList,
   categoriesMayBeStale,
   patchErrors,
-  onSelectCategory,
+  // The Action suffix is Next's convention for a function prop on a client
+  // component; this is a plain callback, not a Server Action.
+  onSelectCategoryAction,
 }: {
   card: ApiCard;
   creditCategories: ApiCreditCategory[];
@@ -77,14 +90,21 @@ export function TransactionTable({
   // Per-row category-write failures, rendered inside the failing row.
   // Design: optimistic-category-writes.
   patchErrors: ReadonlyMap<string, string>;
-  // Async so the type says what the handler is; the returned promise never
-  // rejects (the patch hook folds failures into its own error state) and is
-  // deliberately not awaited here.
-  onSelectCategory: (row: ApiTransaction, kind: CategoryKind, categoryId: number) => Promise<void>;
+  // The returned promise never rejects and is deliberately not awaited here.
+  onSelectCategoryAction: (
+    row: ApiTransaction,
+    kind: CategoryKind,
+    categoryId: number,
+  ) => Promise<void>;
 }) {
   // The card's type decides how its rates are read; the header follows it.
   // Design: card-type-decides-rate-unit.
   const rateHeader = card.type === 'points' ? 'Multiplier' : 'Cashback %';
+  // Inflow rows pick from credit categories, spend rows from the card's.
+  const optionsByKind = {
+    card: card.categories,
+    credit: creditCategories,
+  } satisfies Record<CategoryKind, { id: number; name: string }[]>;
   return (
     // Fixed layout so column widths don't shift between pages.
     <table border={1} style={{ tableLayout: 'fixed', width: '100%', overflowWrap: 'break-word' }}>
@@ -112,11 +132,10 @@ export function TransactionTable({
       </thead>
       <tbody>
         {transactionList.map((txn) => {
-          // Inflow rows pick from credit categories, spend rows from the card's.
-          const kind = isInflowAmount(txn.amount) ? 'credit' : 'card';
-          const options = kind === 'credit' ? creditCategories : card.categories;
-          const selectedId = kind === 'credit' ? txn.creditCategoryId : txn.cardCategoryId;
-          const selectedName = kind === 'credit' ? txn.creditCategoryName : txn.cardCategoryName;
+          const kind = kindForAmount(txn.amount);
+          const options = optionsByKind[kind];
+          const selectedId = txn[categoryKindKeys[kind].id];
+          const selectedName = txn[categoryKindKeys[kind].name];
           const patchError = patchErrors.get(txn.transactionId);
           return (
             <tr key={txn.transactionId}>
@@ -131,14 +150,13 @@ export function TransactionTable({
                     value={selectedId}
                     valueName={selectedName}
                     options={options}
-                    onSelect={(id) => void onSelectCategory(txn, kind, id)}
+                    onSelect={(id) => void onSelectCategoryAction(txn, kind, id)}
                     disabled={categoriesMayBeStale}
                   />
                 ) : (
                   (selectedName ?? 'none')
                 )}
-                {/* The select has already snapped back to the saved value;
-                    this says why. Cleared by the row's next pick. */}
+                {/* Why the select snapped back; cleared by the row's next pick. */}
                 {patchError && <div>Update failed: {patchError}</div>}
               </td>
               <td>{rateCellText(txn, kind)}</td>

@@ -1,7 +1,5 @@
-// The bounded cursor hold's budget and every rendering of its wording — the
-// stored item error, the client notices, and the server log lines — in one
-// place so the policy cannot drift between them. Dependency-free — bundled
-// into client code. Design: bounded-cursor-hold.
+// The bounded cursor hold's budget and every rendering of its wording.
+// Dependency-free — bundled into client code. Design: bounded-cursor-hold.
 
 // Consecutive syncs a cursor may be held back before the skipped rows are
 // dropped.
@@ -37,8 +35,7 @@ export function skippedSyncNotice(skipped: number, dropped: boolean): string {
 }
 
 // The server log line for a sync that skipped rows. On a drop this line is
-// the only lasting record of what was lost, so it lives here with the rest
-// of the policy's wording rather than re-deriving the counter in sync.ts.
+// the only lasting record of what was lost.
 export function skippedSyncLogLine(
   itemId: string,
   skipped: number,

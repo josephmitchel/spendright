@@ -1,7 +1,7 @@
 ---
 name: unstyled-for-now
 description: The UI is deliberately unstyled for now: plain HTML tables, native selects, confirm
-tags: [src/app/layout.tsx, HomeClient, src/app/accounts/[accountId]/page.tsx, confirm]
+tags: [src/app/layout.tsx, src/app/page.tsx, src/app/accounts/[accountId]/page.tsx, confirm]
 date: 2026-09-04
 ---
 

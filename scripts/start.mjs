@@ -1,12 +1,10 @@
 // @ts-check
-// `next start` runs instrumentation.ts — the loopback bind assertion and the
-// sync scheduler — lazily, on the first incoming request (outside dev,
-// NextServer.prepare() is a no-op and register() waits for handleRequest).
-// This wrapper starts the server and immediately sends that
-// first request itself, so both jobs run at startup as the design records
-// require. If the warm-up cannot be delivered, the wrapper stops the server:
-// serving with the assertion and the scheduler dormant is exactly the state
-// the records say must not go unnoticed.
+// `next start` runs instrumentation.ts (the sync scheduler) lazily, on the
+// first incoming request (outside dev, NextServer.prepare() skips server
+// preparation and register() waits for handleRequest).
+// Verified-on: next@16.3.4
+// This wrapper starts the server and immediately sends that first request
+// itself; if the warm-up cannot be delivered, it stops the server.
 // Design: non-local-request-guard, scheduled-sync.
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -15,11 +13,9 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const nextBin = require.resolve('next/dist/bin/next');
 
-// The Turbopack cache under .next persists process.env values (ENCRYPTION_KEY
-// and PLAID_SECRET among them) into files created world-readable, undoing
-// .env.local's 0600. Tightened here as well as around every build and dev
-// session, all through the one policy script (it prints its own error and
-// exits non-zero on failure); refusing to start beats serving with the cache
+// Tightened here as well as around every build and dev session, all through
+// the one policy script (it prints its own error and exits non-zero on
+// failure); refusing to start beats serving with the secret-bearing cache
 // possibly readable by other local accounts.
 // Design: build-cache-secret-permissions.
 const tighten = spawnSync(
@@ -29,30 +25,37 @@ const tighten = spawnSync(
 );
 if (tighten.status !== 0) process.exit(1);
 
-// The Next CLI (commander) accepts `-p 3001`, `-p3001`, `--port 3001` and
-// `--port=3001`, last one wins, PORT as fallback. Every accepted form must be
-// parsed here or the warm-up aims at the wrong port — worst case another local
-// server answers there and this one keeps serving with instrumentation dormant
-//. A form Next rejects (e.g. `-p=3001`) parses to NaN here,
-// but Next itself then exits, which stops the wrapper too.
+// The resolved port is re-passed to Next as a trailing `-p` below
+// (last-wins), so the warm-up target and the served port cannot diverge even
+// if this parse disagrees with the Next CLI's own (`-p 3001`, `-p3001`,
+// `--port 3001`, `--port=3001`, last one wins, PORT as fallback).
 const args = process.argv.slice(2);
 let port = Number(process.env.PORT) || 3000;
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
   if (arg === undefined) continue;
-  // A missing value (`-p` as the last arg) parses to NaN; Next rejects that
-  // form itself and exits, which stops the wrapper too.
   if (arg === '-p' || arg === '--port') port = Number(args[i + 1] ?? NaN);
   else if (arg.startsWith('--port=')) port = Number(arg.slice('--port='.length));
   else if (arg.startsWith('-p') && !arg.startsWith('--')) port = Number(arg.slice('-p'.length));
 }
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  console.error(
+    `start.mjs: could not resolve a usable port from the arguments (got ${port}) — refusing ` +
+      'to start rather than warm up the wrong port. Pass -p/--port with a port from 1-65535.',
+  );
+  process.exit(1);
+}
 
-// The loopback bind comes after the user's args: commander's last-wins
-// semantics make it unconditional, so a stray `-H 0.0.0.0` cannot override it
-// (the instrumentation bind assertion remains the backstop).
-const child = spawn(process.execPath, [nextBin, 'start', ...args, '-H', '127.0.0.1'], {
-  stdio: 'inherit',
-});
+// The loopback bind and the resolved port come after the user's args: the
+// Next CLI's last-wins semantics make them unconditional, so a stray
+// `-H 0.0.0.0` cannot override the bind. Verified-on: next@16.3.4
+const child = spawn(
+  process.execPath,
+  [nextBin, 'start', ...args, '-H', '127.0.0.1', '-p', String(port)],
+  {
+    stdio: 'inherit',
+  },
+);
 child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 1)));
 for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
   process.on(signal, () => child.kill(signal));
@@ -80,8 +83,7 @@ while (Date.now() < deadline && child.exitCode === null) {
 if (!warmedUp && child.exitCode === null) {
   console.error(
     `start.mjs: no response from http://127.0.0.1:${port}/ within 60s — the warm-up that starts ` +
-      'the bind assertion and the sync scheduler never ran. Stopping the server rather than ' +
-      'leaving it up without them.',
+      'the sync scheduler never ran. Stopping the server rather than leaving it up without it.',
   );
   child.kill('SIGTERM');
   process.exitCode = 1;

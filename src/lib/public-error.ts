@@ -1,7 +1,6 @@
-// An error whose message is safe to show to the user. Design:
-// error-message-allow-list. Never construct one from a caught error's message.
-// Dependency-free (no next/server, no db) so the modules that throw it
-// (crypto, plaid, db, categories) take no framework dependency for it.
+// An error whose message is safe to show to the user; never construct one
+// from a caught error's message. Dependency-free.
+// Design: error-message-allow-list.
 export class PublicError extends Error {
   status: number;
   code: string;

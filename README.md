@@ -18,7 +18,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 `npm run dev` is for short-lived, attended development work only: the dev
 bundler's own `/__nextjs_*` endpoints sit ahead of the request guard and are
 reachable from a hostile web page via DNS rebinding, while `next start` does
-not mount them (details under "Automatic sync" below).
+not mount them.
 
 ## Database
 
@@ -95,19 +95,12 @@ for impatience; it shares a single-flight runner with the scheduler
 rather than racing it. Per-item failures are logged and recorded on the item,
 where the UI surfaces them.
 
-Nothing about syncing is internet-reachable. The previous design — Plaid
-transaction webhooks delivered through a tunnel to `POST /api/webhook` — was
-retired 2026-09-05: a security audit found that `next dev`'s internal
-`/__nextjs_*` endpoints bypassed the request guard entirely, so the tunnel
-exposed more than the one verified route. With the scheduler there is no
-exposed origin at all: every route answers loopback callers only. Do not put
-a tunnel or any other forwarder in front of this app.
-
-For everyday use, run the production server (`npm run build && npm run
-start`), not `next dev`: the dev bundler's own `/__nextjs_*` endpoints sit
-ahead of the request guard, and a hostile page can reach them through the
-local browser via DNS rebinding — no tunnel required. `next start` does not
-mount them. Treat dev sessions as short-lived, attended work.
+Nothing about syncing is internet-reachable: every route answers loopback
+callers only. Do not put a tunnel or any other forwarder in front of this
+app — the webhook-plus-tunnel design was retired over exactly that exposure
+(see `.claude/design/retired/webhook-triggered-sync.md` for the history),
+and it is also why production mode is the everyday mode (the `/__nextjs_*`
+warning under Getting Started).
 
 ## Before deploying
 

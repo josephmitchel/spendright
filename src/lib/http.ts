@@ -1,18 +1,18 @@
-// Client-side response reader; the only way components read API bodies.
-// Design: single-response-reader. No server imports — bundled into client code.
+// Client-side request/response helpers. Design: single-response-reader.
+// No server imports — bundled into client code.
 
-// The one rendering of a caught client-side failure: the Error's own message
-// (readJson only throws messages that came through the server's allow-listed
-// envelope or a caller's fallback), else the caller's fallback.
+// A caught failure's rendering: the Error's own message, else the fallback.
 export function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
 }
 
-// The two request shapes components use, so the fetch incantation (and any
-// future cross-cutting addition — a timeout, a header) lives here rather
-// than at every call site. Both read through readJson below.
+// Last-resort deadline on every component fetch; the abort surfaces as a
+// normal failed read. Design: requests-have-deadlines.
+const REQUEST_TIMEOUT_MS = 120_000;
+
+// The two request shapes components use; both read through readJson below.
 export async function getJson<T>(url: string, failureMessage: string): Promise<T> {
-  return readJson<T>(await fetch(url), failureMessage);
+  return requestJson<T>(url, {}, failureMessage);
 }
 
 export async function sendJson<T>(
@@ -21,20 +21,33 @@ export async function sendJson<T>(
   body: unknown,
   failureMessage: string,
 ): Promise<T> {
-  const res = await fetch(url, {
-    method,
-    ...(body !== undefined
-      ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-      : {}),
-  });
+  return requestJson<T>(
+    url,
+    {
+      method,
+      ...(body !== undefined
+        ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        : {}),
+    },
+    failureMessage,
+  );
+}
+
+async function requestJson<T>(url: string, init: RequestInit, failureMessage: string): Promise<T> {
+  // The thrown message stays the caller's fallback; the network-level
+  // failure rides along as `cause`. Design: requests-have-deadlines.
+  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).catch(
+    (err: unknown) => {
+      throw new Error(failureMessage, { cause: err });
+    },
+  );
   return readJson<T>(res, failureMessage);
 }
 
-// A non-JSON body (Next's HTML error page, a proxy 502) must not surface as a
-// SyntaxError; `failureMessage` is used when the response carries no JSON
-// error. T is the route's response type from src/lib/api-types.ts — the type
-// is asserted, not validated: the server is this same app.
-export async function readJson<T>(res: Response, failureMessage: string): Promise<T> {
+// Not exported (design: single-response-reader). A non-JSON body (an HTML
+// error page, a proxy 502) must not surface as a SyntaxError. T is asserted,
+// not validated: the server is this same app.
+async function readJson<T>(res: Response, failureMessage: string): Promise<T> {
   const data = await res.json().catch(() => undefined);
   if (!res.ok) {
     // Checked, not just truthy: a non-string here would stringify into a

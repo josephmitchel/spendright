@@ -1,6 +1,4 @@
 import { sql } from 'drizzle-orm';
-import type { Transaction as PlaidTransactionPayload } from 'plaid';
-import type { ItemErrorBody } from '@/lib/plaid-errors';
 import {
   boolean,
   check,
@@ -15,11 +13,12 @@ import {
   timestamp,
   unique,
 } from 'drizzle-orm/pg-core';
+import type { Transaction as PlaidTransactionPayload } from 'plaid';
+import type { ItemErrorBody } from '@/lib/plaid-errors';
 
-// Credit card definitions (seeded from src/db/cards.seed.ts).
-// `type` decides how `card_categories.rate` is interpreted:
-// cashback → percentage, points → point multiplier.
-// Catalog rows are retired via `retired_at`, never deleted.
+// Credit card definitions (seeded from src/db/cards.seed.ts). `type` decides
+// how `card_categories.rate` reads: cashback → percentage, points →
+// multiplier. Rows are retired via `retired_at`, never deleted.
 // Design: categories-retired-not-deleted.
 export const cards = pgTable('cards', {
   id: serial('id').primaryKey(),
@@ -72,8 +71,6 @@ export const items = pgTable('items', {
   institutionLogo: text('institution_logo'),
   institutionPrimaryColor: text('institution_primary_color'),
   cursor: text('cursor'),
-  availableProducts: jsonb('available_products').$type<string[]>(),
-  billedProducts: jsonb('billed_products').$type<string[]>(),
   // A picked Plaid error body or { message }. Design: error-message-allow-list.
   error: jsonb('error').$type<ItemErrorBody>(),
   // Consecutive syncs that held the cursor back over an unknown account.
@@ -126,9 +123,10 @@ export const transactions = pgTable(
     isoCurrencyCode: text('iso_currency_code'),
     category: text('category'),
     pending: boolean('pending'),
-    // User-selected card spending category (spend rows only, amount >= 0) and
-    // the rate at selection time. Not written by sync.
-    // Design: categorization-is-a-historical-snapshot.
+    // User-selected card spending category (spend rows only, amount >= 0)
+    // and the rate at selection time. Sync never overwrites a pick, but
+    // carries these across a pending-to-posted repost and clears them on a
+    // sign flip. Design: categorization-is-a-historical-snapshot.
     cardCategoryId: integer('card_category_id').references(() => cardCategories.id, {
       onDelete: 'set null',
     }),

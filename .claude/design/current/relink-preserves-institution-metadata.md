@@ -1,7 +1,7 @@
 ---
 name: relink-preserves-institution-metadata
 description: On re-link, institution metadata that failed to fetch is left as stored rather than overwritten with null
-tags: [src/app/api/exchange/route.ts, institutionUpdate, getInstitutionById, items.institution_logo]
+tags: [src/lib/link.ts, storeItem, institutionUpdate, getInstitutionById, items.institution_logo]
 date: 2026-09-04
 ---
 

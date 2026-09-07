@@ -5,14 +5,10 @@ import { logError } from '@/lib/log';
 import { singleFlight } from '@/lib/serialize';
 import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
 
-// The one sync-all runner, shared by the scheduler and POST /api/sync, and
-// single-flight: a caller that arrives while a run is in progress joins that
-// run instead of starting a duplicate whole-account pass. (The cursor-write
-// invariant — no two concurrent syncItem calls on one item — is held by
-// syncItem's own per-item lock in src/lib/sync.ts, which also covers the
-// exchange route's inline initial sync.) The in-flight slot is a process-wide
-// singleton: the route imports this module statically and the scheduler
-// dynamically, so each gets its own module copy. Design: scheduled-sync.
+// Sync every item, single-flight: a caller arriving mid-run joins that run.
+// The slot is a process-wide singleton because each bundled module graph
+// evaluates its own copy (see src/lib/global-singleton.ts).
+// Design: scheduled-sync.
 
 export type SyncAllResult = Array<SyncItemResult | { itemId: string; error: string }>;
 

@@ -1,15 +1,16 @@
+// @ts-check
 // Verifies every `Design: <name>` reference in source comments points at a
 // live record in .claude/design/current/. A reference to a retired or
 // missing record fails the run, so renaming or retiring a record cannot
 // silently strand the markers that cite it. Runs as part of `npm run lint`.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { root, sourceFiles } from './lib/source-files.mjs';
 
-const root = new URL('..', import.meta.url).pathname;
 const currentDir = join(root, '.claude/design/current');
 const retiredDir = join(root, '.claude/design/retired');
-const sourceDirs = ['src', 'scripts'];
 
+/** @param {string} dir */
 function recordNames(dir) {
   try {
     return new Set(
@@ -25,48 +26,46 @@ function recordNames(dir) {
 const current = recordNames(currentDir);
 const retired = recordNames(retiredDir);
 
-function* sourceFiles(dir) {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) yield* sourceFiles(path);
-    else if (/\.(ts|tsx|mjs)$/.test(entry)) yield path;
-  }
-}
-
 // A record name: kebab-case with at least one hyphen, so prose words after
 // "Design:" can never register as a reference.
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)+$/;
 
 // Collects the names cited by one Design: marker, following the comment onto
-// continuation lines while each line ends with a comma.
+// continuation lines while each line ends with a comma; the continuation
+// loop advances the outer cursor so those lines are not re-scanned.
+/** @param {string[]} lines @param {string} fileLabel */
 function referencesIn(lines, fileLabel) {
+  /** @type {{ name: string, line: number, file: string }[]} */
   const refs = [];
-  for (let i = 0; i < lines.length; i++) {
-    const match = /Design:\s*(.*)$/.exec(lines[i]);
+  let i = 0;
+  while (i < lines.length) {
+    const match = /Design:\s*(.*)$/.exec(lines[i] ?? '');
+    // Reported at the marker's own line, not the last continuation line.
+    const markerLine = i + 1;
+    i++;
     if (!match) continue;
-    let tail = match[1];
-    while (tail.trimEnd().endsWith(',') && i + 1 < lines.length) {
+    let tail = match[1] ?? '';
+    while (tail.trimEnd().endsWith(',') && i < lines.length) {
+      tail += ' ' + (lines[i] ?? '').replace(/^\s*(\/\/|\/?\*+)\s*/, '');
       i++;
-      tail += ' ' + lines[i].replace(/^\s*(\/\/|\/?\*+)\s*/, '');
     }
     for (const token of tail.split(/[\s,]+/)) {
       const name = token.replace(/[."'`;:)}*/\\]+$/g, '');
-      if (NAME.test(name)) refs.push({ name, line: i + 1, file: fileLabel });
+      if (NAME.test(name)) refs.push({ name, line: markerLine, file: fileLabel });
     }
   }
   return refs;
 }
 
+/** @type {string[]} */
 const failures = [];
-for (const dir of sourceDirs) {
-  for (const file of sourceFiles(join(root, dir))) {
-    const label = relative(root, file);
-    const lines = readFileSync(file, 'utf8').split('\n');
-    for (const ref of referencesIn(lines, label)) {
-      if (current.has(ref.name)) continue;
-      const state = retired.has(ref.name) ? 'a RETIRED record' : 'no record';
-      failures.push(`${ref.file}:${ref.line} — Design: ${ref.name} matches ${state}`);
-    }
+for (const file of sourceFiles()) {
+  const label = relative(root, file);
+  const lines = readFileSync(file, 'utf8').split('\n');
+  for (const ref of referencesIn(lines, label)) {
+    if (current.has(ref.name)) continue;
+    const state = retired.has(ref.name) ? 'a RETIRED record' : 'no record';
+    failures.push(`${ref.file}:${ref.line} — Design: ${ref.name} matches ${state}`);
   }
 }
 

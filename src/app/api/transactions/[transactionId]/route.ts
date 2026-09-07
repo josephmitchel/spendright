@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import type { TransactionPatchPayload } from '@/lib/api-types';
-import type { CategoryKind } from '@/lib/amounts';
 import { setTransactionCategory } from '@/lib/categories';
+import { categoryKindKeys, type CategoryKind } from '@/lib/category-kinds';
 import { badRequest, jsonError, pgErrorCode, readJsonBody, withErrorResponse } from '@/lib/errors';
 
 // Postgres serial ids are int32; anything past that cannot exist.
@@ -21,12 +21,16 @@ function parseCategoryPatch(body: unknown): ParsedCategoryPatch {
     return { ok: false, message: 'Request body must be a JSON object' };
   }
   const record = body as Record<string, unknown>;
-  const hasCardKey = 'cardCategoryId' in record;
-  const hasCreditKey = 'creditCategoryId' in record;
+  // Wire keys come from the kind→key mapping in src/lib/category-kinds.ts.
+  const hasCardKey = categoryKindKeys.card.id in record;
+  const hasCreditKey = categoryKindKeys.credit.id in record;
   if (hasCardKey === hasCreditKey) {
-    return { ok: false, message: 'Provide exactly one of cardCategoryId or creditCategoryId' };
+    return {
+      ok: false,
+      message: `Provide exactly one of ${categoryKindKeys.card.id} or ${categoryKindKeys.credit.id}`,
+    };
   }
-  const key = hasCardKey ? 'cardCategoryId' : 'creditCategoryId';
+  const key = hasCardKey ? categoryKindKeys.card.id : categoryKindKeys.credit.id;
   const raw = record[key];
   if (!isValidId(raw)) {
     return { ok: false, message: `${key} must be a positive integer` };
@@ -54,10 +58,8 @@ export const PATCH = withErrorResponse(
       );
       return NextResponse.json<TransactionPatchPayload>({ transaction });
     } catch (err) {
-      // 23503 foreign_key_violation: the category was deleted (by hand; the
-      // seed only retires) between validation and the update. Route-local
-      // because the meaning of a broken FK is this route's alone; everything
-      // else rethrows into the wrapper's errorResponse.
+      // 23503 foreign_key_violation: the category was deleted between
+      // validation and the update; everything else rethrows into the wrapper.
       if (pgErrorCode(err) === '23503') {
         return jsonError(
           'CATEGORY_REMOVED',

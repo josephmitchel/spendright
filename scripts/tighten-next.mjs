@@ -1,13 +1,6 @@
 // @ts-check
-// The single definition of the .next permission policy: Turbopack's cache
-// persists env secrets (ENCRYPTION_KEY, PLAID_SECRET) into world-readable
-// files under .next, undoing .env.local's 0600. Every entry point that
-// touches .next runs this script — predev, prebuild, postbuild, and
-// scripts/start.mjs — so the policy has one home instead of four hand-copied
-// chmod lines, and every call site fails closed the same way: a tighten that
-// does not succeed stops the run rather than proceeding with the
-// secret-bearing cache possibly readable by other local accounts. The
-// directory is created first so its 0700 mode survives even a failed build
+// Tightens .next permissions (the cache can persist env secrets). The
+// directory is created first so its mode survives even a failed build
 // (postbuild only fires on success). Design: build-cache-secret-permissions.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';

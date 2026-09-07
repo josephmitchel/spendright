@@ -1,20 +1,25 @@
 'use client';
 
-import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { apiPaths } from '@/lib/api-paths';
 import type {
   ApiCard,
   ApiCreditCategory,
   ApiTransaction,
   TransactionPatchResponse,
 } from '@/lib/api-types';
-import type { CategoryKind } from '@/lib/amounts';
+import { assertNeverKind, categoryKindKeys, type CategoryKind } from '@/lib/category-kinds';
 import { errorMessage, sendJson } from '@/lib/http';
 import { serializeByKey } from '@/lib/serialize';
 
-// The category columns a PATCH can change. Reconciliation merges only these
-// into the current row: a page re-fetch mid-burst may have replaced the row,
-// and its fresher non-category data must not be rolled back.
-function categoryFields(row: ApiTransaction) {
+// The category columns a PATCH can change — the widest write this hook can
+// hand applyCategoryPatch, so a page re-fetch's fresher non-category data
+// can never be rolled back. Design: optimistic-category-writes.
+export type CategoryPatch = Partial<
+  Pick<ApiTransaction, (typeof categoryKindKeys)[CategoryKind]['id' | 'name'] | 'rewardRate'>
+>;
+
+function categoryFields(row: ApiTransaction): CategoryPatch {
   return {
     cardCategoryId: row.cardCategoryId,
     cardCategoryName: row.cardCategoryName,
@@ -24,23 +29,55 @@ function categoryFields(row: ApiTransaction) {
   };
 }
 
-// Optimistic per-row category writes. Each row keeps a promise chain so it
-// has at most one PATCH in flight and responses settle strictly in issue
-// order; the pending counter therefore hits zero exactly when the burst's
-// newest patch settles, which is when the row reconciles — to the newest
-// committed response, or else the pre-burst baseline — and when that patch's
-// failure (only) is surfaced, in that row. Design: optimistic-category-writes.
+// The wire body and optimistic patch for one kind's selection. The wire key
+// comes from the kind→key mapping shared with the PATCH route's parser.
+function kindSelection(
+  kind: CategoryKind,
+  categoryId: number,
+  card: ApiCard | null,
+  creditCategories: ApiCreditCategory[],
+): {
+  body: { [categoryKindKeys.card.id]: number } | { [categoryKindKeys.credit.id]: number };
+  patch: CategoryPatch;
+} {
+  switch (kind) {
+    case 'card': {
+      const category = card?.categories.find((c) => c.id === categoryId) ?? null;
+      return {
+        body: { [categoryKindKeys.card.id]: categoryId },
+        patch: {
+          cardCategoryId: categoryId,
+          cardCategoryName: category?.name ?? null,
+          rewardRate: category?.rate ?? null,
+        },
+      };
+    }
+    case 'credit': {
+      const category = creditCategories.find((c) => c.id === categoryId) ?? null;
+      return {
+        body: { [categoryKindKeys.credit.id]: categoryId },
+        patch: { creditCategoryId: categoryId, creditCategoryName: category?.name ?? null },
+      };
+    }
+    default:
+      return assertNeverKind(kind);
+  }
+}
+
+// Optimistic per-row category writes. Each row keeps a promise chain (at
+// most one PATCH in flight, responses settle in issue order), so the pending
+// counter hits zero exactly when the burst's newest patch settles — the row
+// then reconciles to the newest committed response, or else the pre-burst
+// baseline. Design: optimistic-category-writes.
 export function useCategoryPatches(
   card: ApiCard | null,
   creditCategories: ApiCreditCategory[],
-  setTransactionList: Dispatch<SetStateAction<ApiTransaction[]>>,
+  applyCategoryPatch: (transactionId: string, fields: CategoryPatch) => void,
 ) {
   // Each row's newest burst outcome, rendered inside the row it belongs to.
-  // Keyed like the rest of the bookkeeping, so rows edited concurrently can
-  // never clear or overwrite one another's failures.
   const [patchErrors, setPatchErrors] = useState<ReadonlyMap<string, string>>(new Map());
 
-  const setRowError = (transactionId: string, message: string | null) => {
+  const setRowError = useCallback((transactionId: string, message: string | null) => {
     setPatchErrors((previous) => {
       if (message === null && !previous.has(transactionId)) return previous;
       const next = new Map(previous);
@@ -48,7 +85,7 @@ export function useCategoryPatches(
       else next.set(transactionId, message);
       return next;
     });
-  };
+  }, []);
 
   // Per-row burst bookkeeping. Lives in refs, outside setState updaters,
   // which must be pure.
@@ -60,70 +97,71 @@ export function useCategoryPatches(
   );
   const patchChain = useRef(new Map<string, Promise<void>>());
 
-  const setCategory = async (row: ApiTransaction, kind: CategoryKind, categoryId: number) => {
-    const transactionId = row.transactionId;
-    const inFlight = patchState.current.get(transactionId);
-    if (inFlight) inFlight.pending++;
-    else patchState.current.set(transactionId, { pending: 1, baseline: row, committed: null });
-    setRowError(transactionId, null);
-
-    // Each kind touches only its own fields; a row never holds both kinds.
-    let body: { cardCategoryId: number } | { creditCategoryId: number };
-    let patch: Partial<ApiTransaction>;
-    if (kind === 'card') {
-      const category = card?.categories.find((c) => c.id === categoryId) ?? null;
-      body = { cardCategoryId: categoryId };
-      patch = {
-        cardCategoryId: categoryId,
-        cardCategoryName: category?.name ?? null,
-        rewardRate: category?.rate ?? null,
-      };
-    } else {
-      const category = creditCategories.find((c) => c.id === categoryId) ?? null;
-      body = { creditCategoryId: categoryId };
-      patch = { creditCategoryId: categoryId, creditCategoryName: category?.name ?? null };
-    }
-
-    // Optimistic update so the controlled select never snaps back.
-    setTransactionList((list) =>
-      list.map((txn) => (txn.transactionId === transactionId ? { ...txn, ...patch } : txn)),
-    );
-
-    const send = async () => {
-      const failureMessage = 'Failed to update category';
-      let failure: string | null = null;
-      try {
-        const data = await sendJson<TransactionPatchResponse>(
-          `/api/transactions/${encodeURIComponent(transactionId)}`,
-          'PATCH',
-          body,
-          failureMessage,
-        );
-        const state = patchState.current.get(transactionId);
-        // In-order responses mean the latest one is always the newest.
-        if (state) state.committed = data.transaction;
-      } catch (err) {
-        failure = errorMessage(err, failureMessage);
+  // Counts this patch into the row's burst, opening one (with `row` as the
+  // pre-burst baseline) if none is running.
+  const joinBurst = useCallback(
+    (row: ApiTransaction) => {
+      const inFlight = patchState.current.get(row.transactionId);
+      if (inFlight) inFlight.pending++;
+      else {
+        patchState.current.set(row.transactionId, { pending: 1, baseline: row, committed: null });
       }
+      setRowError(row.transactionId, null);
+    },
+    [setRowError],
+  );
 
+  // Reconciles the row and surfaces this patch's outcome — but only when it
+  // was the burst's newest; an older patch's settle just decrements.
+  const settleBurstIfDone = useCallback(
+    (transactionId: string, failure: string | null) => {
       const state = patchState.current.get(transactionId);
-      if (state && --state.pending === 0) {
-        const settled = state.committed ?? state.baseline;
-        patchState.current.delete(transactionId);
-        setTransactionList((list) =>
-          list.map((txn) =>
-            txn.transactionId === transactionId ? { ...txn, ...categoryFields(settled) } : txn,
-          ),
-        );
-        // Zero pending means this send was the burst's newest patch, so this
-        // is the failure (or the all-clear) worth showing for this row.
-        setRowError(transactionId, failure);
-      }
-    };
+      if (!state || --state.pending > 0) return;
+      const settled = state.committed ?? state.baseline;
+      patchState.current.delete(transactionId);
+      applyCategoryPatch(transactionId, categoryFields(settled));
+      setRowError(transactionId, failure);
+    },
+    [applyCategoryPatch, setRowError],
+  );
 
-    // send() never rejects, so joining the row's chain is the whole await.
-    await serializeByKey(patchChain.current, transactionId, send);
-  };
+  const setCategory = useCallback(
+    async (row: ApiTransaction, kind: CategoryKind, categoryId: number) => {
+      const transactionId = row.transactionId;
+      joinBurst(row);
+      const { body, patch } = kindSelection(kind, categoryId, card, creditCategories);
 
-  return { setCategory, patchErrors };
+      // Optimistic update so the controlled select never snaps back.
+      applyCategoryPatch(transactionId, patch);
+
+      const send = async () => {
+        const failureMessage = 'Failed to update category';
+        let failure: string | null = null;
+        try {
+          const data = await sendJson<TransactionPatchResponse>(
+            apiPaths.transaction(transactionId),
+            'PATCH',
+            body,
+            failureMessage,
+          );
+          // In-order responses mean the latest one is always the newest.
+          const state = patchState.current.get(transactionId);
+          if (state) state.committed = data.transaction;
+        } catch (err) {
+          failure = errorMessage(err, failureMessage);
+        }
+        settleBurstIfDone(transactionId, failure);
+      };
+
+      // send() never rejects, so joining the row's chain is the whole await.
+      await serializeByKey(patchChain.current, transactionId, send);
+    },
+    [card, creditCategories, applyCategoryPatch, joinBurst, settleBurstIfDone],
+  );
+
+  // For the page to call when the pager leaves the page the errors were
+  // raised on.
+  const clearPatchErrors = useCallback(() => setPatchErrors(new Map()), []);
+
+  return { setCategory, patchErrors, clearPatchErrors };
 }

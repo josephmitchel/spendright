@@ -1,40 +1,21 @@
-import { eq, getTableColumns, sql } from 'drizzle-orm';
-import {
-  accounts,
-  cardCategories,
-  creditCategories,
-  transactions,
-  type TransactionRow,
-} from '@/db/schema';
-import type { DbTransaction } from '@/lib/db';
-import { isInflowAmount, type CategoryKind } from '@/lib/amounts';
-import { db } from '@/lib/db';
+import { eq, sql } from 'drizzle-orm';
+import { accounts, cardCategories, creditCategories, transactions } from '@/db/schema';
+import { categoryKindSources } from '@/lib/category-kind-sources';
+import { assertNeverKind, kindForAmount, type CategoryKind } from '@/lib/category-kinds';
+import { db, type DbTransaction } from '@/lib/db';
 import { PublicError } from '@/lib/public-error';
+import { servedTransactionColumns, type CategorizedTransaction } from '@/lib/transactions';
 
-// Every column except the raw Plaid payload — the single definition of which
-// transaction columns are served, shared by every query that projects
-// transaction rows toward the client. The exclusion is made once, here, in
-// the runtime pick; the served row type below is derived from it, so a column
-// can never be excluded at the type level but still served (or vice versa).
-// Design: raw-plaid-payload-stored-not-served.
-const { plaidTransaction: _plaidTransaction, ...servedTransactionColumns } =
-  getTableColumns(transactions);
-export { servedTransactionColumns };
-
-// The updated row with both joined category names; the kind not written is
-// null by the sign constraint, so no second lookup is made.
-export type CategorizedTransaction = Pick<
-  TransactionRow,
-  keyof typeof servedTransactionColumns & keyof TransactionRow
-> & {
-  cardCategoryName: string | null;
-  creditCategoryName: string | null;
-};
-
-// Rejections decided inside the transaction are thrown (db.transaction
-// commits on return, so a throw is what rolls it back) as PublicError, whose
-// message is user-safe by contract. Design: error-message-allow-list.
+// Thrown inside db.transaction so the rejection rolls it back; PublicError
+// messages are user-safe. Design: error-message-allow-list.
 const badPick = (message: string) => new PublicError(message, { status: 400, code: 'BAD_REQUEST' });
+
+// The sign-gate rejection, keyed by the kind the row's amount takes.
+// Design: category-kind-sign-rule.
+const wrongKindMessage = {
+  card: 'Non-negative-amount transactions take a card category, not a credit category',
+  credit: 'Negative-amount transactions take a credit category, not a card category',
+} satisfies Record<CategoryKind, string>;
 
 interface CategoryPick {
   updateSet: { cardCategoryId: number; rewardRate: string } | { creditCategoryId: number };
@@ -43,66 +24,65 @@ interface CategoryPick {
 }
 
 // Validates one pick inside the caller's row-locked transaction and returns
-// the columns to write. The kinds share the sign gate; the lookups differ in
-// table, the card-ownership check, and whether a rate snapshot is taken.
+// the columns to write.
 // Design: category-kind-sign-rule, categorization-is-a-historical-snapshot.
 async function resolveCategoryPick(
   tx: DbTransaction,
   kind: CategoryKind,
   categoryId: number,
-  isInflow: boolean,
+  expectedKind: CategoryKind,
   cardId: number,
 ): Promise<CategoryPick> {
-  if (isInflow !== (kind === 'credit')) {
-    throw badPick(
-      isInflow
-        ? 'Negative-amount transactions take a credit category, not a card category'
-        : 'Positive-amount transactions take a card category, not a credit category',
-    );
+  if (kind !== expectedKind) {
+    throw badPick(wrongKindMessage[expectedKind]);
   }
 
-  if (kind === 'card') {
-    const [category] = await tx
-      .select()
-      .from(cardCategories)
-      .where(eq(cardCategories.id, categoryId));
-    if (!category || category.cardId !== cardId) {
-      throw badPick("cardCategoryId does not belong to this account's card");
+  switch (kind) {
+    case 'card': {
+      const [category] = await tx
+        .select()
+        .from(cardCategories)
+        .where(eq(cardCategories.id, categoryId));
+      if (!category || category.cardId !== cardId) {
+        throw badPick("cardCategoryId does not belong to this account's card");
+      }
+      // Retired categories keep old links but take no new picks.
+      // Design: categories-retired-not-deleted.
+      if (category.retiredAt !== null) {
+        throw badPick(categoryKindSources.card.retiredPickMessage);
+      }
+      return {
+        updateSet: { cardCategoryId: category.id, rewardRate: category.rate },
+        cardCategoryName: category.name,
+        creditCategoryName: null,
+      };
     }
-    // Retired categories keep old links but take no new picks.
-    // Design: categories-retired-not-deleted.
-    if (category.retiredAt !== null) {
-      throw badPick('That category is no longer offered for this card — reload and pick again');
+    case 'credit': {
+      const [category] = await tx
+        .select()
+        .from(creditCategories)
+        .where(eq(creditCategories.id, categoryId));
+      if (!category) {
+        throw badPick('creditCategoryId does not exist');
+      }
+      if (category.retiredAt !== null) {
+        throw badPick(categoryKindSources.credit.retiredPickMessage);
+      }
+      return {
+        updateSet: { creditCategoryId: category.id },
+        cardCategoryName: null,
+        creditCategoryName: category.name,
+      };
     }
-    return {
-      updateSet: { cardCategoryId: category.id, rewardRate: category.rate },
-      cardCategoryName: category.name,
-      creditCategoryName: null,
-    };
+    default:
+      return assertNeverKind(kind);
   }
-
-  const [category] = await tx
-    .select()
-    .from(creditCategories)
-    .where(eq(creditCategories.id, categoryId));
-  if (!category) {
-    throw badPick('creditCategoryId does not exist');
-  }
-  if (category.retiredAt !== null) {
-    throw badPick('That category is no longer offered — reload and pick again');
-  }
-  return {
-    updateSet: { creditCategoryId: category.id },
-    cardCategoryName: null,
-    creditCategoryName: category.name,
-  };
 }
 
 // Sets a transaction's category. The row is locked for the whole
-// read-validate-write: a concurrent sync can flip the amount's sign or delete
-// the row. The lock wait is bounded so a long sync or seed run yields a
-// retryable failure (errorResponse maps 55P03 to a 503) instead of pinning a
-// connection. Design: category-write-contract, no-category-clear.
+// read-validate-write (a concurrent sync can flip the sign or delete the
+// row); the bounded lock wait turns contention into a retryable 503.
+// Design: category-write-contract, no-category-clear.
 export async function setTransactionCategory(
   transactionId: string,
   kind: CategoryKind,
@@ -135,7 +115,7 @@ export async function setTransactionCategory(
       tx,
       kind,
       categoryId,
-      isInflowAmount(transaction.amount),
+      kindForAmount(transaction.amount),
       account.cardId,
     );
 

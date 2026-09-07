@@ -1,9 +1,8 @@
 // One value per process, keyed by name. Module-scope state is not
 // once-per-process here: the bundler emits separate copies of a module per
-// import graph (verified in the compiled chunks), and dev HMR reloads
-// modules, so every cross-copy singleton goes through globalThis. This
-// helper is the one place that holds the cast and that rationale.
-// Design: scheduled-sync.
+// import graph (verified in the compiled chunks; Verified-on: next@16.3.4)
+// and dev HMR reloads modules, so every cross-copy singleton goes through
+// globalThis. Design: scheduled-sync.
 const globalStore = globalThis as unknown as {
   __spendrightSingletons?: Map<string, unknown>;
 };

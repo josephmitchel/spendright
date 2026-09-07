@@ -3,11 +3,9 @@
 // framework code. Design: config-validated-not-assumed.
 
 // pg treats a missing connectionString as "use PG* env vars and libpq
-// defaults", not an error, and parses a wrong-scheme URL scheme-agnostically
-// rather than rejecting it — so an unset or malformed DATABASE_URL must fail
-// here, never quietly connect to whatever is listening on localhost. The
-// `postgres://` alias passes too: the intent is rejecting non-Postgres
-// schemes, not one spelling. Never logs the value.
+// defaults" and parses a wrong-scheme URL scheme-agnostically
+// (Verified-on: pg@8.23.0), so a bad DATABASE_URL must fail here. The
+// `postgres://` alias passes too. Never logs the value.
 const DATABASE_URL_PATTERN = /^postgres(ql)?:\/\//;
 
 export function requireDatabaseUrl(): string {

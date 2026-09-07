@@ -1,7 +1,7 @@
 ---
 name: automatic-sync
 description: Transaction sync runs automatically from an in-process hourly scheduler; the manual Sync all button remains alongside it
-tags: [POST /api/sync, syncItem, syncAllItems, HomeClient syncAll, scheduler, startSyncScheduler]
+tags: [POST /api/sync, syncItem, syncAllItems, home page syncAll, scheduler, startSyncScheduler]
 date: 2026-09-04
 ---
 

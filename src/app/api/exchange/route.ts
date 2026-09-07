@@ -16,8 +16,8 @@ export const POST = withErrorResponse(async (req: NextRequest) => {
   return NextResponse.json<ExchangeResponse>({
     item_id: result.itemId,
     institution_name: result.institutionName,
-    accounts: result.accountsStored,
-    transactions: result.sync,
+    accounts_stored: result.accountsStored,
+    sync: result.sync,
     sync_error: result.syncError,
     account_errors: result.accountErrors.length > 0 ? result.accountErrors : null,
   });

@@ -1,14 +1,17 @@
+// Build-time poison: a client component that value-imports this module (or
+// anything that imports it) fails the build instead of bundling the pool.
+// Design: client-server-boundary-enforced.
+import 'server-only';
+
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from '@/db/schema';
 import { requireDatabaseUrl } from '@/lib/env';
-import { PublicError } from '@/lib/public-error';
 import { globalSingleton } from '@/lib/global-singleton';
+import { PublicError } from '@/lib/public-error';
 
-// The shared guard from src/lib/env.ts, rethrown as PublicError so the
-// failure reaches the user with BAD_CONFIG. Runs at module load, so it
-// surfaces in the dev server log and overlay rather than through
-// errorResponse. Design: config-validated-not-assumed.
+// Rethrown as PublicError so the failure surfaces as BAD_CONFIG at module
+// load. Design: config-validated-not-assumed.
 function getConnectionString(): string {
   try {
     return requireDatabaseUrl();
@@ -17,18 +20,16 @@ function getConnectionString(): string {
   }
 }
 
-// One pool per process — unconditional, not dev-only: dev HMR reloads this
-// module, and the bundler duplicates it across chunks in any mode, so every
-// copy must land on the same pool (see src/lib/global-singleton.ts).
+// One pool per process: HMR reloads and chunk duplication mean every copy of
+// this module must land on the same pool (see src/lib/global-singleton.ts).
 const pool = globalSingleton('pool', () => new Pool({ connectionString: getConnectionString() }));
 
 export const db: NodePgDatabase<typeof schema> = globalSingleton('db', () =>
   drizzle(pool, { schema }),
 );
 
-// The handle drizzle passes to a transaction callback, derived once here for
-// any drizzle client (the seed script's schemaless one included) instead of
-// each consumer re-spelling the Parameters<Parameters<...>> gymnastics.
+// The handle drizzle passes to a transaction callback, for any drizzle
+// client (the seed script's schemaless one included).
 type TransactionCallbackOf<Db> = Db extends {
   transaction: (fn: infer Callback, ...rest: never[]) => unknown;
 }

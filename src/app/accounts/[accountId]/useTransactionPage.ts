@@ -1,61 +1,58 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useLoadProtocol, type LoadReads } from '@/components/useLoadProtocol';
+import { useLoadProtocol, type LoadReads } from '@/hooks/useLoadProtocol';
+import { apiPaths } from '@/lib/api-paths';
 import type { ApiTransaction, TransactionsResponse } from '@/lib/api-types';
 import { getJson } from '@/lib/http';
+import { PAGE_SIZE } from '@/lib/pagination';
+import type { CategoryPatch } from './useCategoryPatches';
 
-// Rows per page; always sent explicitly rather than relying on the API default.
-export const PAGE_SIZE = 20;
-
-// The paged transaction list. A page turn keeps the old rows on screen with
-// the pager disabled instead of blanking the body; a failed read leaves the
-// rows that are already up. `reload` re-runs the current page loudly (Retry,
-// and a same-page goToPage — a plain setPage of the same value would re-run
-// nothing); `refresh` re-runs it silently (the page's poll), so a background
-// re-read never flashes the pager's in-flight state.
+// The paged transaction list.
 // Design: pager-keeps-stale-rows, transactions-paginated,
-// partial-load-rendering, home-reflects-background-sync.
+// partial-load-rendering.
+//
+// Page-state table — the page variables and their one update rule each:
+//   page         the page being asked for; goToPage, and the clamp on shrink
+//   loadedPage   the page the rows on screen came from; set on success only,
+//                -1 until the first success
+//   settledPage  the page of the request that last settled, success or
+//                failure; null until one does
+//   shownPage    derived: loadedPage once any read succeeded, else page
+//   pageLoading  derived: settledPage !== page || reloading; a silent
+//                refresh moves neither input
+//   total        the account's row count; null until a read lands
 export function useTransactionPage(accountId: string) {
   const [transactionList, setTransactionList] = useState<ApiTransaction[]>([]);
   const [page, setPage] = useState(0);
-  // `total` is null until a transactions read lands: "unknown", not 0.
   const [total, setTotal] = useState<number | null>(null);
-  // The page the rows on screen came from (-1 until the first successful read).
   const [loadedPage, setLoadedPage] = useState(-1);
-  // The page carried by the request that last settled, success or failure
-  // (null until one does). The other loud input — Retry, same-page goToPage —
-  // is the protocol's own `reloading`; a silent refresh bumps neither, so it
-  // never flips pageLoading.
   const [settledPage, setSettledPage] = useState<number | null>(null);
   // `loaded.transactions` is whether the latest read succeeded; a failed
   // read is not evidence of an empty account.
-  const { settled, error, loaded, clearError, refresh, reload, reloading } = useLoadProtocol(
+  const protocol = useLoadProtocol(
     { transactions: false },
     useCallback(
       (load: LoadReads<'transactions'>) =>
         load(
           {
             transactions: getJson<TransactionsResponse>(
-              `/api/transactions?accountId=${encodeURIComponent(accountId)}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+              apiPaths.transactions(accountId, PAGE_SIZE, page * PAGE_SIZE),
               'Failed to load transactions',
             ),
           },
-          (results) => {
-            if (results.transactions.status === 'fulfilled') {
-              setTransactionList(results.transactions.value.transactions);
-              setTotal(results.transactions.value.total);
+          (bodies) => {
+            if (bodies.transactions) {
+              setTransactionList(bodies.transactions.transactions);
+              setTotal(bodies.transactions.total);
               setLoadedPage(page);
-              // Clamp back onto the last real page if the account shrank under
-              // the pager.
-              const lastPage = Math.max(
-                0,
-                Math.ceil(results.transactions.value.total / PAGE_SIZE) - 1,
-              );
+              // Clamp back onto the last real page if the account shrank
+              // under the pager.
+              const lastPage = Math.max(0, Math.ceil(bodies.transactions.total / PAGE_SIZE) - 1);
               if (page > lastPage) setPage(lastPage);
             }
-            // On failure loadedPage is left alone: the rows on screen are still
-            // its rows.
+            // On failure loadedPage is left alone: the rows on screen are
+            // still its rows.
             setSettledPage(page);
           },
         ),
@@ -63,31 +60,37 @@ export function useTransactionPage(accountId: string) {
     ),
   );
 
-  // Separate from the page-level loading flag so a page turn keeps the old
-  // rows up with the pager disabled instead of blanking the account body.
-  const pageLoading = settledPage !== page || reloading;
-  // The pager's range and buttons are based on the rows actually on screen.
+  const pageLoading = settledPage !== page || protocol.reloading;
   const shownPage = loadedPage >= 0 ? loadedPage : page;
 
   // After a failed read `page` may already equal the target, so a plain
   // setPage would re-run nothing; reload instead.
-  const goToPage = (next: number) => {
-    if (next === page) reload();
-    else setPage(next);
-  };
+  const { reload } = protocol;
+  const goToPage = useCallback(
+    (next: number) => {
+      if (next === page) reload();
+      else setPage(next);
+    },
+    [page, reload],
+  );
+
+  // The one write path into the row list from outside the load protocol:
+  // useCategoryPatches merges a row's category columns through this. Narrow
+  // on purpose — an external writer can never replace rows wholesale.
+  // Design: optimistic-category-writes, superseded-loads-write-nothing.
+  const applyCategoryPatch = useCallback((transactionId: string, fields: CategoryPatch) => {
+    setTransactionList((list) =>
+      list.map((txn) => (txn.transactionId === transactionId ? { ...txn, ...fields } : txn)),
+    );
+  }, []);
 
   return {
     transactionList,
-    setTransactionList,
+    applyCategoryPatch,
     total,
     pageLoading,
     shownPage,
-    settled,
-    error,
-    clearError,
-    loaded,
     goToPage,
-    refresh,
-    reload,
+    ...protocol,
   };
 }

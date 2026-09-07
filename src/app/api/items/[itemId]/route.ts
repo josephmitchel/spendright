@@ -4,8 +4,9 @@ import { items } from '@/db/schema';
 import type { ItemDeleteResponse } from '@/lib/api-types';
 import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
-import { jsonError, plaidErrorBody, withErrorResponse } from '@/lib/errors';
-import { itemRemove } from '@/lib/plaid';
+import { jsonError, withErrorResponse } from '@/lib/errors';
+import { removeItem } from '@/lib/plaid';
+import { plaidErrorBody } from '@/lib/plaid-errors';
 
 // Unauthenticated and destructive. Design: single-user-localhost-no-auth.
 export const DELETE = withErrorResponse(
@@ -18,7 +19,7 @@ export const DELETE = withErrorResponse(
 
     // Plaid already having forgotten the item is not a failure.
     try {
-      await itemRemove(decrypt(item.accessToken));
+      await removeItem(decrypt(item.accessToken));
     } catch (err) {
       if (plaidErrorBody(err)?.error_code !== 'ITEM_NOT_FOUND') throw err;
     }

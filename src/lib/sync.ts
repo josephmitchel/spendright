@@ -1,22 +1,23 @@
-import { eq, inArray, sql } from 'drizzle-orm';
+import { eq, getTableColumns, inArray, sql } from 'drizzle-orm';
+import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import { type AccountBase, type Transaction as PlaidTransaction } from 'plaid';
-import {
-  accounts,
-  cardCategories,
-  creditCategories,
-  items,
-  transactions,
-  type ItemRow,
-} from '@/db/schema';
+import { accounts, items, transactions, type ItemRow } from '@/db/schema';
 import { storeAccounts } from '@/lib/accounts';
-import { isInflowAmount } from '@/lib/amounts';
 import { loadCardCatalog } from '@/lib/card-catalog';
+import { categoryKindSources, type CategoryKindSource } from '@/lib/category-kind-sources';
+import {
+  assertNeverKind,
+  categoryKindKeys,
+  kindForAmount,
+  type CategoryKind,
+} from '@/lib/category-kinds';
 import { decrypt } from '@/lib/crypto';
 import { db, type DbTransaction } from '@/lib/db';
-import { plaidErrorBody, publicErrorMessage } from '@/lib/errors';
+import { publicErrorMessage } from '@/lib/errors';
 import { globalSingleton } from '@/lib/global-singleton';
-import { logError } from '@/lib/log';
+import { logError, logWarn } from '@/lib/log';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
+import { plaidErrorBody } from '@/lib/plaid-errors';
 import { serializeByKey } from '@/lib/serialize';
 import {
   MAX_SKIPPED_SYNCS,
@@ -34,8 +35,8 @@ function toTransactionRow(txn: PlaidTransaction, itemId: string) {
     merchantName: txn.merchant_name ?? null,
     amount: String(txn.amount),
     isoCurrencyCode: txn.iso_currency_code ?? null,
-    // Stored and served but never rendered; reserved for future
-    // auto-categorization. Design: plaid-category-reserved.
+    // Reserved for future auto-categorization; never rendered.
+    // Design: plaid-category-reserved.
     category: txn.personal_finance_category?.primary ?? txn.category?.[0] ?? null,
     pending: txn.pending ?? null,
     plaidTransaction: txn,
@@ -55,30 +56,24 @@ export interface SyncItemResult {
 }
 
 export interface SyncItemOptions {
-  // Accounts the caller already fetched AND stored (the link flow does both);
-  // the sync then skips its own accountsGet and account-store pass, so each
-  // link stores its accounts exactly once. Design: accounts-refreshed-per-sync.
-  plaidAccounts?: AccountBase[];
+  // True when the caller already fetched AND stored the item's accounts (the
+  // link flow does both). Design: accounts-refreshed-per-sync.
+  accountsAlreadyStored?: boolean;
   // Passed through to syncTransactions.
   notReadyRetries?: number;
 }
 
-// Per-item serialization for the cursor-write invariant: two concurrent
-// syncItem calls on one item would race the cursor write, and syncItem has two
-// entry points (syncAllItems and the exchange route's inline initial sync), so
-// the lock lives here, covering every caller by construction, rather than in
-// any one of them. Design: scheduled-sync.
+// Per-item lock: concurrent syncItem calls on one item would race the cursor
+// write. Design: scheduled-sync.
 const syncItemTails = globalSingleton('syncItemTails', () => new Map<string, Promise<void>>());
 
 export function syncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
   return serializeByKey(syncItemTails, item.itemId, () => runSyncItem(item, options));
 }
 
-// Records a sync failure on the item row and returns the user-facing message.
-// The message goes through the allow-list because it is stored on items.error
-// and shown on every load; the write is best-effort because the caller's flow
-// must finish either way. Shared by syncAllItems and the exchange route's
-// inline initial sync. Design: error-message-allow-list.
+// Records a sync failure on the item row (best-effort — the caller's flow
+// must finish either way) and returns the user-facing message.
+// Design: error-message-allow-list.
 export async function recordSyncFailure(
   itemId: string,
   err: unknown,
@@ -98,11 +93,9 @@ export async function recordSyncFailure(
   return message;
 }
 
-// Guard for the transactions.account_id FK: a rejected insert would abort
-// the whole sync transaction, cursor included, and wedge the item. Must
-// mirror the FK exactly, so keyed on account_id alone (not item_id) and read
-// from the DB rather than from the Plaid account refresh.
-// Design: bounded-cursor-hold.
+// Guard for the transactions.account_id FK. Must mirror the FK exactly, so
+// keyed on account_id alone (not item_id) and read from the DB rather than
+// from the Plaid account refresh. Design: bounded-cursor-hold.
 async function knownAccountIdsFor(
   tx: DbTransaction,
   batch: PlaidTransaction[],
@@ -122,20 +115,16 @@ interface CarriedSelection {
   creditCategoryId: number | null;
 }
 
-// Ids from `candidateIds` whose category row still exists. A carry is a fresh
-// insert, so a stale id would abort the whole sync.
+// Ids from `candidateIds` whose category row still exists. A carry is a
+// fresh insert, so a stale id would abort the whole sync.
 async function liveCategoryIds(
   tx: DbTransaction,
-  table: typeof cardCategories | typeof creditCategories,
+  { table, idColumn }: CategoryKindSource,
   candidateIds: (number | null)[],
 ): Promise<Set<number>> {
   const ids = [...new Set(candidateIds.filter((id): id is number => id !== null))];
   if (ids.length === 0) return new Set();
-  const rows = await tx
-    .select({ id: table.id })
-    // The cast only widens the overload; the runtime table is the one passed in.
-    .from(table as typeof cardCategories)
-    .where(inArray(table.id, ids));
+  const rows = await tx.select({ id: idColumn }).from(table).where(inArray(idColumn, ids));
   return new Set(rows.map((row) => row.id));
 }
 
@@ -171,12 +160,12 @@ async function resolveCarriedSelections(
 
   const liveCardCategoryIds = await liveCategoryIds(
     tx,
-    cardCategories,
+    categoryKindSources.card,
     pendingRows.map((row) => row.cardCategoryId),
   );
   const liveCreditCategoryIds = await liveCategoryIds(
     tx,
-    creditCategories,
+    categoryKindSources.credit,
     pendingRows.map((row) => row.creditCategoryId),
   );
 
@@ -203,23 +192,64 @@ async function resolveCarriedSelections(
 // survives. Design: category-kind-sign-rule.
 function carriedColumns(
   carry: CarriedSelection | undefined,
-  isInflow: boolean,
+  kind: CategoryKind,
 ):
   | { creditCategoryId: number }
   | { cardCategoryId: number | null; rewardRate: string | null }
   | null {
   if (!carry) return null;
-  if (isInflow) {
-    return carry.creditCategoryId != null ? { creditCategoryId: carry.creditCategoryId } : null;
+  switch (kind) {
+    case 'credit':
+      return carry.creditCategoryId != null ? { creditCategoryId: carry.creditCategoryId } : null;
+    case 'card':
+      return carry.cardCategoryId != null || carry.rewardRate != null
+        ? { cardCategoryId: carry.cardCategoryId, rewardRate: carry.rewardRate }
+        : null;
+    default:
+      return assertNeverKind(kind);
   }
-  return carry.cardCategoryId != null || carry.rewardRate != null
-    ? { cardCategoryId: carry.cardCategoryId, rewardRate: carry.rewardRate }
-    : null;
 }
 
-// Upserts the batch. Rows for accounts outside `knownAccountIds` are skipped
-// (not inserted, counted, logged) instead of aborting the sync; returns the
-// skip count. Design: bounded-cursor-hold.
+// Rows per INSERT statement — well under Postgres's 65,535 bind-parameter
+// cap at this table's column count.
+const UPSERT_CHUNK_SIZE = 500;
+
+// A batch row: the base columns plus any carried selection riding the insert.
+type TransactionUpsertValues = ReturnType<typeof toTransactionRow> &
+  Partial<
+    Pick<typeof transactions.$inferInsert, 'cardCategoryId' | 'rewardRate' | 'creditCategoryId'>
+  >;
+
+// The on-conflict SET for one kind's batch: every column the row builder
+// writes takes the incoming row's value (excluded.*, derived from the row's
+// own keys), the matching kind's selection columns are never touched
+// (re-syncs must not overwrite a user's pick), and every other kind's are
+// cleared, which the DB sign constraint requires on a sign flip.
+// Design: category-kind-sign-rule.
+function conflictSetForKind(
+  kind: CategoryKind,
+  rowKeys: string[],
+): PgUpdateSetSource<typeof transactions> {
+  const columns = getTableColumns(transactions);
+  const set: Record<string, unknown> = {};
+  for (const key of rowKeys) {
+    const column = columns[key as keyof typeof columns];
+    if (!column) throw new Error(`sync: toTransactionRow writes unknown column ${key}`);
+    set[key] = sql.raw(`excluded."${column.name}"`);
+  }
+  set.updatedAt = sql`now()`;
+  for (const otherKind of Object.keys(categoryKindKeys) as CategoryKind[]) {
+    if (otherKind === kind) continue;
+    for (const column of categoryKindKeys[otherKind].writeColumns) set[column] = null;
+  }
+  // Built key-by-key above, so the shape is asserted rather than inferred.
+  return set as PgUpdateSetSource<typeof transactions>;
+}
+
+// Upserts the batch; rows for accounts outside `knownAccountIds` are skipped
+// and counted, not inserted. Batched per kind per chunk: the transaction
+// holds locks category PATCHes compete for, so its duration must stay
+// bounded by statement count. Design: bounded-cursor-hold.
 async function upsertTransactions(
   tx: DbTransaction,
   itemId: string,
@@ -228,53 +258,79 @@ async function upsertTransactions(
   carried: Map<string, CarriedSelection>,
 ): Promise<number> {
   let skipped = 0;
+  // Last-wins by id: one statement must not update the same row twice
+  // (Postgres rejects it), and the later occurrence is the one the old
+  // sequential per-row loop would have applied last anyway.
+  const rowsById = new Map<string, { values: TransactionUpsertValues; kind: CategoryKind }>();
+  let baseRowKeys: string[] | null = null;
   for (const txn of upserts) {
     if (!knownAccountIds.has(txn.account_id)) {
       skipped++;
-      console.error(
+      logError(
         `sync ${itemId}: transaction ${txn.transaction_id} references unknown account ${txn.account_id} — skipped`,
       );
       continue;
     }
     const row = toTransactionRow(txn, itemId);
+    baseRowKeys ??= Object.keys(row);
     const carry = txn.pending_transaction_id ? carried.get(txn.pending_transaction_id) : undefined;
-    const isInflow = isInflowAmount(row.amount);
-    const carriedValues = carriedColumns(carry, isInflow);
-    await tx
-      .insert(transactions)
-      .values(carriedValues ? { ...row, ...carriedValues } : row)
-      .onConflictDoUpdate({
-        target: transactions.transactionId,
-        // Re-syncs never touch the matching kind's selection; only the
-        // wrong-kind columns are cleared, which the DB sign constraint
-        // requires on a sign flip.
-        set: {
-          ...row,
-          updatedAt: sql`now()`,
-          ...(isInflow ? { cardCategoryId: null, rewardRate: null } : { creditCategoryId: null }),
-        },
-      });
+    const kind = kindForAmount(row.amount);
+    const carriedValues = carriedColumns(carry, kind);
+    rowsById.set(row.transactionId, {
+      values: carriedValues ? { ...row, ...carriedValues } : row,
+      kind,
+    });
+  }
+  if (!baseRowKeys) return skipped;
+
+  // Grouped by kind because the SET differs per kind. Carried selections
+  // ride only in VALUES (a carry is a fresh insert), while the SET reads
+  // excluded.* for the base columns alone — baseRowKeys, never a carrying
+  // row's keys — so a conflicting row keeps its saved selections. Rows in
+  // one chunk may differ in which carried columns they set; drizzle renders
+  // a field a row omits as DEFAULT (Verified-on: drizzle-orm@0.45.2).
+  const groups: Record<CategoryKind, TransactionUpsertValues[]> = { card: [], credit: [] };
+  for (const { values, kind } of rowsById.values()) groups[kind].push(values);
+  for (const kind of Object.keys(groups) as CategoryKind[]) {
+    const rows = groups[kind];
+    if (rows.length === 0) continue;
+    const set = conflictSetForKind(kind, baseRowKeys);
+    for (let start = 0; start < rows.length; start += UPSERT_CHUNK_SIZE) {
+      await tx
+        .insert(transactions)
+        .values(rows.slice(start, start + UPSERT_CHUNK_SIZE))
+        .onConflictDoUpdate({ target: transactions.transactionId, set });
+    }
   }
   return skipped;
 }
 
-// The cursor/skip-counter/error bookkeeping on the item row. The counter is
-// read under lock rather than from the caller's possibly stale ItemRow; a
-// clean sync or a drop resets it to 0. The cursor advances only on a clean
-// sync or a drop. items.error is written on the first skip and cleared by a
-// clean sync. Design: bounded-cursor-hold.
+// Stored on items.error when the account refresh failed; cleared by the next
+// fully clean sync. Design: accounts-refreshed-per-sync.
+const ACCOUNT_REFRESH_FAILED_MESSAGE =
+  'The account refresh failed on the last sync — balances may be stale (check the server ' +
+  'log). Transactions still synced.';
+
+// Cursor/skip-counter/error bookkeeping on the item row. The counter is read
+// under lock, not from the caller's possibly stale ItemRow; the cursor
+// advances only on a clean sync or a drop.
+// Design: bounded-cursor-hold, accounts-refreshed-per-sync.
 async function recordSyncOutcome(
   tx: DbTransaction,
   itemId: string,
   skipped: number,
   cursor: string | null,
+  accountRefreshFailed: boolean,
 ): Promise<{ consecutiveSkippedSyncs: number; dropped: boolean }> {
   const [itemState] = await tx
     .select({ skippedSyncs: items.skippedSyncs })
     .from(items)
     .where(eq(items.itemId, itemId))
     .for('update');
-  const consecutiveSkippedSyncs = skipped === 0 ? 0 : (itemState?.skippedSyncs ?? 0) + 1;
+  // No row: the item was deleted while this sync ran; throwing records a
+  // failure instead of reporting a clean outcome for a row never written.
+  if (!itemState) throw new Error(`sync ${itemId}: item row disappeared mid-sync`);
+  const consecutiveSkippedSyncs = skipped === 0 ? 0 : itemState.skippedSyncs + 1;
   const dropped = consecutiveSkippedSyncs >= MAX_SKIPPED_SYNCS;
 
   await tx
@@ -282,10 +338,14 @@ async function recordSyncOutcome(
     .set({
       ...(skipped === 0 || dropped ? { cursor } : {}),
       skippedSyncs: dropped ? 0 : consecutiveSkippedSyncs,
+      // The skip message wins over the refresh one: held/dropped rows are the
+      // more actionable state, and the refresh failure is still in the log.
       error:
-        skipped === 0
-          ? null
-          : { message: skippedItemErrorMessage(skipped, consecutiveSkippedSyncs, dropped) },
+        skipped > 0
+          ? { message: skippedItemErrorMessage(skipped, consecutiveSkippedSyncs, dropped) }
+          : accountRefreshFailed
+            ? { message: ACCOUNT_REFRESH_FAILED_MESSAGE }
+            : null,
       updatedAt: sql`now()`,
     })
     .where(eq(items.itemId, itemId));
@@ -296,14 +356,15 @@ async function recordSyncOutcome(
 async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
   const accessToken = decrypt(item.accessToken);
   // Plaid calls stay outside the DB transaction. The account refresh is
-  // best-effort: on failure the sync proceeds against stored accounts. When
-  // the caller passed accounts it already stored them, so the whole refresh
-  // is skipped. Design: accounts-refreshed-per-sync
-  if (!options?.plaidAccounts) {
+  // best-effort: on failure the sync proceeds against stored accounts.
+  // Design: accounts-refreshed-per-sync
+  let accountRefreshFailed = false;
+  if (!options?.accountsAlreadyStored) {
     let plaidAccounts: AccountBase[] = [];
     try {
       plaidAccounts = await getAccounts(accessToken);
     } catch (err) {
+      accountRefreshFailed = true;
       logError(
         `sync ${item.itemId}: accountsGet failed — syncing without an account refresh:`,
         err,
@@ -311,9 +372,11 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
     }
     if (plaidAccounts.length > 0) {
       const cardList = await loadCardCatalog(db);
-      // Committed before the sync transaction opens; failures are the
-      // known-account guard's problem.
-      await storeAccounts(plaidAccounts, item.itemId, cardList);
+      // A failed upsert of an EXISTING row leaves its balances silently
+      // stale (the known-account guard only covers absent rows), so store
+      // failures count as a failed refresh.
+      const storeFailures = await storeAccounts(plaidAccounts, item.itemId, cardList);
+      if (storeFailures.length > 0) accountRefreshFailed = true;
     }
   }
 
@@ -321,9 +384,6 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
     notReadyRetries: options?.notReadyRetries,
   });
 
-  // db.transaction returns the callback's value, so the results come out as
-  // the return value — no closure mutation, and no placeholder that a future
-  // unreached assignment could leave looking like a real clean-sync outcome.
   const { skipped, outcome } = await db.transaction(async (tx) => {
     const upserts = [...added, ...modified];
     const knownAccountIds = await knownAccountIdsFor(tx, upserts);
@@ -346,12 +406,11 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
 
     return {
       skipped: skippedCount,
-      outcome: await recordSyncOutcome(tx, item.itemId, skippedCount, cursor),
+      outcome: await recordSyncOutcome(tx, item.itemId, skippedCount, cursor, accountRefreshFailed),
     };
   });
 
-  // On a drop this log line is the only lasting record of what was lost. The
-  // wording lives in sync-messages.ts with the rest of the policy's strings.
+  // On a drop this log line is the only lasting record of what was lost.
   if (skipped > 0) {
     const line = skippedSyncLogLine(
       item.itemId,
@@ -359,8 +418,8 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
       outcome.consecutiveSkippedSyncs,
       outcome.dropped,
     );
-    if (outcome.dropped) console.error(line);
-    else console.warn(line);
+    if (outcome.dropped) logError(line);
+    else logWarn(line);
   }
 
   return {

@@ -28,18 +28,15 @@ function toAccountRow(plaidAccount: AccountBase, itemId: string, cardId: number 
 // user-facing message.
 export type StoreFailure = { account: AccountBase; error: unknown };
 
-// The single definition of how one Plaid account is written; every caller
-// goes through storeAccounts below. Callers treat a failure here as this
-// account's problem alone. Design: accounts-refreshed-per-sync.
+// Design: accounts-refreshed-per-sync.
 async function upsertAccount(
   tx: DbTransaction,
   plaidAccount: AccountBase,
   itemId: string,
   cardList: CardRow[],
 ): Promise<void> {
-  // card_id is re-matched and overwritten on every sync; nothing else on the
-  // account's transactions is touched. Design: rematch-on-every-sync,
-  // selections-are-user-owned.
+  // card_id is re-matched and overwritten on every write.
+  // Design: rematch-on-every-sync, selections-are-user-owned.
   const cardId = matchCard(cardList, plaidAccount.name ?? null)?.id ?? null;
   const accountValues = toAccountRow(plaidAccount, itemId, cardId);
 
@@ -52,10 +49,8 @@ async function upsertAccount(
     });
 }
 
-// Stores each account in its own transaction, committed independently, so one
-// failing account costs only its own rows. Failures are logged and returned,
-// never thrown — shared by /api/exchange (which reports them) and syncItem
-// (whose known-account guard covers the missing rows).
+// Each account commits in its own transaction, so one failing account costs
+// only its own rows; failures are logged and returned, never thrown.
 // Design: accounts-refreshed-per-sync, initial-sync-reported-not-thrown.
 export async function storeAccounts(
   plaidAccounts: AccountBase[],

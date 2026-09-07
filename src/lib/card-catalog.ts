@@ -9,19 +9,14 @@ import {
   type CreditCategoryRow,
 } from '@/db/schema';
 
-// Any drizzle executor: the app db, one of its transactions, or the seed
-// script's schemaless client. Taking it as a parameter keeps this module free
-// of the db import, like matchCard's module, so the seed script can use it
-// without opening a second pool.
+// Any drizzle executor: the app db, a transaction, or the seed script's
+// schemaless client — a parameter, so this module needs no db import.
 type CardCatalogSource = Pick<NodePgDatabase, 'select'>;
 
-// The single loader for matchCard's input, shared by the link flow, the sync
-// path, and the seed script. Ordered so card matching never depends on
-// physical row order. A failure propagates to the caller's operation: storing
-// accounts against an empty catalog would overwrite their card matches with
-// null (card_id is re-matched on every write), so no caller stores accounts
-// without it. Design: single-card-catalog-loader, account-card-matching-by-name,
-// rematch-on-every-sync.
+// Ordered so card matching never depends on physical row order. A failure
+// must propagate: storing accounts against an empty catalog would null their
+// card matches. Design: single-card-catalog-loader,
+// account-card-matching-by-name, rematch-on-every-sync.
 export function loadCardCatalog(source: CardCatalogSource): Promise<CardRow[]> {
   return source.select().from(cards).orderBy(cards.id);
 }

@@ -11,15 +11,14 @@ import { Pool } from 'pg';
 import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
 import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
 import { loadCardCatalog } from '../src/lib/card-catalog';
-import { matchCard } from '../src/lib/cards';
+import { matchCard, normalizeAccountName } from '../src/lib/cards';
 import type { DrizzleTransaction } from '../src/lib/db';
 import { requireDatabaseUrl } from '../src/lib/env';
-import { logError } from '../src/lib/log';
+import { logFatalAndExit } from '../src/lib/log';
 
-// The one skeleton behind every seed uniqueness check: keys are normalized
-// the way matchCard normalizes (trim + lowercase), so a blank or case-variant
-// entry can never slip past as a distinct key. `owner` names the seed entry a
-// key belongs to, for the error messages. Design: seed-validation.
+// Keys go through normalizeAccountName (the same normalization matchCard
+// uses); `owner` names the seed entry for error messages.
+// Design: seed-validation.
 function assertUniqueKeys(
   entries: Array<{ value: string; owner: string }>,
   describe: {
@@ -29,7 +28,7 @@ function assertUniqueKeys(
 ): void {
   const owners = new Map<string, string>();
   for (const { value, owner } of entries) {
-    const key = value.trim().toLowerCase();
+    const key = normalizeAccountName(value);
     if (!key) throw new Error(describe.blank(owner));
     const firstOwner = owners.get(key);
     if (firstOwner !== undefined) {
@@ -85,13 +84,11 @@ function assertSeedIsValid(): void {
 }
 
 // The handle drizzle passes to a rootDb.transaction callback (this script's
-// schemaless client, not src/lib/db's schema-typed one); the derivation is
-// shared with src/lib/db.ts.
+// schemaless client, not src/lib/db's schema-typed one).
 type SeedTransaction = DrizzleTransaction<NodePgDatabase>;
 
-// The seed tables retireMissing knows, each paired with its key column here
-// and nowhere else — a call site passes the whole pair, so it can never hand
-// the helper a column from the wrong table.
+// Each seed table paired with its key column, so retireMissing takes them
+// together.
 type SeedTable = typeof cards | typeof cardCategories | typeof creditCategories;
 interface RetireTarget {
   table: SeedTable;
@@ -103,11 +100,10 @@ const retireTargets = {
   creditCategories: { table: creditCategories, keyColumn: creditCategories.name },
 } satisfies Record<string, RetireTarget>;
 
-// The one implementation of "retire what left the seed file": stamps
-// retired_at on every live row in scope whose key column is no longer among
-// `keptKeys`, and logs what it retired. An empty kept list retires everything
-// in scope, because drizzle can't render notInArray([]); `retired_at is null`
-// keeps the original stamp on already-retired rows.
+// Retires every live row in scope whose key left `keptKeys`. An empty kept
+// list retires everything in scope: the clause is omitted, which `and()`
+// treats the same as the `true` drizzle renders notInArray([]) into
+// (Verified-on: drizzle-orm@0.45.2).
 // Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
 async function retireMissing(
   tx: SeedTransaction,
@@ -185,7 +181,7 @@ async function upsertCards(tx: SeedTransaction): Promise<number> {
 }
 
 // Credit categories: upsert by name (revives retired ones), then retire the
-// rest. drizzle throws on values([]).
+// rest. drizzle throws on values([]) (Verified-on: drizzle-orm@0.45.2).
 async function upsertCreditCategories(tx: SeedTransaction): Promise<void> {
   if (creditCategorySeeds.length > 0) {
     await tx
@@ -228,18 +224,15 @@ async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; 
 async function main() {
   assertSeedIsValid();
 
-  // Shared guard — the seed must never run against whatever is on localhost.
-  // Its own pool rather than src/lib/db's process-wide singleton: the script
-  // must end() it below so the process can exit.
-  // Design: config-validated-not-assumed.
+  // Its own pool rather than src/lib/db's singleton: the script must end()
+  // it below so the process can exit. Design: config-validated-not-assumed.
   const pool = new Pool({ connectionString: requireDatabaseUrl() });
   const rootDb = drizzle(pool);
 
   try {
     // Backfill missing reward rates only; existing rates are never restated
-    // (design: categorization-is-a-historical-snapshot). Kept outside the
-    // reconcile transaction so its transaction-row locks can't deadlock with a
-    // concurrent sync. Idempotent.
+    // (design: categorization-is-a-historical-snapshot). Outside the
+    // reconcile transaction so its row locks can't deadlock with a sync.
     await rootDb.execute(sql`
       update transactions t
       set reward_rate = cc.rate
@@ -247,8 +240,7 @@ async function main() {
       where t.card_category_id = cc.id and t.reward_rate is null
     `);
 
-    // Reconcile the catalog to the seed file in one transaction. Rows that left
-    // the file are retired, never deleted; nothing here touches `transactions`.
+    // Reconcile the catalog to the seed file in one transaction.
     // Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
     await rootDb.transaction(async (tx) => {
       const categoryCount = await upsertCards(tx);
@@ -277,6 +269,5 @@ async function main() {
 }
 
 main().catch((err: unknown) => {
-  logError('seed failed:', err);
-  process.exit(1);
+  logFatalAndExit('seed failed:', err);
 });

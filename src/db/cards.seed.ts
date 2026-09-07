@@ -6,7 +6,7 @@
 // - Removing a card or category retires it; adding it back revives it.
 // Design: card-catalog-in-code.
 
-export interface CardSeed {
+interface CardSeed {
   slug: string;
   name: string;
   issuer?: string;

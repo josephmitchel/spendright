@@ -1,3 +1,7 @@
+// Build-time poison against client bundling (the SDK carries PLAID_SECRET).
+// Design: client-server-boundary-enforced.
+import 'server-only';
+
 import {
   type AccountBase,
   Configuration,
@@ -46,6 +50,11 @@ function getCredential(name: 'PLAID_CLIENT_ID' | 'PLAID_SECRET'): string {
   return value;
 }
 
+// Axios's default timeout is 0 — wait forever (Verified-on: axios@1.20.0) —
+// and a Plaid promise that never settles latches the sync guards until
+// restart. Design: requests-have-deadlines.
+const PLAID_TIMEOUT_MS = 60_000;
+
 // Built once per process, through globalSingleton like every other
 // per-process value (module scope is per module copy here — see
 // src/lib/global-singleton.ts). If validation throws, globalSingleton caches
@@ -58,6 +67,7 @@ function getClient(): PlaidApi {
         new Configuration({
           basePath: getBasePath(),
           baseOptions: {
+            timeout: PLAID_TIMEOUT_MS,
             headers: {
               'PLAID-CLIENT-ID': getCredential('PLAID_CLIENT_ID'),
               'PLAID-SECRET': getCredential('PLAID_SECRET'),
@@ -168,12 +178,14 @@ export async function getAccounts(accessToken: string): Promise<AccountBase[]> {
 }
 
 // https://plaid.com/docs/api/items/#itemremove
-export async function itemRemove(accessToken: string): Promise<string> {
+export async function removeItem(accessToken: string): Promise<string> {
   const response = await getClient().itemRemove({ access_token: accessToken });
   return response.data.request_id;
 }
 
-export interface SyncResult {
+// One drained transactions/sync pull, distinct on purpose from the outcome
+// types it feeds (SyncItemResult in sync.ts, SyncAllResult in sync-all.ts).
+export interface PlaidSyncBatch {
   added: PlaidTransaction[];
   modified: PlaidTransaction[];
   removed: RemovedTransaction[];
@@ -181,10 +193,22 @@ export interface SyncResult {
 }
 
 // Re-polls of transactions/sync while Plaid reports the item as not ready.
-// Callers with a request timeout to respect pass a smaller budget.
-// Design: not-ready-poll-budgets
+// The budget is cumulative across a whole drain (it bounds total in-request
+// sleep), not per stall. Callers with a request timeout to respect pass a
+// smaller budget. Design: not-ready-poll-budgets
 const DEFAULT_NOT_READY_RETRIES = 10;
 const NOT_READY_DELAY_MS = 2000;
+
+// Requested page size for the drain. Plaid's documented maximum (the default
+// is only 100), passed explicitly below so MAX_SYNC_PAGES' sizing argument
+// rests on a number this code actually requests.
+const SYNC_PAGE_SIZE = 500;
+
+// Bound on the has_more drain. At SYNC_PAGE_SIZE rows per page the cap is
+// several years of history — far past any real drain — so hitting it means
+// Plaid is re-serving a cursor without progress, which must not spin forever.
+// Design: requests-have-deadlines.
+const MAX_SYNC_PAGES = 200;
 
 export interface SyncOptions {
   notReadyRetries?: number;
@@ -196,7 +220,7 @@ export async function syncTransactions(
   accessToken: string,
   initialCursor?: string | null,
   options?: SyncOptions,
-): Promise<SyncResult> {
+): Promise<PlaidSyncBatch> {
   const client = getClient();
   let cursor: string | null = initialCursor ?? null;
   let added: PlaidTransaction[] = [];
@@ -207,11 +231,19 @@ export async function syncTransactions(
   // `?? DEFAULT`, so an explicit 0 means zero retries rather than falling back.
   const notReadyBudget = options?.notReadyRetries ?? DEFAULT_NOT_READY_RETRIES;
 
-  // The has_more loop is not bounded; a large first sync is many round trips.
+  let pages = 0;
   while (hasMore) {
+    if (++pages > MAX_SYNC_PAGES) {
+      throw new PublicError(
+        `Plaid kept reporting more transactions after ${MAX_SYNC_PAGES} pulls — stopping this ` +
+          'sync; try again later',
+        { status: 502, code: 'SYNC_PAGE_BUDGET' },
+      );
+    }
     const response = await client.transactionsSync({
       access_token: accessToken,
       cursor: cursor ?? undefined,
+      count: SYNC_PAGE_SIZE,
     });
     const data = response.data;
 

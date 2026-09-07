@@ -1,14 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { use, useCallback } from 'react';
-import { useVisiblePoll } from '@/components/useVisiblePoll';
+import { use, useCallback, useEffect } from 'react';
+import { ErrorNotice } from '@/components/ErrorNotice';
+import { combineLoadStates } from '@/hooks/useLoadProtocol';
+import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
 import type { ApiAccount } from '@/lib/api-types';
+import { PAGE_SIZE } from '@/lib/pagination';
 import { TransactionTable } from './TransactionTable';
 import { useAccountData } from './useAccountData';
 import { useCategoryPatches } from './useCategoryPatches';
-import { PAGE_SIZE, useTransactionPage } from './useTransactionPage';
+import { useTransactionPage } from './useTransactionPage';
 
 // Design: supported-account-rule, selections-are-user-owned,
 // categorization-is-a-historical-snapshot.
@@ -19,13 +22,10 @@ export default function AccountPage({ params }: { params: Promise<{ accountId: s
   return <AccountView key={accountId} accountId={accountId} />;
 }
 
-// The page body renders exactly one of these below the account identity and
-// error line. Derived in deriveView so the legal states are enumerated once,
-// instead of each render branch re-encoding its own conjunction of flags.
+// The page body renders exactly one of these; deriveView enumerates the
+// legal states once.
 type View = 'loading' | 'not-found' | 'unsupported' | 'ready' | 'unresolved';
 
-// Module-level and pure, so the state table reads on its own, apart from the
-// hooks that feed it.
 function deriveView(inputs: {
   loading: boolean;
   accountLoaded: boolean;
@@ -36,22 +36,17 @@ function deriveView(inputs: {
   const { loading, accountLoaded, cardsLoaded, account, hasCard } = inputs;
   if (loading) return 'loading';
   // Not-found needs positive evidence: this pass's account read succeeded
-  // and found nothing. A stale `account` surviving a failed re-read renders
-  // as ready below instead. Design: partial-load-rendering.
+  // and found nothing. Design: partial-load-rendering.
   if (accountLoaded && !account) return 'not-found';
   // Unsupported needs both reads current, because the card is only
   // recomputed when both succeeded. Design: supported-account-rule.
   if (accountLoaded && cardsLoaded && account && !hasCard) return 'unsupported';
-  // Ready renders the (possibly stale) card content; failures show beside
-  // it rather than blanking it.
+  // Ready renders the (possibly stale) card content; failures show beside it.
   if (hasCard) return 'ready';
-  // Nothing loaded well enough to assert anything: identity and the error
-  // line are all that render.
   return 'unresolved';
 }
 
-// The identity line under the heading: official name (when it adds anything),
-// mask, type, balances.
+// The identity line under the heading.
 function AccountIdentity({ account }: { account: ApiAccount }) {
   return (
     <p>
@@ -70,9 +65,9 @@ function AccountIdentity({ account }: { account: ApiAccount }) {
   );
 }
 
-// The pager owns its range arithmetic. Shown even for a single page, so
-// "1–17 of 17" answers "is this all?". Range and buttons are based on
-// shownPage, the rows actually on screen. Design: pager-keeps-stale-rows.
+// Shown even for a single page, so "1–17 of 17" answers "is this all?".
+// Range and buttons are based on shownPage, the rows actually on screen.
+// Design: pager-keeps-stale-rows.
 function Pager({
   shownPage,
   shownCount,
@@ -104,46 +99,34 @@ function Pager({
 }
 
 function AccountView({ accountId }: { accountId: string }) {
-  const {
-    account,
-    card,
-    creditCategories,
-    settled: accountSettled,
-    error: accountError,
-    clearError: clearAccountError,
-    loaded,
-    refresh: refreshAccount,
-    reload: reloadAccount,
-  } = useAccountData(accountId);
+  const accountData = useAccountData(accountId);
+  const transactionPage = useTransactionPage(accountId);
+  const { account, card, creditCategories, refresh: refreshAccount } = accountData;
   const {
     transactionList,
-    setTransactionList,
     total,
     pageLoading,
     shownPage,
-    settled: transactionsSettled,
-    error: transactionsError,
-    clearError: clearTransactionsError,
-    loaded: { transactions: transactionsLoaded },
     goToPage,
     refresh: refreshTransactions,
-    reload: reloadTransactions,
-  } = useTransactionPage(accountId);
-  const { setCategory, patchErrors } = useCategoryPatches(
+  } = transactionPage;
+  const { setCategory, patchErrors, clearPatchErrors } = useCategoryPatches(
     card,
     creditCategories,
-    setTransactionList,
+    transactionPage.applyCategoryPatch,
   );
 
-  // Retry re-runs both loads loudly (the hooks own their reload tokens).
-  const reload = () => {
-    reloadAccount();
-    reloadTransactions();
-  };
+  // Turning the pager clears patch failures, so a long-gone edit's failure
+  // can't resurface on a later visit. Design: optimistic-category-writes.
+  useEffect(() => {
+    clearPatchErrors();
+  }, [shownPage, clearPatchErrors]);
 
-  // Silent poll, same cadence and mechanism as the home page, so the hourly
-  // background sync's new transactions and balances show up on an open
-  // account page too. Design: home-reflects-background-sync.
+  // The two loads as one lifecycle: settled together, errors joined, one Retry.
+  const { settled, error, retry } = combineLoadStates([accountData, transactionPage]);
+
+  // Silent poll so background sync changes show up without a reload.
+  // Design: home-reflects-background-sync.
   useVisiblePoll(
     useCallback(() => {
       void refreshAccount();
@@ -151,17 +134,14 @@ function AccountView({ accountId }: { accountId: string }) {
     }, [refreshAccount, refreshTransactions]),
   );
 
-  // `loading` covers the first load only, and ends once both loads have settled.
-  const loading = !accountSettled || !transactionsSettled;
-  // One error slice per load, since the two settle independently.
-  const error = [accountError, transactionsError].filter(Boolean).join('; ') || null;
   // Design: stale-lists-disable-editing.
-  const categoriesMayBeStale = !loaded.cards || !loaded.account;
+  const categoriesMayBeStale = !accountData.loaded.cards || !accountData.loaded.account;
 
   const view = deriveView({
-    loading,
-    accountLoaded: loaded.account,
-    cardsLoaded: loaded.cards,
+    // The first load only; over once both loads have settled.
+    loading: !settled,
+    accountLoaded: accountData.loaded.account,
+    cardsLoaded: accountData.loaded.cards,
     account,
     hasCard: card !== null,
   });
@@ -174,20 +154,7 @@ function AccountView({ accountId }: { accountId: string }) {
       <h1>{account ? accountDisplayName(account) : 'Account'}</h1>
       {account && <AccountIdentity account={account} />}
       {view === 'loading' && <p>Loading…</p>}
-      {error && (
-        <p>
-          Error: {error}{' '}
-          <button
-            onClick={() => {
-              clearAccountError();
-              clearTransactionsError();
-              reload();
-            }}
-          >
-            Retry
-          </button>
-        </p>
-      )}
+      {error && <ErrorNotice error={error} onRetryAction={retry} />}
       {view === 'not-found' && (
         <p>Account not found. It may have been disconnected — check the list on the home page.</p>
       )}
@@ -208,7 +175,7 @@ function AccountView({ accountId }: { accountId: string }) {
             <p>Category lists may be out of date — editing is off until they refresh.</p>
           )}
           {/* total is the account's own count, so this can't fire on a page past the end. */}
-          {transactionsLoaded && total === 0 && <p>No transactions.</p>}
+          {transactionPage.loaded.transactions && total === 0 && <p>No transactions.</p>}
           {transactionList.length > 0 && (
             <TransactionTable
               card={card}
@@ -216,7 +183,7 @@ function AccountView({ accountId }: { accountId: string }) {
               transactionList={transactionList}
               categoriesMayBeStale={categoriesMayBeStale}
               patchErrors={patchErrors}
-              onSelectCategory={setCategory}
+              onSelectCategoryAction={setCategory}
             />
           )}
           {total !== null && total > 0 && transactionList.length > 0 && (

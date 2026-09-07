@@ -1,10 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { logError } from '@/lib/log';
-import { pickPlaidErrorFields, plaidErrorMessage, type PlaidErrorFields } from '@/lib/plaid-errors';
+import { plaidErrorBody, plaidErrorMessage } from '@/lib/plaid-errors';
 import { PublicError } from '@/lib/public-error';
 
-// The single constructor of the `{ error: { code, message } }` envelope, for
-// thrown paths (errorResponse below) and returned paths (routes) alike.
+// The `{ error: { code, message } }` envelope.
 // Design: error-message-allow-list.
 export function jsonError(code: string, message: string, status: number): NextResponse {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -14,33 +13,38 @@ export function badRequest(message: string): NextResponse {
   return jsonError('BAD_REQUEST', message, 400);
 }
 
-// Plaid's error body, or null if this is not a Plaid SDK failure. error_code
-// is what identifies the shape; `response.data` alone matches other libraries.
-// The fields are picked, never passed through whole: callers store this object
-// on items.error and GET /api/items serves it, so the allow-list must be
-// structural rather than trust whatever Plaid's response happens to carry.
+// The public allow-list: a PublicError speaks for itself, a recognized Plaid
+// error through plaidErrorMessage, anything else is unknown (null).
+// `expected` marks ordinary 4xx rejections, not logged as server failures.
 // Design: error-message-allow-list.
-export function plaidErrorBody(err: unknown): PlaidErrorFields | null {
-  const data = (err as { response?: { data?: PlaidErrorFields } })?.response?.data;
-  // typeof-checked, not just truthy: the cast above is over an unvalidated
-  // response, and pickPlaidErrorFields type-checks each value it copies.
-  if (typeof data?.error_code !== 'string' || !data.error_code) return null;
-  return pickPlaidErrorFields(data);
+function allowListedError(
+  err: unknown,
+): { code: string; message: string; status: number; expected: boolean } | null {
+  if (err instanceof PublicError) {
+    return { code: err.code, message: err.message, status: err.status, expected: err.status < 500 };
+  }
+  const plaid = plaidErrorBody(err);
+  if (plaid) {
+    return {
+      code: plaid.error_code ?? 'PLAID',
+      message: plaidErrorMessage(plaid, 'Plaid error'),
+      status: 502,
+      expected: false,
+    };
+  }
+  return null;
 }
 
-// Same allow-list as errorResponse, for callers that store the message
-// (items.error) instead of returning it.
+// For callers that store the message (items.error) instead of returning it.
 export function publicErrorMessage(err: unknown, fallback: string): string {
-  const plaid = plaidErrorBody(err);
-  if (plaid) return plaidErrorMessage(plaid, 'Plaid error');
-  if (err instanceof PublicError) return err.message;
-  return fallback;
+  return allowListedError(err)?.message ?? fallback;
 }
 
 // Postgres SQLSTATE for an error thrown under a drizzle query. drizzle wraps
-// the pg error in a DrizzleQueryError and hangs it off `cause`, so the chain
-// is walked. Node errno codes like EPIPE are also five [0-9A-Z] chars but no
-// SQLSTATE class starts with E, so they are screened out.
+// the pg error in a DrizzleQueryError and hangs it off `cause`
+// (Verified-on: drizzle-orm@0.45.2), so the chain is walked. Node errno
+// codes like EPIPE are also five [0-9A-Z] chars but no SQLSTATE class starts
+// with E, so they are screened out.
 const SQLSTATE = /^[0-9A-Z]{5}$/;
 const NODE_ERRNO = /^E[A-Z]+$/;
 
@@ -55,32 +59,17 @@ export function pgErrorCode(err: unknown): string | undefined {
   return undefined;
 }
 
-export function errorResponse(err: unknown): NextResponse {
-  // The PublicError mapping is written once. 4xx PublicErrors are ordinary
-  // rejections (validation, not-found, sign rules) — part of normal
-  // operation, so not logged as server failures; 5xx PublicErrors
-  // (BAD_CONFIG, NOT_READY) are.
-  if (err instanceof PublicError) {
-    if (err.status >= 500) logError('request failed:', err);
-    return jsonError(err.code, err.message, err.status);
-  }
+function errorResponse(err: unknown): NextResponse {
+  const known = allowListedError(err);
+  if (known?.expected) return jsonError(known.code, known.message, known.status);
 
   // Redacted: a raw Plaid error carries the client secret and the
   // decrypted access token in its axios config. Design: plaid-error-log-redaction.
   logError('request failed:', err);
+  if (known) return jsonError(known.code, known.message, known.status);
 
-  const plaidError = plaidErrorBody(err);
-  if (plaidError) {
-    return jsonError(
-      plaidError.error_code ?? 'PLAID',
-      plaidErrorMessage(plaidError, 'Plaid error'),
-      502,
-    );
-  }
-
-  // App-wide, not route-specific: any route that writes under a lock can lose
-  // to a running sync or seed run. 55P03 lock_not_available (lock_timeout
-  // expired) and 40P01 deadlock_detected are both retryable.
+  // 55P03 lock_not_available and 40P01 deadlock_detected are retryable: any
+  // route writing under a lock can lose to a running sync or seed run.
   const code = pgErrorCode(err);
   if (code === '55P03' || code === '40P01') {
     return jsonError(
@@ -90,15 +79,14 @@ export function errorResponse(err: unknown): NextResponse {
     );
   }
 
-  // Never echo err.message: drizzle's carries the SQL and bound parameters.
+  // Never echo err.message: drizzle's carries the SQL and bound parameters
+  // (Verified-on: drizzle-orm@0.45.2).
   return jsonError('INTERNAL', 'Internal server error', 500);
 }
 
-// Every route handler exports through this wrapper, so "everything funnels
-// into errorResponse" is structural rather than a per-file habit — a new
-// route cannot forget the catch and leak a raw stack trace. A route needing
-// its own error mapping (a route-local SQLSTATE branch) keeps an inner
-// try/catch and rethrows what it does not handle.
+// Every route handler exports through this wrapper. A route needing its own
+// error mapping keeps an inner try/catch and rethrows what it does not
+// handle.
 export function withErrorResponse<Args extends unknown[]>(
   handler: (...args: Args) => Promise<NextResponse>,
 ): (...args: Args) => Promise<NextResponse> {
@@ -111,8 +99,8 @@ export function withErrorResponse<Args extends unknown[]>(
   };
 }
 
-// The one reader of a JSON request body. Throws the rejection as PublicError
-// so it surfaces through errorResponse as the same 400 badRequest builds.
+// Throws as PublicError so a bad body surfaces as a 400 through
+// errorResponse.
 export async function readJsonBody(req: NextRequest): Promise<unknown> {
   try {
     return await req.json();

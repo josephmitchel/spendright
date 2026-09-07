@@ -1,7 +1,5 @@
-// Async coordination primitives — dependency-free, so server modules and
-// client hooks share one implementation of each idiom instead of
-// hand-rolling it. (settleReads, which renders user-facing strings, lives
-// with its one caller in src/components/useLoadProtocol.ts.)
+// Async coordination primitives. Dependency-free — shared by server modules
+// and client hooks.
 
 // Chains `task` onto `key`'s tail: at most one task per key is in flight, and
 // tasks settle strictly in submission order. The map entry self-cleans once

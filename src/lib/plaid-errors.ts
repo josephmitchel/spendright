@@ -1,10 +1,6 @@
-// The structural allow-list for Plaid error bodies: the five documented
-// fields, picked one by one, never a whole `response.data` passed through.
-// This is the single definition of the field set and of the user-facing
-// message precedence; src/lib/errors.ts, src/lib/log.ts and the client's
-// item-error rendering all read through it. Dependency-free (no next/server,
-// no db) so scripts and client bundles can import it.
-// Design: error-message-allow-list, plaid-error-log-redaction.
+// Allow-listed Plaid error bodies: the five documented fields, picked one by
+// one, never a whole `response.data` passed through. Dependency-free —
+// client-bundleable. Design: error-message-allow-list, plaid-error-log-redaction.
 
 export interface PlaidErrorFields {
   error_type?: string;
@@ -14,19 +10,27 @@ export interface PlaidErrorFields {
   request_id?: string;
 }
 
-// The closed union stored on items.error: a picked Plaid error body, or the
-// { message } shape the sync bookkeeping writes. Typed on the jsonb column so
-// the writers (src/lib/sync.ts) and the client's item-error rendering cannot
-// drift apart silently. Design: typed-api-contract.
+// The union stored on items.error (typed on the jsonb column): a picked
+// Plaid error body, or the { message } shape the sync bookkeeping writes.
+// Design: typed-api-contract.
 export type ItemErrorBody = PlaidErrorFields | { message: string };
 
-// The input type is a cast over an unvalidated response body, so each value
-// is type-checked at runtime as well as picked: a non-string here would be
-// stored on items.error and rendered as a React child.
+// Runtime-checked, not just picked: the input is a cast over an unvalidated
+// response body, and a non-string would be stored and rendered.
 const asString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
-export function pickPlaidErrorFields(data: PlaidErrorFields): PlaidErrorFields {
+// Plaid's error body, or null if this is not a Plaid SDK failure. error_code
+// identifies the shape — `response.data` alone matches other libraries.
+// Design: error-message-allow-list.
+export function plaidErrorBody(err: unknown): PlaidErrorFields | null {
+  const data = (err as { response?: { data?: PlaidErrorFields } })?.response?.data;
+  if (typeof data?.error_code !== 'string' || !data.error_code) return null;
+  return pickPlaidErrorFields(data);
+}
+
+// Not exported: callers go through the recognizer above.
+function pickPlaidErrorFields(data: PlaidErrorFields): PlaidErrorFields {
   return {
     error_type: asString(data.error_type),
     error_code: asString(data.error_code),
@@ -37,8 +41,8 @@ export function pickPlaidErrorFields(data: PlaidErrorFields): PlaidErrorFields {
 }
 
 // Plaid's own wording when it offered any, else the caller's fallback.
-// Guarded per field: stored bodies predating the runtime checks above may
-// hold non-strings, and this renders straight into the page.
+// Guarded per field: stored bodies predating the runtime checks may hold
+// non-strings, and this renders straight into the page.
 export function plaidErrorMessage(
   body: { display_message?: string | null; error_message?: string },
   fallback: string,

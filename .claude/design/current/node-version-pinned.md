@@ -1,20 +1,10 @@
 ---
 name: node-version-pinned
-description: The Node major is pinned (engines "24.x" in package.json, .nvmrc) and @types/node tracks it, because the fail-closed startup infrastructure rests on version-verified Node internals; re-verify and re-date the bind-assertion comments on every major bump
-tags:
-  [
-    package.json engines,
-    .nvmrc,
-    '@types/node',
-    node 24,
-    src/lib/bind-assertion.ts,
-    scripts/start.mjs,
-    diagnostic report,
-    process.report,
-  ]
+description: The Node major is pinned (engines "24.x" in package.json, .nvmrc) and @types/node tracks it, so the checked type surface matches the executing runtime and a major bump is a deliberate act
+tags: [package.json engines, .nvmrc, '@types/node', node 24, scripts/start.mjs]
 date: 2026-09-06
 ---
 
-Confirmed by the user 2026-09-06 (raised by a quality audit): the startup path — `scripts/start.mjs` and `src/lib/bind-assertion.ts` — is deliberately fail-closed infrastructure built on internals that are only verified per version: the undocumented libuv handle shape in Node's diagnostic report, a deep `require.resolve` into Next's CLI, and the observation that Next listens in the process `register()` runs in. The audit found the drift already present: comments said "verified on Node 20", `@types/node` was pinned `^20`, and the machine ran Node v24.14.1 — TypeScript checking one API surface while another executed, with nothing to flag the gap before a routine `nvm install` armed the tripwire.
+Confirmed by the user 2026-09-06 (raised by a quality audit): `package.json` pins `engines.node` to `24.x`, `.nvmrc` says `24`, and `@types/node` is `^24` — the audit had found comments verified on Node 20, types pinned `^20`, and the machine running v24, i.e. TypeScript checking one API surface while another executed. The pin is a tripwire, not a guarantee (npm only warns on an engines mismatch without engine-strict); a Node major bump updates engines, .nvmrc, and `@types/node` together.
 
-Mitigation: `package.json` pins `engines.node` to `24.x` and `.nvmrc` says `24`, `@types/node` is `^24` to match the runtime, and the bind-assertion assumptions were re-verified against Node 24.14.1 (report shape probed empirically; a full production start logged "bind assertion passed") and re-dated in the comments. The pin is a tripwire, not a guarantee (npm only warns on an engines mismatch without engine-strict); the contract is that a Node major bump is a deliberate act that re-verifies and re-dates the comments in `src/lib/bind-assertion.ts` — and updates this record, engines, .nvmrc, and `@types/node` together. Protects the guarantees of [[non-local-request-guard]] and [[scheduled-sync]], whose startup enforcement is exactly what a silent shape change would either break loudly (a refused start) or, worse, quietly.
+Updated 2026-09-06: the runtime bind assertion — originally this record's main beneficiary, with its libuv diagnostic-report parsing — is retired ([[runtime-bind-assertion]]). The pin remains as general hygiene for the startup path that still exists (`scripts/start.mjs` resolves Next's CLI entry via `require.resolve`), without any per-minor-version verification burden.

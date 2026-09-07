@@ -1,3 +1,7 @@
+// Build-time poison against client bundling.
+// Design: client-server-boundary-enforced.
+import 'server-only';
+
 import crypto from 'crypto';
 import { logError } from '@/lib/log';
 import { PublicError } from '@/lib/public-error';

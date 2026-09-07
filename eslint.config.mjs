@@ -13,22 +13,45 @@ const eslintConfig = defineConfig([
     'build/**',
     'next-env.d.ts',
   ]),
+  // Type-aware linting for the promise rules below; scoped to TS files so
+  // the config and scripts (.mjs) don't need a project entry.
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      // Promise discipline, checked instead of habitual.
+      // Design: promise-discipline-linted.
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+    },
+  },
   {
     rules: {
-      // An import used only in type position must say `import type`, so a
-      // client component that type-imports from the server graph (CategorizedTransaction,
-      // LinkResult, ...) can never silently become a value import that drags
-      // the db pool and Plaid SDK into the browser bundle. This is the
-      // enforcement for what used to be comment-only discipline.
+      // Load-bearing: useLoadProtocol keys its load effect on `perform`'s
+      // identity, and the preset's default warn exits 0.
+      'react-hooks/exhaustive-deps': 'error',
+      // An import used only in type position must say `import type`.
+      // Design: client-server-boundary-enforced.
       '@typescript-eslint/consistent-type-imports': [
         'error',
         { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
       ],
-      // The `_` prefix marks a deliberately discarded binding (e.g. omitting
-      // a column via rest-destructuring); without this the convention only
-      // produces permanent warnings, which trains everyone to ignore lint.
+      // A type import beside a value import of one module must merge.
+      'import/no-duplicates': 'error',
+      // Third-party block first, then internal, alphabetized.
+      'import/order': [
+        'error',
+        {
+          groups: [['builtin', 'external'], 'internal', ['parent', 'sibling', 'index']],
+          alphabetize: { order: 'asc', caseInsensitive: true },
+        },
+      ],
+      // An error, not a warning (lint exits 0 on warnings). The `_` prefix
+      // marks a deliberately discarded binding.
       '@typescript-eslint/no-unused-vars': [
-        'warn',
+        'error',
         {
           args: 'after-used',
           argsIgnorePattern: '^_',
