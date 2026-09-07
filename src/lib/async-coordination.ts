@@ -1,11 +1,9 @@
 // Async coordination primitives. Dependency-free — shared by server modules
 // and client hooks.
 
-// Chains `task` onto `key`'s tail: at most one task per key is in flight, and
-// tasks settle strictly in submission order. The map entry self-cleans once
-// the finished tail is still the newest (identity-checked, so a chain that
-// grew in the meantime keeps its tail). The returned promise is the task's
-// own — a rejection reaches the caller, never the chain.
+// Chains `task` onto `key`'s tail: at most one task per key in flight,
+// settling in submission order; the returned promise is the task's own, so a
+// rejection reaches the caller, never the chain.
 export function serializeByKey<T>(
   tails: Map<string, Promise<void>>,
   key: string,

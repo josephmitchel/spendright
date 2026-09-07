@@ -34,8 +34,7 @@ export function skippedSyncNotice(skipped: number, dropped: boolean): string {
         'retried on the next sync (see the server log)';
 }
 
-// The server log line for a sync that skipped rows. On a drop this line is
-// the only lasting record of what was lost.
+// The server log line for a sync that skipped rows.
 export function skippedSyncLogLine(
   itemId: string,
   skipped: number,

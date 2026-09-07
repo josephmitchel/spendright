@@ -1,17 +1,9 @@
 // @ts-check
-// The reverse of check-design-refs.mjs: verifies every code-shaped tag in a
-// .claude/design/current record still names something in the tree, so a
-// record describing deleted machinery fails the run instead of silently
-// misleading the next reader. A tag containing whitespace is a concept, not
-// a code claim, and is never checked — rewording a tag with a space is the
-// opt-out for names that live outside the repo. Resolution is deliberately
-// strict about the two ways a stale tag used to slip through: identifiers
-// match on word boundaries against live sources only (never migration
-// history, which names every column the schema ever had), and a table.column
-// tag must name a live column of that live table in src/db/schema.ts. A bare
-// lowercase word of five characters or fewer matches incidental text
-// anywhere, so it resolves only as an exact table, npm script, or file name.
-// Runs as part of `npm run lint`. Design: record-tags-checked.
+// The reverse of check-design-refs.mjs: every code-shaped tag in a
+// .claude/design/current record must still name something in the tree. A tag
+// containing whitespace is a concept, never checked — rewording with a space
+// is the opt-out for names outside the repo. Runs as part of `npm run lint`.
+// Design: record-tags-checked.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { root, sourceFiles } from './lib/source-files.mjs';
@@ -27,11 +19,27 @@ function* checkedFiles() {
   for (const extra of ['package.json', 'tsconfig.json']) yield join(root, extra);
 }
 
+// Full-line comments leave the corpus: a deleted identifier living on in
+// prose must not satisfy a tag. Design:/Verified-on: marker lines stay —
+// they are the machine-checked comment layer records cite.
+/** @param {string} file @param {string} text */
+function checkableText(file, text) {
+  if (!/\.(ts|tsx|mjs)$/.test(file)) return text;
+  return text
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trimStart();
+      if (/^\/\/\s*(Design|Verified-on):/.test(trimmed)) return true;
+      return !/^(\/\/|\/?\*)/.test(trimmed);
+    })
+    .join('\n');
+}
+
 let corpus = '';
 const basenames = new Set();
 const fileStems = new Set();
 for (const file of checkedFiles()) {
-  corpus += readFileSync(file, 'utf8') + '\n';
+  corpus += checkableText(file, readFileSync(file, 'utf8')) + '\n';
   const name = basename(file);
   basenames.add(name);
   fileStems.add(name.replace(/\.[a-z]+$/, ''));
@@ -44,14 +52,19 @@ const npmScripts = new Set(
 // Live tables and their live column names, from src/db/schema.ts (never from
 // migration history). Column names are the string arguments to the column
 // builders schema.ts imports from drizzle-orm/pg-core; pgTable/index/unique/
-// check are the non-column imports.
+// check are the non-column imports. This parse is textual, so any anomaly —
+// no builder import, no tables, a table without columns, a pgTable call the
+// split missed — throws rather than degrading table.column tags to the
+// weaker corpus check.
 function schemaTables() {
   const schema = readFileSync(join(root, 'src/db/schema.ts'), 'utf8');
-  const importMatch = /import\s*\{([^}]*)\}\s*from 'drizzle-orm\/pg-core'/.exec(schema);
-  const builders = (importMatch?.[1] ?? '')
+  const importedBuilders = /import\s*\{([^}]*)\}\s*from 'drizzle-orm\/pg-core'/.exec(schema)?.[1];
+  if (!importedBuilders) throw new Error('schema.ts: no drizzle-orm/pg-core import found');
+  const builders = importedBuilders
     .split(',')
     .map((name) => name.trim())
     .filter((name) => name && !['pgTable', 'index', 'unique', 'check'].includes(name));
+  if (builders.length === 0) throw new Error('schema.ts: no column builders imported');
   const columnCall = new RegExp(`\\b(?:${builders.join('|')})\\('([a-z0-9_]+)'`, 'g');
 
   /** @type {Map<string, Set<string>>} */
@@ -61,7 +74,15 @@ function schemaTables() {
   for (let i = 1; i < blocks.length; i += 2) {
     const columns = new Set();
     for (const match of (blocks[i + 1] ?? '').matchAll(columnCall)) columns.add(match[1]);
-    tables.set(blocks[i] ?? '', columns);
+    const table = blocks[i] ?? '';
+    if (columns.size === 0) throw new Error(`schema.ts: no columns parsed for table "${table}"`);
+    tables.set(table, columns);
+  }
+  const pgTableCalls = schema.match(/\bpgTable\(/g)?.length ?? 0;
+  if (tables.size === 0 || tables.size !== pgTableCalls) {
+    throw new Error(
+      `schema.ts: parsed ${tables.size} tables but found ${pgTableCalls} pgTable calls`,
+    );
   }
   return tables;
 }

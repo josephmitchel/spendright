@@ -12,6 +12,8 @@ tags:
     items.cursor,
     items.error,
     src/lib/sync.ts,
+    src/lib/sync-persist.ts,
+    src/lib/sync-outcome.ts,
     src/lib/sync-messages.ts,
   ]
 date: 2026-09-04

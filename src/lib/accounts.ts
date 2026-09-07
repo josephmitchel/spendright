@@ -6,10 +6,27 @@ import { matchCard } from '@/lib/cards';
 import { db, type DbTransaction } from '@/lib/db';
 import { logError } from '@/lib/log';
 
-// Nothing excluded today; the pick exists so a new column reaches the wire
-// only by an explicit decision here, like the other served row types.
-// Design: typed-api-contract.
-export const servedAccountColumns = getTableColumns(accounts);
+const accountColumns = getTableColumns(accounts);
+
+// Served column by column: a new accounts column stays off the wire until
+// added here. Design: typed-api-contract.
+export const servedAccountColumns = {
+  id: accountColumns.id,
+  accountId: accountColumns.accountId,
+  itemId: accountColumns.itemId,
+  name: accountColumns.name,
+  officialName: accountColumns.officialName,
+  mask: accountColumns.mask,
+  type: accountColumns.type,
+  subtype: accountColumns.subtype,
+  balanceAvailable: accountColumns.balanceAvailable,
+  balanceCurrent: accountColumns.balanceCurrent,
+  balanceLimit: accountColumns.balanceLimit,
+  isoCurrencyCode: accountColumns.isoCurrencyCode,
+  cardId: accountColumns.cardId,
+  createdAt: accountColumns.createdAt,
+  updatedAt: accountColumns.updatedAt,
+} satisfies Partial<typeof accountColumns>;
 
 export type ServedAccountRow = Pick<
   AccountRow,

@@ -29,7 +29,6 @@ export function plaidErrorBody(err: unknown): PlaidErrorFields | null {
   return pickPlaidErrorFields(data);
 }
 
-// Not exported: callers go through the recognizer above.
 function pickPlaidErrorFields(data: PlaidErrorFields): PlaidErrorFields {
   return {
     error_type: asString(data.error_type),

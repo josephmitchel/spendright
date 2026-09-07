@@ -7,7 +7,8 @@ import { db } from '@/lib/db';
 import { publicErrorMessage } from '@/lib/errors';
 import { logError } from '@/lib/log';
 import { exchangePublicToken, getAccounts, getInstitutionById, getItem } from '@/lib/plaid';
-import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
+import { syncItem, type SyncItemResult } from '@/lib/sync';
+import { recordSyncFailure } from '@/lib/sync-outcome';
 
 type PlaidItem = Awaited<ReturnType<typeof getItem>>;
 type Institution = Awaited<ReturnType<typeof getInstitutionById>>;

@@ -1,7 +1,7 @@
 ---
 name: pending-to-posted-carry
 description: Selections are carried from a pending transaction to its posted replacement, best-effort and only within one sync
-tags: [syncItem, pending_transaction_id, carried, src/lib/sync.ts]
+tags: [syncItem, pending_transaction_id, carried, src/lib/sync-carry.ts, src/lib/sync-persist.ts]
 date: 2026-09-04
 ---
 

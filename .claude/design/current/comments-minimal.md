@@ -1,7 +1,7 @@
 ---
 name: comments-minimal
 description: Code comments are minimal — Design/Verified-on markers, one-line orientation, and short local constraints only; no rationale essays or authoritative cross-module claims. Purpose is derived from the code first, the design records second
-tags: [Design markers, Verified-on, scripts/check-design-refs.mjs, comments]
+tags: [Design markers, Verified-on, scripts/check-design-refs.mjs, code comments]
 date: 2026-09-06
 ---
 

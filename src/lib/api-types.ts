@@ -1,9 +1,5 @@
-// The API contract. Handlers annotate NextResponse.json<SomePayload>(...);
-// clients read getJson/sendJson<SomeResponse>(...) — the payload after JSON
-// serialization. (A payload with no Date columns serializes to itself, so it
-// is declared once, named *Response, and used on both sides.) Asserted at
-// the boundary, not runtime-validated: the server is this same app.
-// Type-only imports — nothing here reaches a bundle.
+// The API contract: *Payload is what a handler serves, *Response what a
+// client reads after JSON serialization. Type-only imports.
 // Design: typed-api-contract, single-response-reader.
 import type { CreditCategoryRow } from '@/db/schema';
 import type { ServedAccountRow } from '@/lib/accounts';
@@ -24,8 +20,8 @@ type Serialized<T> = T extends Date
       ? { [K in keyof T]: Serialized<T[K]> }
       : T;
 
-// Derived from the runtime pick in src/lib/accounts.ts like the other served
-// rows (nothing excluded today). Design: typed-api-contract.
+// Derived from the explicit column pick in src/lib/accounts.ts.
+// Design: typed-api-contract.
 export type ApiAccount = Serialized<ServedAccountRow>;
 // The encrypted access token is never served (the pick lives in
 // src/lib/items.ts). Design: access-tokens-encrypted.

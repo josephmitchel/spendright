@@ -10,10 +10,10 @@ tags:
     package.json dev script,
     package.json start script,
     next.config.ts headers,
-    Host,
+    Host header,
     x-forwarded-host,
     x-forwarded-for,
-    Origin,
+    Origin header,
     frame-ancestors,
     DNS rebinding,
   ]

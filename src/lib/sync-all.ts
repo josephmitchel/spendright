@@ -3,7 +3,8 @@ import { singleFlight } from '@/lib/async-coordination';
 import { db } from '@/lib/db';
 import { globalSingleton } from '@/lib/global-singleton';
 import { logError } from '@/lib/log';
-import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
+import { syncItem, type SyncItemResult } from '@/lib/sync';
+import { recordSyncFailure } from '@/lib/sync-outcome';
 
 // Sync every item, single-flight: a caller arriving mid-run joins that run.
 // The slot is a process-wide singleton because each bundled module graph

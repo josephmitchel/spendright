@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { use, useCallback, useEffect } from 'react';
+import { use, useCallback, useEffect, useState } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { combineLoadStates } from '@/hooks/useLoadProtocol';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
 import type { ApiAccount } from '@/lib/api-types';
 import { PAGE_SIZE } from '@/lib/pagination';
+import { CategoryWriteState } from './category-write-state';
 import { TransactionTable } from './TransactionTable';
 import { useAccountData } from './useAccountData';
 import { useCategoryPatches } from './useCategoryPatches';
@@ -100,7 +101,10 @@ function Pager({
 
 function AccountView({ accountId }: { accountId: string }) {
   const accountData = useAccountData(accountId);
-  const transactionPage = useTransactionPage(accountId);
+  // One machine owns the per-row category-write state (bursts and load
+  // holds); both hooks act through it. Design: optimistic-category-writes.
+  const [categoryWrites] = useState(() => new CategoryWriteState());
+  const transactionPage = useTransactionPage(accountId, categoryWrites);
   const { account, card, creditCategories, refresh: refreshAccount } = accountData;
   const {
     transactionList,
@@ -114,7 +118,7 @@ function AccountView({ accountId }: { accountId: string }) {
     card,
     creditCategories,
     transactionPage.applyCategoryPatch,
-    transactionPage.setCategoryHold,
+    categoryWrites,
   );
 
   // Turning the pager clears patch failures, so a long-gone edit's failure

@@ -1,14 +1,9 @@
-// Log-safe view of a caught error. The Plaid SDK throws axios errors, and
-// axios hangs the full request config off the error — the PLAID-SECRET
-// header and, for token-bearing calls, the decrypted access_token in the
-// request body — so printing a raw Plaid error leaks both into the log.
-// Verified-on: axios@1.20.0.
-// Dependency-free (no next/server import) so scripts can use it too.
+// Log helpers that redact caught errors. Axios hangs the full request config
+// off the error — secret headers and request bodies included — so a raw
+// Plaid error must never be printed (Verified-on: axios@1.20.0).
 // Design: plaid-error-log-redaction.
 import { plaidErrorBody } from '@/lib/plaid-errors';
 
-// Redaction is unconditional: every site that passes an error pays the
-// (free) loggableError pass. Design: plaid-error-log-redaction.
 export function logError(message: string, err?: unknown): void {
   if (err === undefined) console.error(message);
   else console.error(message, loggableError(err));
@@ -23,18 +18,14 @@ export function logInfo(message: string): void {
   console.log(message);
 }
 
-// Fatal log + exit for the fail-closed startup paths. console.error to a
-// pipe or file is asynchronous and process.exit() drops pending writes, so
-// exiting in the same tick can lose the one message that explains the death;
-// the exit is deferred until stderr's queue drains (the trailing empty write
-// settles after everything queued before it).
+// Fatal log + exit for the fail-closed startup paths. process.exit() drops
+// stderr writes still queued, so the exit waits for the queue to drain.
 export function logFatalAndExit(message: string, err?: unknown): void {
   logError(message, err);
   process.exitCode = 1;
   process.stderr.write('', () => process.exit(1));
 }
 
-// Not exported: callers go through the log functions above.
 function loggableError(err: unknown): unknown {
   const axiosErr = err as {
     isAxiosError?: boolean;

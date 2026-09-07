@@ -1,7 +1,8 @@
 ---
 name: plaid-category-reserved
 description: Plaid's personal_finance_category is stored and served but deliberately not rendered; reserved for future auto-categorization
-tags: [transactions.category, personal_finance_category, src/lib/sync.ts, GET /api/transactions]
+tags:
+  [transactions.category, personal_finance_category, src/lib/sync-persist.ts, GET /api/transactions]
 date: 2026-09-04
 ---
 

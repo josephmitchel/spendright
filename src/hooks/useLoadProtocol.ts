@@ -43,10 +43,9 @@ export type LoadReads<K extends string> = <T extends Record<K, unknown>>(
   apply: (bodies: { [P in keyof T]: Awaited<T[P]> | null }) => void,
 ) => Promise<void>;
 
-// The load lifecycle every data hook shares. `perform` must be memoized
-// (useCallback keyed on its read inputs — account id, page): the load effect
-// re-runs on its identity. `initialLoaded` and `stickyKeys` are read once on
-// the first render.
+// The load lifecycle every data hook shares. Caller contract: `perform` is
+// memoized (the load effect re-runs on its identity); `initialLoaded` and
+// `stickyKeys` are read once.
 // Design: partial-load-rendering, superseded-loads-write-nothing,
 // home-reflects-background-sync.
 export function useLoadProtocol<K extends string>(
