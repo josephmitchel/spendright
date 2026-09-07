@@ -1,10 +1,10 @@
 import { getTableColumns, sql } from 'drizzle-orm';
-import type { AccountBase } from 'plaid';
 import { accounts, type AccountRow, type CardRow } from '@/db/schema';
 import { loadCardCatalog } from '@/lib/card-catalog';
 import { matchCard } from '@/lib/cards';
 import { db, type DbTransaction } from '@/lib/db';
 import { logError } from '@/lib/log';
+import type { ProviderAccount } from '@/lib/provider-types';
 
 const accountColumns = getTableColumns(accounts);
 
@@ -32,35 +32,35 @@ export type ServedAccountRow = Pick<
   keyof typeof servedAccountColumns & keyof AccountRow
 >;
 
-function toAccountRow(plaidAccount: AccountBase, itemId: string, cardId: number | null) {
+function toAccountRow(plaidAccount: ProviderAccount, itemId: string, cardId: number | null) {
   return {
-    accountId: plaidAccount.account_id,
+    accountId: plaidAccount.accountId,
     itemId,
-    name: plaidAccount.name ?? null,
-    officialName: plaidAccount.official_name ?? null,
-    mask: plaidAccount.mask ?? null,
-    type: plaidAccount.type ?? null,
-    subtype: plaidAccount.subtype ?? null,
+    name: plaidAccount.name,
+    officialName: plaidAccount.officialName,
+    mask: plaidAccount.mask,
+    type: plaidAccount.type,
+    subtype: plaidAccount.subtype,
     balanceAvailable:
-      plaidAccount.balances.available != null ? String(plaidAccount.balances.available) : null,
+      plaidAccount.balanceAvailable != null ? String(plaidAccount.balanceAvailable) : null,
     balanceCurrent:
-      plaidAccount.balances.current != null ? String(plaidAccount.balances.current) : null,
-    balanceLimit: plaidAccount.balances.limit != null ? String(plaidAccount.balances.limit) : null,
-    isoCurrencyCode: plaidAccount.balances.iso_currency_code ?? null,
+      plaidAccount.balanceCurrent != null ? String(plaidAccount.balanceCurrent) : null,
+    balanceLimit: plaidAccount.balanceLimit != null ? String(plaidAccount.balanceLimit) : null,
+    isoCurrencyCode: plaidAccount.isoCurrencyCode,
     cardId,
   };
 }
 
-export type StoreFailure = { account: AccountBase; error: unknown };
+export type StoreFailure = { account: ProviderAccount; error: unknown };
 
 async function upsertAccount(
   tx: DbTransaction,
-  plaidAccount: AccountBase,
+  plaidAccount: ProviderAccount,
   itemId: string,
   cardList: CardRow[],
 ): Promise<void> {
   // Design: rematch-on-every-sync, selections-are-user-owned.
-  const cardId = matchCard(cardList, plaidAccount.name ?? null)?.id ?? null;
+  const cardId = matchCard(cardList, plaidAccount.name)?.id ?? null;
   const accountValues = toAccountRow(plaidAccount, itemId, cardId);
 
   await tx
@@ -75,7 +75,7 @@ async function upsertAccount(
 // Each account commits in its own transaction, so one failing account costs
 // only its own rows. Design: accounts-refreshed-per-sync, initial-sync-reported-not-thrown.
 async function storeAccounts(
-  plaidAccounts: AccountBase[],
+  plaidAccounts: ProviderAccount[],
   itemId: string,
   cardList: CardRow[],
 ): Promise<StoreFailure[]> {
@@ -87,7 +87,7 @@ async function storeAccounts(
       });
     } catch (err) {
       logError(
-        `Failed to store account ${plaidAccount.account_id} for item ${itemId} — continuing:`,
+        `Failed to store account ${plaidAccount.accountId} for item ${itemId} — continuing:`,
         err,
       );
       failures.push({ account: plaidAccount, error: err });
@@ -98,7 +98,7 @@ async function storeAccounts(
 
 export async function refreshItemAccounts(
   itemId: string,
-  plaidAccounts: AccountBase[],
+  plaidAccounts: ProviderAccount[],
 ): Promise<StoreFailure[]> {
   const cardList = await loadCardCatalog(db);
   return storeAccounts(plaidAccounts, itemId, cardList);

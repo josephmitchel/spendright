@@ -13,8 +13,8 @@ import {
   timestamp,
   unique,
 } from 'drizzle-orm/pg-core';
-import type { Transaction as PlaidTransactionPayload } from 'plaid';
 import type { ItemErrorBody } from '@/lib/plaid-errors';
+import type { RawProviderPayload } from '@/lib/provider-types';
 
 // Design: categories-retired-not-deleted, card-type-decides-rate-unit.
 export const cards = pgTable('cards', {
@@ -122,7 +122,7 @@ export const transactions = pgTable(
       onDelete: 'set null',
     }),
     // Design: raw-plaid-payload-stored-not-served.
-    plaidTransaction: jsonb('plaid_transaction').$type<PlaidTransactionPayload>().notNull(),
+    plaidTransaction: jsonb('plaid_transaction').$type<RawProviderPayload>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

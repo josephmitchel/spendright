@@ -9,10 +9,16 @@ import {
   PlaidApi,
   PlaidEnvironments,
   Products,
-  type RemovedTransaction,
   type Transaction as PlaidTransaction,
 } from 'plaid';
 import { globalSingleton } from '@/lib/global-singleton';
+import type {
+  ProviderAccount,
+  ProviderItem,
+  ProviderRemovedTransaction,
+  ProviderSyncBatch,
+  ProviderTransaction,
+} from '@/lib/provider-types';
 import { PublicError } from '@/lib/public-error';
 
 // An unknown PLAID_ENV indexes to undefined and the SDK silently defaults to
@@ -129,9 +135,49 @@ export async function exchangePublicToken(
   };
 }
 
-export async function getItem(accessToken: string): Promise<ItemWithConsentFields> {
+// Design: plaid-types-adapted-at-ingest.
+function toProviderItem(item: ItemWithConsentFields): ProviderItem {
+  return {
+    institutionId: item.institution_id ?? null,
+    institutionName: item.institution_name ?? null,
+  };
+}
+
+function toProviderAccount(account: AccountBase): ProviderAccount {
+  return {
+    accountId: account.account_id,
+    name: account.name,
+    officialName: account.official_name,
+    mask: account.mask,
+    type: account.type,
+    subtype: account.subtype,
+    balanceAvailable: account.balances.available,
+    balanceCurrent: account.balances.current,
+    balanceLimit: account.balances.limit,
+    isoCurrencyCode: account.balances.iso_currency_code,
+  };
+}
+
+function toProviderTransaction(txn: PlaidTransaction): ProviderTransaction {
+  return {
+    transactionId: txn.transaction_id,
+    accountId: txn.account_id,
+    date: txn.date,
+    name: txn.name,
+    merchantName: txn.merchant_name ?? null,
+    amount: txn.amount,
+    isoCurrencyCode: txn.iso_currency_code,
+    // Design: plaid-category-reserved.
+    category: txn.personal_finance_category?.primary ?? txn.category?.[0] ?? null,
+    pending: txn.pending,
+    pendingTransactionId: txn.pending_transaction_id,
+    raw: txn,
+  };
+}
+
+export async function getItem(accessToken: string): Promise<ProviderItem> {
   const response = await getClient().itemGet({ access_token: accessToken });
-  return response.data.item;
+  return toProviderItem(response.data.item);
 }
 
 export async function getInstitutionById(
@@ -150,21 +196,14 @@ export async function getInstitutionById(
   };
 }
 
-export async function getAccounts(accessToken: string): Promise<AccountBase[]> {
+export async function getAccounts(accessToken: string): Promise<ProviderAccount[]> {
   const response = await getClient().accountsGet({ access_token: accessToken });
-  return response.data.accounts;
+  return response.data.accounts.map(toProviderAccount);
 }
 
 export async function removeItem(accessToken: string): Promise<string> {
   const response = await getClient().itemRemove({ access_token: accessToken });
   return response.data.request_id;
-}
-
-export interface PlaidSyncBatch {
-  added: PlaidTransaction[];
-  modified: PlaidTransaction[];
-  removed: RemovedTransaction[];
-  cursor: string | null;
 }
 
 // Cumulative across a whole drain, not per stall. Design: not-ready-poll-budgets.
@@ -185,12 +224,12 @@ export async function syncTransactions(
   accessToken: string,
   initialCursor?: string | null,
   options?: SyncOptions,
-): Promise<PlaidSyncBatch> {
+): Promise<ProviderSyncBatch> {
   const client = getClient();
   let cursor: string | null = initialCursor ?? null;
-  let added: PlaidTransaction[] = [];
-  let modified: PlaidTransaction[] = [];
-  let removed: RemovedTransaction[] = [];
+  let added: ProviderTransaction[] = [];
+  let modified: ProviderTransaction[] = [];
+  let removed: ProviderRemovedTransaction[] = [];
   let hasMore = true;
   let notReadyRetries = 0;
   const notReadyBudget = options?.notReadyRetries ?? DEFAULT_NOT_READY_RETRIES;
@@ -225,9 +264,9 @@ export async function syncTransactions(
     }
 
     cursor = data.next_cursor;
-    added = added.concat(data.added);
-    modified = modified.concat(data.modified);
-    removed = removed.concat(data.removed);
+    added = added.concat(data.added.map(toProviderTransaction));
+    modified = modified.concat(data.modified.map(toProviderTransaction));
+    removed = removed.concat(data.removed.map((r) => ({ transactionId: r.transaction_id })));
     hasMore = data.has_more;
   }
 

@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import * as schema from '@/db/schema';
 import { requireDatabaseUrl } from '@/lib/env';
 import { globalSingleton } from '@/lib/global-singleton';
+import { logError } from '@/lib/log';
 import { PublicError } from '@/lib/public-error';
 
 // Design: config-validated-not-assumed.
@@ -16,7 +17,13 @@ function getConnectionString(): string {
   }
 }
 
-const pool = globalSingleton('pool', () => new Pool({ connectionString: getConnectionString() }));
+// Inside the factory so bundler module-copies can't stack duplicate listeners.
+// Design: db-pool-errors-logged.
+const pool = globalSingleton('pool', () => {
+  const created = new Pool({ connectionString: getConnectionString() });
+  created.on('error', (err) => logError('postgres pool: idle client error', err));
+  return created;
+});
 
 export const db: NodePgDatabase<typeof schema> = globalSingleton('db', () =>
   drizzle(pool, { schema }),

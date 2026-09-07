@@ -1,5 +1,4 @@
 import { inArray } from 'drizzle-orm';
-import { type AccountBase } from 'plaid';
 import { transactions, type ItemRow } from '@/db/schema';
 import { refreshItemAccounts } from '@/lib/accounts';
 import { serializeByKey } from '@/lib/async-coordination';
@@ -8,6 +7,7 @@ import { db } from '@/lib/db';
 import { globalSingleton } from '@/lib/global-singleton';
 import { logError, logWarn } from '@/lib/log';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
+import type { ProviderAccount } from '@/lib/provider-types';
 import { resolveCarriedSelections } from '@/lib/sync-carry';
 import { skippedSyncLogLine } from '@/lib/sync-messages';
 import { recordSyncOutcome } from '@/lib/sync-outcome';
@@ -44,7 +44,7 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
   // Plaid calls stay outside the DB transaction. Design: accounts-refreshed-per-sync.
   let accountRefreshFailed = false;
   if (!options?.accountsAlreadyStored) {
-    let plaidAccounts: AccountBase[] = [];
+    let plaidAccounts: ProviderAccount[] = [];
     try {
       plaidAccounts = await getAccounts(accessToken);
     } catch (err) {
@@ -79,9 +79,7 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
       carried,
     );
 
-    const removedIds = removed
-      .map((r) => r.transaction_id)
-      .filter((id): id is string => Boolean(id));
+    const removedIds = removed.map((r) => r.transactionId).filter((id) => Boolean(id));
     if (removedIds.length > 0) {
       await tx.delete(transactions).where(inArray(transactions.transactionId, removedIds));
     }

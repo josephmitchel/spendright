@@ -1,10 +1,10 @@
 // Design: pending-to-posted-carry.
 import { inArray } from 'drizzle-orm';
-import type { Transaction as PlaidTransaction } from 'plaid';
 import { transactions } from '@/db/schema';
 import { categoryKindSources, type CategoryKindSource } from '@/lib/category-kind-sources';
 import { assertNeverKind, type CategoryKind } from '@/lib/category-kinds';
 import type { DbTransaction } from '@/lib/db';
+import type { ProviderTransaction } from '@/lib/provider-types';
 
 export interface CarriedSelection {
   cardCategoryId: number | null;
@@ -28,11 +28,11 @@ async function liveCategoryIds(
 // in pending_transaction_id. Design: pending-to-posted-carry.
 export async function resolveCarriedSelections(
   tx: DbTransaction,
-  added: PlaidTransaction[],
+  added: ProviderTransaction[],
 ): Promise<Map<string, CarriedSelection>> {
   const carried = new Map<string, CarriedSelection>();
   const pendingIds = added
-    .map((txn) => txn.pending_transaction_id)
+    .map((txn) => txn.pendingTransactionId)
     .filter((id): id is string => Boolean(id));
   if (pendingIds.length === 0) return carried;
 

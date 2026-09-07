@@ -11,7 +11,7 @@ import { loadCardCatalog } from '../src/lib/card-catalog';
 import { matchCard, normalizeAccountName } from '../src/lib/cards';
 import type { DrizzleTransaction } from '../src/lib/db';
 import { requireDatabaseUrl } from '../src/lib/env';
-import { logFatalAndExit, logInfo } from '../src/lib/log';
+import { logError, logFatalAndExit, logInfo } from '../src/lib/log';
 
 // Design: seed-validation.
 function assertUniqueKeys(
@@ -206,6 +206,7 @@ async function main() {
 
   // Own pool, not src/lib/db's singleton — the script must end() it so the process can exit.
   const pool = new Pool({ connectionString: requireDatabaseUrl() });
+  pool.on('error', (err) => logError('postgres pool: idle client error', err));
   const rootDb = drizzle(pool);
 
   try {

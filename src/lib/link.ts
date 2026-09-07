@@ -7,10 +7,10 @@ import { db } from '@/lib/db';
 import { publicErrorMessage } from '@/lib/errors';
 import { logError } from '@/lib/log';
 import { exchangePublicToken, getAccounts, getInstitutionById, getItem } from '@/lib/plaid';
+import type { ProviderItem } from '@/lib/provider-types';
 import { syncItem, type SyncItemResult } from '@/lib/sync';
 import { recordSyncFailure } from '@/lib/sync-outcome';
 
-type PlaidItem = Awaited<ReturnType<typeof getItem>>;
 type Institution = Awaited<ReturnType<typeof getInstitutionById>>;
 
 // Design: not-ready-poll-budgets.
@@ -54,7 +54,7 @@ async function storeItemShell(itemId: string, accessToken: string): Promise<stri
 async function storeItem(
   itemId: string,
   encryptedAccessToken: string,
-  plaidItem: PlaidItem,
+  plaidItem: ProviderItem,
   institution: Institution | null,
 ): Promise<ItemRow> {
   // Design: relink-preserves-institution-metadata.
@@ -63,8 +63,8 @@ async function storeItem(
     accessToken: encryptedAccessToken,
   };
   const institutionValues = {
-    institutionId: plaidItem.institution_id ?? null,
-    institutionName: institution?.name ?? plaidItem.institution_name ?? null,
+    institutionId: plaidItem.institutionId,
+    institutionName: institution?.name ?? plaidItem.institutionName,
     institutionLogo: institution?.logo ?? null,
     institutionPrimaryColor: institution?.primaryColor ?? null,
   };
@@ -120,9 +120,9 @@ async function runInitialSync(
 function accountFailureMessages(failures: StoreFailure[]): string[] {
   return failures.map((failure) => {
     const name = accountDisplayName({
-      name: failure.account.name ?? null,
-      officialName: failure.account.official_name ?? null,
-      accountId: failure.account.account_id,
+      name: failure.account.name,
+      officialName: failure.account.officialName,
+      accountId: failure.account.accountId,
     });
     return `${name}: ${publicErrorMessage(failure.error, 'could not be stored')}`;
   });
@@ -136,7 +136,7 @@ export async function linkItem(publicToken: string): Promise<LinkResult> {
     getItem(accessToken),
     getAccounts(accessToken),
   ]);
-  const institution = await fetchInstitution(plaidItem.institution_id);
+  const institution = await fetchInstitution(plaidItem.institutionId);
   const storedItem = await storeItem(itemId, encryptedAccessToken, plaidItem, institution);
 
   const storeFailures = await refreshItemAccounts(itemId, plaidAccounts);
