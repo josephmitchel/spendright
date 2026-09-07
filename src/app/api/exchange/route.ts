@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import type { ExchangeResponse } from '@/lib/api-types';
-import { badRequest, readJsonBody, withErrorResponse } from '@/lib/errors';
+import { badRequest, withErrorResponse } from '@/lib/errors';
 import { linkItem } from '@/lib/link';
+import { readJsonBody } from '@/lib/request-body';
 
 // Unauthenticated and long-running (several Plaid calls plus the first sync
 // inline). Design: single-user-localhost-no-auth, inline-initial-sync.

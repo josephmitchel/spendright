@@ -20,8 +20,8 @@ function itemErrorMessage(error: NonNullable<ApiItem['error']>): string {
   return 'message' in error ? error.message || fallback : plaidErrorMessage(error, fallback);
 }
 
-// The page body renders exactly one of these; deriveView enumerates the
-// legal states once.
+// deriveView enumerates the page body's legal states once; 'unresolved'
+// renders nothing beyond the error line.
 type View = 'loading' | 'no-institutions' | 'list' | 'unresolved';
 
 function deriveView(inputs: { loading: boolean; itemsLoaded: boolean; itemCount: number }): View {

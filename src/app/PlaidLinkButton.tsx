@@ -59,7 +59,7 @@ export function PlaidLinkButton({
 
   const connect = useAsyncAction(async () => {
     // A fresh attempt clears the previous attempt's leftovers.
-    exchange.clear();
+    exchange.clearError();
     setSyncNotice(null);
     const data = await sendJson<LinkTokenResponse>(
       apiPaths.linkToken,

@@ -5,12 +5,8 @@ import { errorMessage } from '@/lib/http';
 
 // A mutation's in-flight guard, error state, and settle order.
 // Design: shared-mutation-protocol.
-//
-// `run` returns void so DOM handlers and function props can take it
-// directly. The in-flight guard is keyed: a singleton action (no `key`)
-// drops a run while one is pending; a per-row action passes `key` so only a
-// re-run of the same row is dropped. The guard reads a ref, not `pending`,
-// so two runs in one tick cannot both pass.
+// The guard reads a ref, not `pending`, so two runs in one tick cannot both
+// pass.
 export function useAsyncAction<Args extends unknown[]>(
   action: (...args: Args) => Promise<void>,
   failureMessage: string,
@@ -47,7 +43,7 @@ export function useAsyncAction<Args extends unknown[]>(
     [failureMessage],
   );
 
-  const clear = useCallback(() => setError(null), []);
+  const clearError = useCallback(() => setError(null), []);
 
-  return { run, pending: pendingCount > 0, error, clear };
+  return { run, pending: pendingCount > 0, error, clearError };
 }

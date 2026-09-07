@@ -4,8 +4,14 @@
 // record describing deleted machinery fails the run instead of silently
 // misleading the next reader. A tag containing whitespace is a concept, not
 // a code claim, and is never checked — rewording a tag with a space is the
-// opt-out for names that live outside the repo. Runs as part of `npm run lint`.
-// Design: record-tags-checked.
+// opt-out for names that live outside the repo. Resolution is deliberately
+// strict about the two ways a stale tag used to slip through: identifiers
+// match on word boundaries against live sources only (never migration
+// history, which names every column the schema ever had), and a table.column
+// tag must name a live column of that live table in src/db/schema.ts. A bare
+// lowercase word of five characters or fewer matches incidental text
+// anywhere, so it resolves only as an exact table, npm script, or file name.
+// Runs as part of `npm run lint`. Design: record-tags-checked.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { root, sourceFiles } from './lib/source-files.mjs';
@@ -13,26 +19,92 @@ import { root, sourceFiles } from './lib/source-files.mjs';
 const currentDir = join(root, '.claude/design/current');
 
 // Beyond the shared source walk, records legitimately cite npm scripts and
-// dependencies (package.json), compiler options (tsconfig.json), and columns
-// that only migration history still names (drizzle/*.sql).
+// dependencies (package.json) and compiler options (tsconfig.json).
+// drizzle/*.sql is deliberately absent: migrations are append-only, so their
+// text contains every identifier ever deleted and can never fail a tag.
 function* checkedFiles() {
   yield* sourceFiles();
   for (const extra of ['package.json', 'tsconfig.json']) yield join(root, extra);
-  const migrationsDir = join(root, 'drizzle');
-  try {
-    for (const entry of readdirSync(migrationsDir)) {
-      if (entry.endsWith('.sql')) yield join(migrationsDir, entry);
-    }
-  } catch {
-    // No migrations directory is not this checker's failure to report.
-  }
 }
 
 let corpus = '';
 const basenames = new Set();
+const fileStems = new Set();
 for (const file of checkedFiles()) {
   corpus += readFileSync(file, 'utf8') + '\n';
-  basenames.add(basename(file));
+  const name = basename(file);
+  basenames.add(name);
+  fileStems.add(name.replace(/\.[a-z]+$/, ''));
+}
+
+const npmScripts = new Set(
+  Object.keys(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts ?? {}),
+);
+
+// Live tables and their live column names, from src/db/schema.ts (never from
+// migration history). Column names are the string arguments to the column
+// builders schema.ts imports from drizzle-orm/pg-core; pgTable/index/unique/
+// check are the non-column imports.
+function schemaTables() {
+  const schema = readFileSync(join(root, 'src/db/schema.ts'), 'utf8');
+  const importMatch = /import\s*\{([^}]*)\}\s*from 'drizzle-orm\/pg-core'/.exec(schema);
+  const builders = (importMatch?.[1] ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name && !['pgTable', 'index', 'unique', 'check'].includes(name));
+  const columnCall = new RegExp(`\\b(?:${builders.join('|')})\\('([a-z0-9_]+)'`, 'g');
+
+  /** @type {Map<string, Set<string>>} */
+  const tables = new Map();
+  const blocks = schema.split(/\bpgTable\(\s*'([a-z0-9_]+)',/);
+  // blocks alternate: [preamble, name, body, name, body, ...]
+  for (let i = 1; i < blocks.length; i += 2) {
+    const columns = new Set();
+    for (const match of (blocks[i + 1] ?? '').matchAll(columnCall)) columns.add(match[1]);
+    tables.set(blocks[i] ?? '', columns);
+  }
+  return tables;
+}
+const tables = schemaTables();
+
+// A DB table.column tag (items.access_token): both halves must be live in
+// the schema — matching each half anywhere in the tree is how tags for
+// dropped columns used to pass forever.
+const TABLE_COLUMN = /^([a-z0-9_]+)\.([a-z0-9_]+)$/;
+
+// A word-boundary match (custom class, so `$type` and `x-forwarded-for` work
+// as tags): the tag must not sit inside a longer identifier.
+/** @param {string} tag */
+function corpusHasWord(tag) {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![A-Za-z0-9_$])${escaped}(?![A-Za-z0-9_$])`).test(corpus);
+}
+
+/** @param {string} tag @returns {{ ok: boolean, hint?: string }} */
+function resolve(tag) {
+  if (existsSync(join(root, tag))) return { ok: true };
+  if (basenames.has(tag)) return { ok: true };
+  const tableColumn = TABLE_COLUMN.exec(tag);
+  if (tableColumn) {
+    const [, table = '', column = ''] = tableColumn;
+    const columns = tables.get(table);
+    // A live table with a dead column fails outright; a non-table pair
+    // (db.select, console.error) is an ordinary identifier claim.
+    if (columns) {
+      return columns.has(column)
+        ? { ok: true }
+        : { ok: false, hint: `schema table "${table}" has no column "${column}"` };
+    }
+  }
+  if (/^[a-z]{1,5}$/.test(tag)) {
+    return tables.has(tag) || npmScripts.has(tag) || fileStems.has(tag)
+      ? { ok: true }
+      : {
+          ok: false,
+          hint: 'bare words this short are too generic to verify — use the precise identifier',
+        };
+  }
+  return corpusHasWord(tag) ? { ok: true } : { ok: false };
 }
 
 // The frontmatter tags array, tolerant of both the single-line and the
@@ -60,22 +132,6 @@ function tagsOf(text) {
     .filter(Boolean);
 }
 
-// A DB table.column tag (items.access_token): the snake_case halves appear
-// separately in schema.ts and migrations, never as the dotted pair.
-const TABLE_COLUMN = /^[a-z0-9_]+\.[a-z0-9_]+$/;
-
-/** @param {string} tag */
-function resolves(tag) {
-  if (corpus.includes(tag)) return true;
-  if (existsSync(join(root, tag))) return true;
-  if (basenames.has(tag)) return true;
-  if (TABLE_COLUMN.test(tag)) {
-    const [table = '', column = ''] = tag.split('.');
-    return corpus.includes(table) && corpus.includes(column);
-  }
-  return false;
-}
-
 /** @type {string[]} */
 const failures = [];
 let checked = 0;
@@ -83,7 +139,11 @@ for (const file of readdirSync(currentDir).filter((entry) => entry.endsWith('.md
   for (const tag of tagsOf(readFileSync(join(currentDir, file), 'utf8'))) {
     if (/\s/.test(tag)) continue;
     checked++;
-    if (!resolves(tag)) failures.push(`${file} — tag "${tag}" names nothing in the tree`);
+    const outcome = resolve(tag);
+    if (!outcome.ok) {
+      const hint = outcome.hint ? ` (${outcome.hint})` : '';
+      failures.push(`${file} — tag "${tag}" names nothing in the tree${hint}`);
+    }
   }
 }
 

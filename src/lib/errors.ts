@@ -1,5 +1,6 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import { logError } from '@/lib/log';
+import { pgErrorCode } from '@/lib/pg-errors';
 import { plaidErrorBody, plaidErrorMessage } from '@/lib/plaid-errors';
 import { PublicError } from '@/lib/public-error';
 
@@ -40,25 +41,6 @@ export function publicErrorMessage(err: unknown, fallback: string): string {
   return allowListedError(err)?.message ?? fallback;
 }
 
-// Postgres SQLSTATE for an error thrown under a drizzle query. drizzle wraps
-// the pg error in a DrizzleQueryError and hangs it off `cause`
-// (Verified-on: drizzle-orm@0.45.2), so the chain is walked. Node errno
-// codes like EPIPE are also five [0-9A-Z] chars but no SQLSTATE class starts
-// with E, so they are screened out.
-const SQLSTATE = /^[0-9A-Z]{5}$/;
-const NODE_ERRNO = /^E[A-Z]+$/;
-
-export function pgErrorCode(err: unknown): string | undefined {
-  let current: unknown = err;
-  for (let depth = 0; current != null && typeof current === 'object' && depth < 5; depth++) {
-    const code = (current as { code?: unknown }).code;
-    // Shape-checked so a wrapper's own `code` cannot answer for the pg error.
-    if (typeof code === 'string' && SQLSTATE.test(code) && !NODE_ERRNO.test(code)) return code;
-    current = (current as { cause?: unknown }).cause;
-  }
-  return undefined;
-}
-
 function errorResponse(err: unknown): NextResponse {
   const known = allowListedError(err);
   if (known?.expected) return jsonError(known.code, known.message, known.status);
@@ -84,9 +66,7 @@ function errorResponse(err: unknown): NextResponse {
   return jsonError('INTERNAL', 'Internal server error', 500);
 }
 
-// Every route handler exports through this wrapper. A route needing its own
-// error mapping keeps an inner try/catch and rethrows what it does not
-// handle.
+// Wraps a route handler so anything it throws maps through the allow-list.
 export function withErrorResponse<Args extends unknown[]>(
   handler: (...args: Args) => Promise<NextResponse>,
 ): (...args: Args) => Promise<NextResponse> {
@@ -97,14 +77,4 @@ export function withErrorResponse<Args extends unknown[]>(
       return errorResponse(err);
     }
   };
-}
-
-// Throws as PublicError so a bad body surfaces as a 400 through
-// errorResponse.
-export async function readJsonBody(req: NextRequest): Promise<unknown> {
-  try {
-    return await req.json();
-  } catch {
-    throw new PublicError('Request body must be valid JSON', { status: 400, code: 'BAD_REQUEST' });
-  }
 }

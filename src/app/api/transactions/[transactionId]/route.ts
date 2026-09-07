@@ -2,7 +2,8 @@ import { type NextRequest, NextResponse } from 'next/server';
 import type { TransactionPatchPayload } from '@/lib/api-types';
 import { setTransactionCategory } from '@/lib/categories';
 import { categoryKindKeys, type CategoryKind } from '@/lib/category-kinds';
-import { badRequest, jsonError, pgErrorCode, readJsonBody, withErrorResponse } from '@/lib/errors';
+import { badRequest, withErrorResponse } from '@/lib/errors';
+import { readJsonBody } from '@/lib/request-body';
 
 // Postgres serial ids are int32; anything past that cannot exist.
 const MAX_INT32 = 2147483647;
@@ -52,24 +53,7 @@ export const PATCH = withErrorResponse(
       return badRequest(parsed.message);
     }
 
-    try {
-      const transaction = await setTransactionCategory(
-        transactionId,
-        parsed.kind,
-        parsed.categoryId,
-      );
-      return NextResponse.json<TransactionPatchPayload>({ transaction });
-    } catch (err) {
-      // 23503 foreign_key_violation: the category was deleted between
-      // validation and the update; everything else rethrows into the wrapper.
-      if (pgErrorCode(err) === '23503') {
-        return jsonError(
-          'CATEGORY_REMOVED',
-          'That category no longer exists — reload the page and pick again',
-          409,
-        );
-      }
-      throw err;
-    }
+    const transaction = await setTransactionCategory(transactionId, parsed.kind, parsed.categoryId);
+    return NextResponse.json<TransactionPatchPayload>({ transaction });
   },
 );

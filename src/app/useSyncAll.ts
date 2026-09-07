@@ -10,7 +10,7 @@ import { skippedSyncNotice } from '@/lib/sync-messages';
 
 // The "Sync all" action, its status line, and its failure.
 // Design: shared-mutation-protocol.
-export function useSyncAll(refresh: () => Promise<void>) {
+export function useSyncAll(refresh: () => Promise<unknown>) {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   // When "Sync all" last came back with every item clean.
   // Design: link-notice-expires-on-clean-sync.

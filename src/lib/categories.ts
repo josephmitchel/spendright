@@ -3,6 +3,7 @@ import { accounts, cardCategories, creditCategories, transactions } from '@/db/s
 import { categoryKindSources } from '@/lib/category-kind-sources';
 import { assertNeverKind, kindForAmount, type CategoryKind } from '@/lib/category-kinds';
 import { db, type DbTransaction } from '@/lib/db';
+import { pgErrorCode } from '@/lib/pg-errors';
 import { PublicError } from '@/lib/public-error';
 import { servedTransactionColumns, type CategorizedTransaction } from '@/lib/transactions';
 
@@ -123,7 +124,18 @@ export async function setTransactionCategory(
       .update(transactions)
       .set({ ...pick.updateSet, updatedAt: sql`now()` })
       .where(eq(transactions.transactionId, transactionId))
-      .returning(servedTransactionColumns);
+      .returning(servedTransactionColumns)
+      .catch((err: unknown) => {
+        // 23503 foreign_key_violation: the category was deleted between
+        // resolveCategoryPick and this write.
+        if (pgErrorCode(err) === '23503') {
+          throw new PublicError('That category no longer exists — reload the page and pick again', {
+            status: 409,
+            code: 'CATEGORY_REMOVED',
+          });
+        }
+        throw err;
+      });
     if (!updated) {
       // Unreachable while the row lock is held; satisfies the checked index.
       throw new PublicError('Transaction not found', { status: 404, code: 'NOT_FOUND' });

@@ -2,7 +2,7 @@
 name: load-protocol-simplified
 description: The client load protocol was simplified in place (2026-09-06) — no runtime self-policing sensors, apply receives plain bodies (null on failure), and reloading is a boolean; the memoized-perform contract is documented, not runtime-enforced
 tags:
-  [src/hooks/useLoadProtocol.ts, LoadReads, apply, reloading, latestTicket, perform, useCallback]
+  [src/hooks/useLoadProtocol.ts, LoadReads, apply callback, reloading, latestTicket, perform, useCallback]
 date: 2026-09-06
 ---
 

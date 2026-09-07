@@ -22,8 +22,8 @@ export default function AccountPage({ params }: { params: Promise<{ accountId: s
   return <AccountView key={accountId} accountId={accountId} />;
 }
 
-// The page body renders exactly one of these; deriveView enumerates the
-// legal states once.
+// deriveView enumerates the page body's legal states once; 'unresolved'
+// renders nothing beyond the error line.
 type View = 'loading' | 'not-found' | 'unsupported' | 'ready' | 'unresolved';
 
 function deriveView(inputs: {

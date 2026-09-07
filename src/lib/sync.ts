@@ -2,8 +2,8 @@ import { eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import { type AccountBase, type Transaction as PlaidTransaction } from 'plaid';
 import { accounts, items, transactions, type ItemRow } from '@/db/schema';
-import { storeAccounts } from '@/lib/accounts';
-import { loadCardCatalog } from '@/lib/card-catalog';
+import { refreshItemAccounts } from '@/lib/accounts';
+import { serializeByKey } from '@/lib/async-coordination';
 import { categoryKindSources, type CategoryKindSource } from '@/lib/category-kind-sources';
 import {
   assertNeverKind,
@@ -18,7 +18,6 @@ import { globalSingleton } from '@/lib/global-singleton';
 import { logError, logWarn } from '@/lib/log';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
 import { plaidErrorBody } from '@/lib/plaid-errors';
-import { serializeByKey } from '@/lib/serialize';
 import {
   MAX_SKIPPED_SYNCS,
   skippedItemErrorMessage,
@@ -119,12 +118,12 @@ interface CarriedSelection {
 // fresh insert, so a stale id would abort the whole sync.
 async function liveCategoryIds(
   tx: DbTransaction,
-  { table, idColumn }: CategoryKindSource,
+  { table }: CategoryKindSource,
   candidateIds: (number | null)[],
 ): Promise<Set<number>> {
   const ids = [...new Set(candidateIds.filter((id): id is number => id !== null))];
   if (ids.length === 0) return new Set();
-  const rows = await tx.select({ id: idColumn }).from(table).where(inArray(idColumn, ids));
+  const rows = await tx.select({ id: table.id }).from(table).where(inArray(table.id, ids));
   return new Set(rows.map((row) => row.id));
 }
 
@@ -214,18 +213,19 @@ function carriedColumns(
 // cap at this table's column count.
 const UPSERT_CHUNK_SIZE = 500;
 
+// Per-row skip lines past this count are elided; skippedSyncLogLine carries
+// the total either way.
+const SKIPPED_ROW_LOG_CAP = 20;
+
 // A batch row: the base columns plus any carried selection riding the insert.
 type TransactionUpsertValues = ReturnType<typeof toTransactionRow> &
   Partial<
     Pick<typeof transactions.$inferInsert, 'cardCategoryId' | 'rewardRate' | 'creditCategoryId'>
   >;
 
-// The on-conflict SET for one kind's batch: every column the row builder
-// writes takes the incoming row's value (excluded.*, derived from the row's
-// own keys), the matching kind's selection columns are never touched
-// (re-syncs must not overwrite a user's pick), and every other kind's are
-// cleared, which the DB sign constraint requires on a sign flip.
-// Design: category-kind-sign-rule.
+// The on-conflict SET for one kind's batch: excluded.* for the row builder's
+// columns, the matching kind's selection columns untouched, every other
+// kind's cleared. Design: category-kind-sign-rule.
 function conflictSetForKind(
   kind: CategoryKind,
   rowKeys: string[],
@@ -266,9 +266,13 @@ async function upsertTransactions(
   for (const txn of upserts) {
     if (!knownAccountIds.has(txn.account_id)) {
       skipped++;
-      logError(
-        `sync ${itemId}: transaction ${txn.transaction_id} references unknown account ${txn.account_id} — skipped`,
-      );
+      if (skipped <= SKIPPED_ROW_LOG_CAP) {
+        logError(
+          `sync ${itemId}: transaction ${txn.transaction_id} references unknown account ${txn.account_id} — skipped`,
+        );
+      } else if (skipped === SKIPPED_ROW_LOG_CAP + 1) {
+        logError(`sync ${itemId}: further skipped rows elided — see the batch summary line`);
+      }
       continue;
     }
     const row = toTransactionRow(txn, itemId);
@@ -283,12 +287,9 @@ async function upsertTransactions(
   }
   if (!baseRowKeys) return skipped;
 
-  // Grouped by kind because the SET differs per kind. Carried selections
-  // ride only in VALUES (a carry is a fresh insert), while the SET reads
-  // excluded.* for the base columns alone — baseRowKeys, never a carrying
-  // row's keys — so a conflicting row keeps its saved selections. Rows in
-  // one chunk may differ in which carried columns they set; drizzle renders
-  // a field a row omits as DEFAULT (Verified-on: drizzle-orm@0.45.2).
+  // Grouped by kind because the SET differs per kind; the SET reads
+  // baseRowKeys, never a carrying row's keys. Design: pending-to-posted-carry.
+  // A field a row omits renders as DEFAULT (Verified-on: drizzle-orm@0.45.2).
   const groups: Record<CategoryKind, TransactionUpsertValues[]> = { card: [], credit: [] };
   for (const { values, kind } of rowsById.values()) groups[kind].push(values);
   for (const kind of Object.keys(groups) as CategoryKind[]) {
@@ -371,11 +372,10 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
       );
     }
     if (plaidAccounts.length > 0) {
-      const cardList = await loadCardCatalog(db);
       // A failed upsert of an EXISTING row leaves its balances silently
       // stale (the known-account guard only covers absent rows), so store
       // failures count as a failed refresh.
-      const storeFailures = await storeAccounts(plaidAccounts, item.itemId, cardList);
+      const storeFailures = await refreshItemAccounts(item.itemId, plaidAccounts);
       if (storeFailures.length > 0) accountRefreshFailed = true;
     }
   }

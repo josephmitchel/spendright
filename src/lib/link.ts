@@ -1,8 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { items, type ItemRow } from '@/db/schema';
 import { accountDisplayName } from '@/lib/account-display';
-import { storeAccounts, type StoreFailure } from '@/lib/accounts';
-import { loadCardCatalog } from '@/lib/card-catalog';
+import { refreshItemAccounts, type StoreFailure } from '@/lib/accounts';
 import { encrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { publicErrorMessage } from '@/lib/errors';
@@ -78,19 +77,20 @@ async function storeItem(
     institutionPrimaryColor: institution?.primaryColor ?? null,
   };
   // The id and name update whenever known (both can come from the item
-  // itself); every other key is fetched metadata that updates only when the
-  // fetch succeeded, so a failed fetch never nulls a stored value.
-  const knownWithoutFetch: ReadonlyArray<keyof typeof institutionValues> = [
-    'institutionId',
-    'institutionName',
-  ];
-  const institutionUpdate = Object.fromEntries(
-    Object.entries(institutionValues).filter(([key, value]) =>
-      knownWithoutFetch.includes(key as keyof typeof institutionValues)
-        ? value !== null
-        : institution !== null,
-    ),
-  ) as Partial<typeof institutionValues>;
+  // itself); the rest is fetched metadata that updates only when the fetch
+  // succeeded, so a failed fetch never nulls a stored value.
+  const institutionUpdate = {
+    ...(institutionValues.institutionId !== null && {
+      institutionId: institutionValues.institutionId,
+    }),
+    ...(institutionValues.institutionName !== null && {
+      institutionName: institutionValues.institutionName,
+    }),
+    ...(institution !== null && {
+      institutionLogo: institutionValues.institutionLogo,
+      institutionPrimaryColor: institutionValues.institutionPrimaryColor,
+    }),
+  };
 
   const [storedItem] = await db
     .insert(items)
@@ -162,11 +162,10 @@ export async function linkItem(publicToken: string): Promise<LinkResult> {
   const institution = await fetchInstitution(plaidItem.institution_id);
   const storedItem = await storeItem(itemId, encryptedAccessToken, plaidItem, institution);
 
-  const cardList = await loadCardCatalog(db);
   // Failures are reported, not thrown. This is the batch's only store pass;
   // the initial sync is told the accounts are already stored.
   // Design: initial-sync-reported-not-thrown, accounts-refreshed-per-sync.
-  const storeFailures = await storeAccounts(plaidAccounts, itemId, cardList);
+  const storeFailures = await refreshItemAccounts(itemId, plaidAccounts);
   const sync = await runInitialSync(storedItem);
   const accountErrors = accountFailureMessages(storeFailures);
 

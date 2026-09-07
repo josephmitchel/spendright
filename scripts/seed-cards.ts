@@ -14,7 +14,7 @@ import { loadCardCatalog } from '../src/lib/card-catalog';
 import { matchCard, normalizeAccountName } from '../src/lib/cards';
 import type { DrizzleTransaction } from '../src/lib/db';
 import { requireDatabaseUrl } from '../src/lib/env';
-import { logFatalAndExit } from '../src/lib/log';
+import { logFatalAndExit, logInfo } from '../src/lib/log';
 
 // Keys go through normalizeAccountName (the same normalization matchCard
 // uses); `owner` names the seed entry for error messages.
@@ -88,26 +88,31 @@ function assertSeedIsValid(): void {
 type SeedTransaction = DrizzleTransaction<NodePgDatabase>;
 
 // Each seed table paired with its key column, so retireMissing takes them
-// together.
+// together; keyColumn is tied to the table's own columns so a cross-table
+// pair fails to compile.
 type SeedTable = typeof cards | typeof cardCategories | typeof creditCategories;
-interface RetireTarget {
-  table: SeedTable;
-  keyColumn: AnyPgColumn;
+interface RetireTarget<Table extends SeedTable = SeedTable> {
+  table: Table;
+  keyColumn: Extract<Table[keyof Table], AnyPgColumn>;
 }
 const retireTargets = {
   cards: { table: cards, keyColumn: cards.slug },
   cardCategories: { table: cardCategories, keyColumn: cardCategories.name },
   creditCategories: { table: creditCategories, keyColumn: creditCategories.name },
-} satisfies Record<string, RetireTarget>;
+} satisfies {
+  cards: RetireTarget<typeof cards>;
+  cardCategories: RetireTarget<typeof cardCategories>;
+  creditCategories: RetireTarget<typeof creditCategories>;
+};
 
 // Retires every live row in scope whose key left `keptKeys`. An empty kept
 // list retires everything in scope: the clause is omitted, which `and()`
 // treats the same as the `true` drizzle renders notInArray([]) into
 // (Verified-on: drizzle-orm@0.45.2).
 // Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
-async function retireMissing(
+async function retireMissing<Table extends SeedTable>(
   tx: SeedTransaction,
-  { table, keyColumn }: RetireTarget,
+  { table, keyColumn }: RetireTarget<Table>,
   keptKeys: string[],
   label: string,
   scope?: SQL,
@@ -124,7 +129,7 @@ async function retireMissing(
     )
     .returning({ key: keyColumn });
   if (retired.length > 0) {
-    console.log(`  ${label}: ${retired.map((row) => row.key).join(', ')}`);
+    logInfo(`  ${label}: ${retired.map((row) => row.key).join(', ')}`);
   }
 }
 
@@ -215,7 +220,7 @@ async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; 
         .update(accounts)
         .set({ cardId: card?.id ?? null, updatedAt: sql`now()` })
         .where(eq(accounts.id, account.id));
-      console.log(`  account "${account.name}" -> ${card ? card.slug : 'no card'}`);
+      logInfo(`  account "${account.name}" -> ${card ? card.slug : 'no card'}`);
     }
   }
   return { matched, total: accountList.length };
@@ -231,7 +236,7 @@ async function main() {
 
   try {
     // Backfill missing reward rates only; existing rates are never restated
-    // (design: categorization-is-a-historical-snapshot). Outside the
+    // (Design: categorization-is-a-historical-snapshot). Outside the
     // reconcile transaction so its row locks can't deadlock with a sync.
     await rootDb.execute(sql`
       update transactions t
@@ -257,7 +262,7 @@ async function main() {
 
       const { matched, total } = await rematchAccounts(tx);
 
-      console.log(
+      logInfo(
         `Seeded ${cardSeeds.length} card(s), ${categoryCount} categories, ` +
           `${creditCategorySeeds.length} credit categories. ` +
           `${matched}/${total} account(s) matched to a card.`,

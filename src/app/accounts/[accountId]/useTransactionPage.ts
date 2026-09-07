@@ -6,22 +6,12 @@ import { apiPaths } from '@/lib/api-paths';
 import type { ApiTransaction, TransactionsResponse } from '@/lib/api-types';
 import { getJson } from '@/lib/http';
 import { PAGE_SIZE } from '@/lib/pagination';
-import { categoryFields, type CategoryPatch } from './useCategoryPatches';
+import { categoryFields, type CategoryPatch } from './category-patch';
 
-// The paged transaction list.
+// The paged transaction list; the page-state variables and their update
+// rules are tabulated in the pager-keeps-stale-rows record.
 // Design: pager-keeps-stale-rows, transactions-paginated,
 // partial-load-rendering.
-//
-// Page-state table — the page variables and their one update rule each:
-//   page         the page being asked for; goToPage, and the clamp on shrink
-//   loadedPage   the page the rows on screen came from; set on success only,
-//                -1 until the first success
-//   settledPage  the page of the request that last settled, success or
-//                failure; null until one does
-//   shownPage    derived: loadedPage once any read succeeded, else page
-//   pageLoading  derived: settledPage !== page || reloading; a silent
-//                refresh moves neither input
-//   total        the account's row count; null until a read lands
 export function useTransactionPage(accountId: string) {
   const [transactionList, setTransactionList] = useState<ApiTransaction[]>([]);
   const [page, setPage] = useState(0);
@@ -104,10 +94,9 @@ export function useTransactionPage(accountId: string) {
     [page, reload],
   );
 
-  // The one write path into the row list from outside the load protocol:
   // useCategoryPatches merges a row's category columns through this (and
-  // fences loads out of them via setCategoryHold). Narrow on purpose — an
-  // external writer can never replace rows wholesale.
+  // fences loads out of them via setCategoryHold); deliberately too narrow
+  // to replace rows wholesale.
   // Design: optimistic-category-writes, superseded-loads-write-nothing.
   const applyCategoryPatch = useCallback((transactionId: string, fields: CategoryPatch) => {
     setTransactionList((list) =>

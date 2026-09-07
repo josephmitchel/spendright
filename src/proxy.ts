@@ -1,5 +1,4 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { jsonError } from '@/lib/errors';
 
 // Defense-in-depth over the loopback bind: every path refuses any request
 // that did not arrive from loopback, with no exceptions.
@@ -73,7 +72,12 @@ export function proxy(req: NextRequest) {
     const origin = req.headers.get('origin');
     const host = req.headers.get('host');
     if (origin && (!host || !isSameOrigin(origin, host))) {
-      return jsonError('FORBIDDEN', 'Cross-origin requests are not allowed', 403);
+      // The jsonError envelope, inlined: proxy code should not rely on
+      // shared modules (Verified-on: next@16.3.4 proxy.md).
+      return NextResponse.json(
+        { error: { code: 'FORBIDDEN', message: 'Cross-origin requests are not allowed' } },
+        { status: 403 },
+      );
     }
   }
 

@@ -1,4 +1,4 @@
-// Once-per-server startup: the sync scheduler (design: scheduled-sync).
+// Once-per-server startup: the sync scheduler (Design: scheduled-sync).
 import { logFatalAndExit } from '@/lib/log';
 
 export async function register(): Promise<void> {

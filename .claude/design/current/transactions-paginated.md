@@ -1,7 +1,7 @@
 ---
 name: transactions-paginated
 description: Transactions are paginated; the page size is one shared constant (PAGE_SIZE, 20) on both sides of the boundary, the API caps limit at 1000, and every response carries the account's total
-tags: [PAGE_SIZE, src/lib/pagination.ts, GET /api/transactions, limit, offset, total, src/app/accounts/[accountId]/page.tsx]
+tags: [PAGE_SIZE, src/lib/pagination.ts, GET /api/transactions, limit param, offset, total count, src/app/accounts/[accountId]/page.tsx]
 date: 2026-09-04
 ---
 

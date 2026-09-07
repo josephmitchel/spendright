@@ -5,7 +5,8 @@
 // the boundary, not runtime-validated: the server is this same app.
 // Type-only imports — nothing here reaches a bundle.
 // Design: typed-api-contract, single-response-reader.
-import type { AccountRow, CreditCategoryRow } from '@/db/schema';
+import type { CreditCategoryRow } from '@/db/schema';
+import type { ServedAccountRow } from '@/lib/accounts';
 import type { CardWithCategories } from '@/lib/card-catalog';
 import type { PublicItemRow } from '@/lib/items';
 import type { LinkResult } from '@/lib/link';
@@ -23,7 +24,9 @@ type Serialized<T> = T extends Date
       ? { [K in keyof T]: Serialized<T[K]> }
       : T;
 
-export type ApiAccount = Serialized<AccountRow>;
+// Derived from the runtime pick in src/lib/accounts.ts like the other served
+// rows (nothing excluded today). Design: typed-api-contract.
+export type ApiAccount = Serialized<ServedAccountRow>;
 // The encrypted access token is never served (the pick lives in
 // src/lib/items.ts). Design: access-tokens-encrypted.
 export type ApiItem = Serialized<PublicItemRow>;
@@ -35,14 +38,14 @@ export type ApiTransaction = Serialized<CategorizedTransaction>;
 
 // GET /api/accounts
 export interface AccountsPayload {
-  accounts: AccountRow[];
+  accounts: ServedAccountRow[];
 }
 export type AccountsResponse = Serialized<AccountsPayload>;
 
 // GET /api/accounts/[accountId] — `account` is null when the id matches no
 // row (a 200, not a 404). Design: account-fetched-by-id.
 export interface AccountPayload {
-  account: AccountRow | null;
+  account: ServedAccountRow | null;
 }
 export type AccountResponse = Serialized<AccountPayload>;
 

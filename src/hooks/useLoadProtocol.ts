@@ -105,12 +105,15 @@ export function useLoadProtocol<K extends string>(
   );
 
   // Every call site fires refresh un-awaited (`void refresh()`), so a
-  // rejecting `perform` is caught and logged here rather than left unhandled.
+  // rejecting `perform` is caught and logged here rather than left unhandled;
+  // the returned boolean lets `reload` recover its flag on that path.
   const refresh = useCallback(async () => {
     try {
       await perform(load);
+      return true;
     } catch (err) {
       logError('load failed:', err);
+      return false;
     }
   }, [perform, load]);
 
@@ -122,7 +125,11 @@ export function useLoadProtocol<K extends string>(
   const clearError = useCallback(() => setError(null), []);
   const reload = useCallback(() => {
     setReloading(true);
-    void refresh();
+    // A `perform` that rejected before its load() settled the flags would
+    // otherwise leave the pager disabled for good.
+    void refresh().then((performed) => {
+      if (!performed) setReloading(false);
+    });
   }, [refresh]);
   // The Retry action: clear the shown error, then reload loudly.
   const retry = useCallback(() => {
@@ -143,8 +150,6 @@ type LoadState = Pick<
 // settled when every instance is, errors joined, Retry clears and reloads
 // them all.
 export function combineLoadStates(states: readonly LoadState[]): LoadState {
-  const clearError = () => states.forEach((state) => state.clearError());
-  const reload = () => states.forEach((state) => state.reload());
   return {
     settled: states.every((state) => state.settled),
     error:
@@ -152,11 +157,10 @@ export function combineLoadStates(states: readonly LoadState[]): LoadState {
         .map((state) => state.error)
         .filter(Boolean)
         .join('; ') || null,
-    clearError,
-    reload,
-    retry: () => {
-      clearError();
-      reload();
-    },
+    clearError: () => states.forEach((state) => state.clearError()),
+    reload: () => states.forEach((state) => state.reload()),
+    // Each instance's own retry is clear-then-reload; the instances are
+    // independent, so per-instance ordering is the whole requirement.
+    retry: () => states.forEach((state) => state.retry()),
   };
 }

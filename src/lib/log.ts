@@ -34,7 +34,7 @@ export function logFatalAndExit(message: string, err?: unknown): void {
   process.stderr.write('', () => process.exit(1));
 }
 
-// Not exported: exporting the redaction pass alone would invite bypassing it.
+// Not exported: callers go through the log functions above.
 function loggableError(err: unknown): unknown {
   const axiosErr = err as {
     isAxiosError?: boolean;

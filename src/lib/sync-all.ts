@@ -1,8 +1,8 @@
 import { items } from '@/db/schema';
+import { singleFlight } from '@/lib/async-coordination';
 import { db } from '@/lib/db';
 import { globalSingleton } from '@/lib/global-singleton';
 import { logError } from '@/lib/log';
-import { singleFlight } from '@/lib/serialize';
 import { recordSyncFailure, syncItem, type SyncItemResult } from '@/lib/sync';
 
 // Sync every item, single-flight: a caller arriving mid-run joins that run.

@@ -39,7 +39,9 @@ function referencesIn(lines, fileLabel) {
   const refs = [];
   let i = 0;
   while (i < lines.length) {
-    const match = /Design:\s*(.*)$/.exec(lines[i] ?? '');
+    // Case-insensitive so a lowercase "(design: name)" marker is validated
+    // rather than silently ungated.
+    const match = /design:\s*(.*)$/i.exec(lines[i] ?? '');
     // Reported at the marker's own line, not the last continuation line.
     const markerLine = i + 1;
     i++;

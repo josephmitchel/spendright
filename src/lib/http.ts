@@ -44,7 +44,7 @@ async function requestJson<T>(url: string, init: RequestInit, failureMessage: st
   return readJson<T>(res, failureMessage);
 }
 
-// Not exported (design: single-response-reader). A non-JSON body (an HTML
+// Not exported (Design: single-response-reader). A non-JSON body (an HTML
 // error page, a proxy 502) must not surface as a SyntaxError. T is asserted,
 // not validated: the server is this same app.
 async function readJson<T>(res: Response, failureMessage: string): Promise<T> {

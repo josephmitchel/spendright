@@ -1,9 +1,20 @@
-import { sql } from 'drizzle-orm';
+import { getTableColumns, sql } from 'drizzle-orm';
 import type { AccountBase } from 'plaid';
-import { accounts, type CardRow } from '@/db/schema';
+import { accounts, type AccountRow, type CardRow } from '@/db/schema';
+import { loadCardCatalog } from '@/lib/card-catalog';
 import { matchCard } from '@/lib/cards';
 import { db, type DbTransaction } from '@/lib/db';
 import { logError } from '@/lib/log';
+
+// Nothing excluded today; the pick exists so a new column reaches the wire
+// only by an explicit decision here, like the other served row types.
+// Design: typed-api-contract.
+export const servedAccountColumns = getTableColumns(accounts);
+
+export type ServedAccountRow = Pick<
+  AccountRow,
+  keyof typeof servedAccountColumns & keyof AccountRow
+>;
 
 function toAccountRow(plaidAccount: AccountBase, itemId: string, cardId: number | null) {
   return {
@@ -52,7 +63,7 @@ async function upsertAccount(
 // Each account commits in its own transaction, so one failing account costs
 // only its own rows; failures are logged and returned, never thrown.
 // Design: accounts-refreshed-per-sync, initial-sync-reported-not-thrown.
-export async function storeAccounts(
+async function storeAccounts(
   plaidAccounts: AccountBase[],
   itemId: string,
   cardList: CardRow[],
@@ -72,4 +83,15 @@ export async function storeAccounts(
     }
   }
   return failures;
+}
+
+// Stores an item's fetched accounts (catalog load plus the per-account
+// upserts); callers interpret the returned failures their own way.
+// Design: accounts-refreshed-per-sync.
+export async function refreshItemAccounts(
+  itemId: string,
+  plaidAccounts: AccountBase[],
+): Promise<StoreFailure[]> {
+  const cardList = await loadCardCatalog(db);
+  return storeAccounts(plaidAccounts, itemId, cardList);
 }

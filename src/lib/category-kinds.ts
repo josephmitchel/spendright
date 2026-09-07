@@ -1,7 +1,9 @@
 // Plaid sign convention: positive = outflow, negative = inflow (payment,
 // refund, reward). Zero and NaN count as spend.
 // Design: category-kind-sign-rule.
-// Dependency-free — bundled into client code.
+// Dependency-free — bundled into client code (the schema import below is
+// type-only, so it is erased from the bundle).
+import type { TransactionRow } from '@/db/schema';
 
 // Spend rows take a card category, inflow rows a credit category.
 // Design: category-kind-sign-rule.
@@ -29,7 +31,9 @@ export const categoryKindKeys = {
   },
 } as const satisfies Record<
   CategoryKind,
-  { id: string; name: string; writeColumns: readonly string[] }
+  // writeColumns feed an on-conflict SET in src/lib/sync.ts, so a typo must
+  // fail here, not render a garbage SQL key.
+  { id: keyof TransactionRow; name: string; writeColumns: readonly (keyof TransactionRow)[] }
 >;
 
 // Compile-time exhaustiveness for per-kind branches: every switch over

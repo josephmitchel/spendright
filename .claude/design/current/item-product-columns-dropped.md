@@ -2,7 +2,7 @@
 name: item-product-columns-dropped
 description: items.available_products and items.billed_products were dropped (migration 0007) as stored-but-never-read; institution metadata and transactions.category stay by their own records
 tags:
-  [items, available_products, billed_products, drizzle/0007_remarkable_thor.sql, src/lib/link.ts]
+  [items, dropped available_products, dropped billed_products, drizzle/0007_remarkable_thor.sql, src/lib/link.ts]
 date: 2026-09-06
 ---
 

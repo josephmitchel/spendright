@@ -4,7 +4,7 @@ description: A load superseded by a newer one writes nothing, enforced by one mo
 tags:
   [
     useLoadProtocol,
-    load,
+    load call,
     latestTicket,
     reloading,
     src/hooks/useLoadProtocol.ts,

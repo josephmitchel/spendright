@@ -10,8 +10,7 @@ tags:
     ENCRYPTION_KEY,
     PLAID_SECRET,
     PLAID_CLIENT_ID,
-    chmod,
-    go-rwx,
+    chmod go-rwx,
   ]
 date: 2026-09-06
 ---
