@@ -21,21 +21,23 @@ function parseCategoryPatch(body: unknown): ParsedCategoryPatch {
     return { ok: false, message: 'Request body must be a JSON object' };
   }
   const record = body as Record<string, unknown>;
-  // Wire keys come from the kind→key mapping in src/lib/category-kinds.ts.
-  const hasCardKey = categoryKindKeys.card.id in record;
-  const hasCreditKey = categoryKindKeys.credit.id in record;
-  if (hasCardKey === hasCreditKey) {
-    return {
-      ok: false,
-      message: `Provide exactly one of ${categoryKindKeys.card.id} or ${categoryKindKeys.credit.id}`,
-    };
+  // Wire keys come from the kind→key mapping in src/lib/category-kinds.ts;
+  // iterating it (rather than naming the two kinds) keeps a new kind's wire
+  // key accepted, and its error message current, without touching this
+  // parser. Design: category-kind-exhaustive.
+  const kinds = Object.keys(categoryKindKeys) as CategoryKind[];
+  const present = kinds.filter((kind) => categoryKindKeys[kind].id in record);
+  const [kind] = present;
+  if (kind === undefined || present.length > 1) {
+    const wireKeys = kinds.map((k) => categoryKindKeys[k].id).join(' or ');
+    return { ok: false, message: `Provide exactly one of ${wireKeys}` };
   }
-  const key = hasCardKey ? categoryKindKeys.card.id : categoryKindKeys.credit.id;
+  const key = categoryKindKeys[kind].id;
   const raw = record[key];
   if (!isValidId(raw)) {
     return { ok: false, message: `${key} must be a positive integer` };
   }
-  return { ok: true, kind: hasCardKey ? 'card' : 'credit', categoryId: raw };
+  return { ok: true, kind, categoryId: raw };
 }
 
 // Set a transaction's category. Exactly one key must be present:

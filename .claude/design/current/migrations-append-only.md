@@ -1,7 +1,7 @@
 ---
 name: migrations-append-only
 description: Committed drizzle migrations are frozen — schema changes are always a new generated migration, never an edit to an existing file under drizzle/
-tags: [drizzle/, drizzle-kit generate, db:generate, db:migrate, __drizzle_migrations]
+tags: [drizzle/, drizzle-kit generate, db:generate, db:migrate, drizzle migrations table]
 date: 2026-09-06
 ---
 

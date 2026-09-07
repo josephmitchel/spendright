@@ -12,14 +12,24 @@ import { assertNeverKind, categoryKindKeys, type CategoryKind } from '@/lib/cate
 import { errorMessage, sendJson } from '@/lib/http';
 import { serializeByKey } from '@/lib/serialize';
 
-// The category columns a PATCH can change — the widest write this hook can
-// hand applyCategoryPatch, so a page re-fetch's fresher non-category data
-// can never be rolled back. Design: optimistic-category-writes.
+// The category columns a PATCH can change — every kind's name and write
+// columns, all derived from categoryKindKeys so a new kind widens this type
+// by itself. The widest write this hook can hand applyCategoryPatch, so a
+// page re-fetch's fresher non-category data can never be rolled back.
+// Design: optimistic-category-writes.
 export type CategoryPatch = Partial<
-  Pick<ApiTransaction, (typeof categoryKindKeys)[CategoryKind]['id' | 'name'] | 'rewardRate'>
+  Pick<
+    ApiTransaction,
+    | (typeof categoryKindKeys)[CategoryKind]['name']
+    | (typeof categoryKindKeys)[CategoryKind]['writeColumns'][number]
+  >
 >;
 
-function categoryFields(row: ApiTransaction): CategoryPatch {
+// Every category column of one row. Required<>: a kind added to
+// categoryKindKeys widens CategoryPatch, so omitting its columns here is a
+// compile error instead of a field the reconcile silently drops.
+// Design: category-kind-exhaustive.
+export function categoryFields(row: ApiTransaction): Required<CategoryPatch> {
   return {
     cardCategoryId: row.cardCategoryId,
     cardCategoryName: row.cardCategoryName,
@@ -73,6 +83,9 @@ export function useCategoryPatches(
   card: ApiCard | null,
   creditCategories: ApiCreditCategory[],
   applyCategoryPatch: (transactionId: string, fields: CategoryPatch) => void,
+  // Marks a row's category fields as owned by an open burst, so a load that
+  // settles mid-burst merges around them instead of snapping the select back.
+  setCategoryHold: (transactionId: string, held: boolean) => void,
 ) {
   // Each row's newest burst outcome, rendered inside the row it belongs to.
   const [patchErrors, setPatchErrors] = useState<ReadonlyMap<string, string>>(new Map());
@@ -106,9 +119,10 @@ export function useCategoryPatches(
       else {
         patchState.current.set(row.transactionId, { pending: 1, baseline: row, committed: null });
       }
+      setCategoryHold(row.transactionId, true);
       setRowError(row.transactionId, null);
     },
-    [setRowError],
+    [setCategoryHold, setRowError],
   );
 
   // Reconciles the row and surfaces this patch's outcome — but only when it
@@ -119,10 +133,11 @@ export function useCategoryPatches(
       if (!state || --state.pending > 0) return;
       const settled = state.committed ?? state.baseline;
       patchState.current.delete(transactionId);
+      setCategoryHold(transactionId, false);
       applyCategoryPatch(transactionId, categoryFields(settled));
       setRowError(transactionId, failure);
     },
-    [applyCategoryPatch, setRowError],
+    [applyCategoryPatch, setCategoryHold, setRowError],
   );
 
   const setCategory = useCallback(

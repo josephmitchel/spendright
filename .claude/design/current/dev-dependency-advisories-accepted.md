@@ -1,7 +1,7 @@
 ---
 name: dev-dependency-advisories-accepted
 description: The 4 moderate npm-audit findings in the drizzle-kit → @esbuild-kit → esbuild chain (GHSA-67mh-4wv8-2f99) are accepted — dev-only, unreachable at runtime, and the only fix is a breaking drizzle-kit downgrade
-tags: [npm audit, drizzle-kit, esbuild, GHSA-67mh-4wv8-2f99, dev dependencies]
+tags: [npm audit, drizzle-kit, esbuild advisory chain, GHSA 67mh-4wv8-2f99, dev dependencies]
 date: 2026-09-05
 ---
 

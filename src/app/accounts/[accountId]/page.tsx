@@ -114,6 +114,7 @@ function AccountView({ accountId }: { accountId: string }) {
     card,
     creditCategories,
     transactionPage.applyCategoryPatch,
+    transactionPage.setCategoryHold,
   );
 
   // Turning the pager clears patch failures, so a long-gone edit's failure

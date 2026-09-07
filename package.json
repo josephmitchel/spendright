@@ -12,7 +12,7 @@
     "build": "next build",
     "postbuild": "node scripts/tighten-next.mjs",
     "start": "node scripts/start.mjs",
-    "lint": "eslint && node scripts/check-design-refs.mjs && node scripts/check-verified-claims.mjs",
+    "lint": "eslint && node scripts/check-design-refs.mjs && node scripts/check-record-tags.mjs && node scripts/check-verified-claims.mjs",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

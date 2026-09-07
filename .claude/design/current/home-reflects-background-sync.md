@@ -10,7 +10,7 @@ tags:
     refresh,
     visibilitychange,
     scheduled sync,
-    polling,
+    visibility polling,
   ]
 date: 2026-09-05
 ---
