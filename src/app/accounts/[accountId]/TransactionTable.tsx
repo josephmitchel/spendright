@@ -144,7 +144,7 @@ export function TransactionTable({
                 ) : (
                   (selectedName ?? 'none')
                 )}
-                {patchError && <div>Update failed: {patchError}</div>}
+                {patchError && <div role="alert">Update failed: {patchError}</div>}
               </td>
               <td>{rateCellText(txn, kind)}</td>
               <td>{txn.pending ? 'yes' : ''}</td>

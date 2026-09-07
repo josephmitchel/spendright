@@ -6,8 +6,9 @@ import { ErrorNotice } from '@/components/ErrorNotice';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
 import type { ApiAccount, ApiItem } from '@/lib/api-types';
-import { plaidErrorMessage } from '@/lib/plaid-errors';
+import { isPlaidItemError, plaidErrorMessage } from '@/lib/plaid-errors';
 import { PlaidLinkButton } from './PlaidLinkButton';
+import { RepairConnectionButton } from './RepairConnectionButton';
 import { useHomeData } from './useHomeData';
 import { useItemRemoval } from './useItemRemoval';
 import { useSyncAll } from './useSyncAll';
@@ -15,7 +16,7 @@ import { useSyncAll } from './useSyncAll';
 // Design: error-message-allow-list.
 function itemErrorMessage(error: NonNullable<ApiItem['error']>): string {
   const fallback = JSON.stringify(error);
-  return 'message' in error ? error.message || fallback : plaidErrorMessage(error, fallback);
+  return isPlaidItemError(error) ? plaidErrorMessage(error, fallback) : error.message || fallback;
 }
 
 type View = 'loading' | 'no-institutions' | 'list' | 'unresolved';
@@ -65,11 +66,13 @@ function InstitutionSection({
   accounts,
   accountsLoaded,
   onRemoveAction,
+  onRepairedAction,
 }: {
   item: ApiItem;
   accounts: ApiAccount[];
   accountsLoaded: boolean;
   onRemoveAction: (itemId: string) => void;
+  onRepairedAction: () => void;
 }) {
   return (
     <section>
@@ -86,7 +89,14 @@ function InstitutionSection({
         {item.institutionName ?? item.itemId}{' '}
         <button onClick={() => onRemoveAction(item.itemId)}>Remove</button>
       </h2>
-      {item.error != null && <p>Item error: {itemErrorMessage(item.error)}</p>}
+      {item.error != null && (
+        <p>
+          Item error: {itemErrorMessage(item.error)} {/* Design: connection-repair-update-mode. */}
+          {isPlaidItemError(item.error) && (
+            <RepairConnectionButton itemId={item.itemId} onRepairedAction={onRepairedAction} />
+          )}
+        </p>
+      )}
       {accountsLoaded && <AccountsTable accounts={accounts} />}
     </section>
   );
@@ -122,7 +132,8 @@ export default function Home() {
         <button onClick={syncAll} disabled={syncing || view === 'no-institutions'}>
           Sync all
         </button>
-        {syncStatus && <span> {syncStatus}</span>}
+        {/* Design: async-status-announced — wrapper must stay mounted. */}
+        <span role="status">{syncStatus ? ` ${syncStatus}` : null}</span>
       </p>
 
       {view === 'loading' && <p>Loading…</p>}
@@ -140,6 +151,7 @@ export default function Home() {
               accounts={accountList.filter((account) => account.itemId === item.itemId)}
               accountsLoaded={loaded.accounts}
               onRemoveAction={removeItem}
+              onRepairedAction={syncAll}
             />
           ))}
         </>

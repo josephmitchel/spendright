@@ -85,7 +85,8 @@ function Pager({
       <button onClick={() => goToPage(shownPage + 1)} disabled={onLastPage || pageLoading}>
         Next
       </button>
-      {pageLoading && <span> Loading…</span>}
+      {/* Design: async-status-announced — wrapper must stay mounted. */}
+      <span role="status">{pageLoading ? ' Loading…' : null}</span>
     </p>
   );
 }

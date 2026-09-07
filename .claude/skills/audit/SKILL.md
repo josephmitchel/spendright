@@ -25,7 +25,7 @@ The entire purpose of the audit is to ensure the codebase is following a set of 
 
 Create a date/time specified audit folder in `.claude/audit` (meaning if /audit was called at September 7th, 2026 at 1:02pm, you are going to create the folder `.claude/audit/09-07-2026-130200` and record the audits' results in there).
 
-For each of the following agents defined in `.claude/agents`, spin up 3 agents:
+For each of the following agents defined in `.claude/agents`, spin up 5 agents:
 - auditor-functional-suitability
 - auditor-performance-efficiency
 - auditor-compatibility
@@ -36,9 +36,8 @@ For each of the following agents defined in `.claude/agents`, spin up 3 agents:
 - auditor-flexibility
 - auditor-safety
 
-For each agent, synthesize the 3 agents' findings into a `.md` report named after the requirement they were auditing.
+For each agent, synthesize the 5 agents' findings into a `.md` report named after the requirement they were auditing.
 - For example, the synthesized findings from the 3 auditor-functional-suitability agents would be saved as `functional-suitability.md`.
-
 
 Each report should be structured as follows:
 ```
@@ -53,5 +52,3 @@ characteristic: "i.e. functional suitability"
 
 # Minor Concerns
 ```
-
-After every agent has concluded and you've finalized every report, give a overview back to the user of the main takeways from the audit.

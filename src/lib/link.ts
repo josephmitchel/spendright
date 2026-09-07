@@ -1,13 +1,20 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { items, type ItemRow } from '@/db/schema';
 import { accountDisplayName } from '@/lib/account-display';
 import { refreshItemAccounts, type StoreFailure } from '@/lib/accounts';
-import { encrypt } from '@/lib/crypto';
+import { decrypt, encrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { publicErrorMessage } from '@/lib/errors';
 import { logError } from '@/lib/log';
-import { exchangePublicToken, getAccounts, getInstitutionById, getItem } from '@/lib/plaid';
+import {
+  createLinkToken,
+  exchangePublicToken,
+  getAccounts,
+  getInstitutionById,
+  getItem,
+} from '@/lib/plaid';
 import type { ProviderItem } from '@/lib/provider-types';
+import { PublicError } from '@/lib/public-error';
 import { syncItem, type SyncItemResult } from '@/lib/sync';
 import { recordSyncFailure } from '@/lib/sync-outcome';
 
@@ -101,7 +108,7 @@ async function runInitialSync(
   storedItem: ItemRow,
 ): Promise<{ result: SyncItemResult | null; error: string | null }> {
   try {
-    const result = await syncItem(storedItem, {
+    const result = await syncItem(storedItem.itemId, {
       accountsAlreadyStored: true,
       notReadyRetries: INITIAL_SYNC_NOT_READY_RETRIES,
     });
@@ -126,6 +133,15 @@ function accountFailureMessages(failures: StoreFailure[]): string[] {
     });
     return `${name}: ${publicErrorMessage(failure.error, 'could not be stored')}`;
   });
+}
+
+// Design: connection-repair-update-mode.
+export async function createRepairLinkToken(itemId: string): Promise<string> {
+  const [item] = await db.select().from(items).where(eq(items.itemId, itemId));
+  if (!item) {
+    throw new PublicError('Item not found', { status: 404, code: 'NOT_FOUND' });
+  }
+  return createLinkToken(decrypt(item.accessToken));
 }
 
 // Design: inline-initial-sync, initial-sync-reported-not-thrown.

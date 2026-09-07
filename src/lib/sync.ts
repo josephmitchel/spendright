@@ -1,5 +1,5 @@
-import { inArray } from 'drizzle-orm';
-import { transactions, type ItemRow } from '@/db/schema';
+import { eq, inArray } from 'drizzle-orm';
+import { items, transactions } from '@/db/schema';
 import { refreshItemAccounts } from '@/lib/accounts';
 import { serializeByKey } from '@/lib/async-coordination';
 import { decrypt } from '@/lib/crypto';
@@ -9,6 +9,7 @@ import { logError, logWarn } from '@/lib/log';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
 import type { ProviderAccount } from '@/lib/provider-types';
 import { resolveCarriedSelections } from '@/lib/sync-carry';
+import { withItemSyncLock } from '@/lib/sync-lock';
 import { skippedSyncLogLine } from '@/lib/sync-messages';
 import { recordSyncOutcome } from '@/lib/sync-outcome';
 import { knownAccountIdsFor, upsertTransactions } from '@/lib/sync-persist';
@@ -32,14 +33,19 @@ export interface SyncItemOptions {
 }
 
 // Concurrent syncItem calls on one item would race the cursor write.
-// Design: scheduled-sync.
+// Design: scheduled-sync, cross-process-sync-lock.
 const syncItemTails = globalSingleton('syncItemTails', () => new Map<string, Promise<void>>());
 
-export function syncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
-  return serializeByKey(syncItemTails, item.itemId, () => runSyncItem(item, options));
+export function syncItem(itemId: string, options?: SyncItemOptions): Promise<SyncItemResult> {
+  return serializeByKey(syncItemTails, itemId, () =>
+    withItemSyncLock(itemId, () => runSyncItem(itemId, options)),
+  );
 }
 
-async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
+async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<SyncItemResult> {
+  // The caller's row may be stale; read cursor and token under the lock.
+  const [item] = await db.select().from(items).where(eq(items.itemId, itemId));
+  if (!item) throw new Error(`sync ${itemId}: item row not found`);
   const accessToken = decrypt(item.accessToken);
   // Plaid calls stay outside the DB transaction. Design: accounts-refreshed-per-sync.
   let accountRefreshFailed = false;

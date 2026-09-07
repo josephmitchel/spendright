@@ -85,14 +85,15 @@ export function PlaidLinkButton({
       <button onClick={connect.run} disabled={connect.pending || exchange.pending}>
         Connect a bank
       </button>
-      {connect.pending && <span> Opening Plaid Link…</span>}
-      {exchange.pending && (
-        <span> Connecting and syncing transactions… (this can take a minute)</span>
-      )}
+      {/* Design: async-status-announced — wrapper must stay mounted. */}
+      <span role="status">
+        {connect.pending && ' Opening Plaid Link…'}
+        {exchange.pending && ' Connecting and syncing transactions… (this can take a minute)'}
+        {syncNotice &&
+          noticeIsCurrent &&
+          ` Connected, but the first sync didn't finish: ${syncNotice.message}`}
+      </span>
       {linkError && <ErrorNotice error={linkError} inline />}
-      {syncNotice && noticeIsCurrent && (
-        <span> Connected, but the first sync didn&apos;t finish: {syncNotice.message}</span>
-      )}
     </span>
   );
 }

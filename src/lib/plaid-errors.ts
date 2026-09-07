@@ -10,6 +10,12 @@ export interface PlaidErrorFields {
 
 export type ItemErrorBody = PlaidErrorFields | { message: string };
 
+// { message } bodies are app-internal notices; only Plaid-reported errors are
+// candidates for Link update-mode repair. Design: connection-repair-update-mode.
+export function isPlaidItemError(error: ItemErrorBody): error is PlaidErrorFields {
+  return !('message' in error);
+}
+
 const asString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 

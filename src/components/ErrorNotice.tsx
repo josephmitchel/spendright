@@ -20,5 +20,5 @@ export function ErrorNotice({
       )}
     </>
   );
-  return inline ? <span> {content}</span> : <p>{content}</p>;
+  return inline ? <span role="alert"> {content}</span> : <p role="alert">{content}</p>;
 }

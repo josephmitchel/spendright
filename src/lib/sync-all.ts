@@ -19,12 +19,12 @@ export function syncAllItems(): Promise<SyncAllResult> {
 }
 
 async function runSyncAll(): Promise<SyncAllResult> {
-  const allItems = await db.select().from(items);
+  const allItems = await db.select({ itemId: items.itemId }).from(items);
   const results: SyncAllResult = [];
 
   for (const item of allItems) {
     try {
-      results.push(await syncItem(item));
+      results.push(await syncItem(item.itemId));
     } catch (err) {
       logError(`Sync failed for item ${item.itemId}:`, err);
       const message = await recordSyncFailure(

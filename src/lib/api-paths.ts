@@ -6,6 +6,7 @@ export const apiPaths = {
   exchange: '/api/exchange',
   items: '/api/items',
   item: (itemId: string) => `/api/items/${encodeURIComponent(itemId)}`,
+  itemLinkToken: (itemId: string) => `/api/items/${encodeURIComponent(itemId)}/link-token`,
   linkToken: '/api/link-token',
   sync: '/api/sync',
   transactions: (accountId: string, limit: number, offset: number) =>

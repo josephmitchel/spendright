@@ -112,13 +112,15 @@ function getCountryCodes(): CountryCode[] {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function createLinkToken(): Promise<string> {
+// With an access token, Plaid Link opens in update mode for that item
+// (products must be omitted). Design: connection-repair-update-mode.
+export async function createLinkToken(accessToken?: string): Promise<string> {
   const configs: LinkTokenCreateRequest = {
     user: { client_user_id: 'spendright-user' },
     client_name: 'SpendRight',
-    products: getProducts(),
     country_codes: getCountryCodes(),
     language: 'en',
+    ...(accessToken !== undefined ? { access_token: accessToken } : { products: getProducts() }),
   };
 
   const response = await getClient().linkTokenCreate(configs);

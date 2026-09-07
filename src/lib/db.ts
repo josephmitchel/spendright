@@ -19,7 +19,7 @@ function getConnectionString(): string {
 
 // Inside the factory so bundler module-copies can't stack duplicate listeners.
 // Design: db-pool-errors-logged.
-const pool = globalSingleton('pool', () => {
+export const pool = globalSingleton('pool', () => {
   const created = new Pool({ connectionString: getConnectionString() });
   created.on('error', (err) => logError('postgres pool: idle client error', err));
   return created;
