@@ -1,11 +1,6 @@
 // @ts-check
-// Verifies every `Verified-on: <package>@<version>` marker in source
-// comments against the installed package's major.minor. The markers sit next
-// to comments that assert reverse-engineered facts about third-party
-// internals; a dependency bump fails `npm run lint` until someone
-// re-verifies the claim and updates its marker. Patch drift is tolerated —
-// the claims are about behavior, and a patch release that changes it would
-// slip any string check. Design: verified-claims-checked.
+// Lint check: every `Verified-on: <package>@<version>` marker must match the installed major.minor.
+// Design: verified-claims-checked.
 import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { root, sourceFiles } from './lib/source-files.mjs';
@@ -35,8 +30,6 @@ for (const file of sourceFiles()) {
     for (const match of line.matchAll(MARKER)) {
       markers++;
       const [, runtime, claimed] = match;
-      // Both groups are non-optional in MARKER; the guard satisfies the
-      // checked index access.
       if (!runtime || !claimed) continue;
       const at = `${label}:${index + 1}`;
       const installed = installedVersion(runtime);

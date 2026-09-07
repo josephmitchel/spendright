@@ -10,7 +10,7 @@ import { removeItem } from '@/lib/plaid';
 import { plaidErrorBody } from '@/lib/plaid-errors';
 import { PublicError } from '@/lib/public-error';
 
-// Unauthenticated and destructive. Design: single-user-localhost-no-auth.
+// Design: single-user-localhost-no-auth.
 export const DELETE = withErrorResponse(
   async (_req: NextRequest, { params }: { params: Promise<{ itemId: string }> }) => {
     const { itemId } = await params;
@@ -19,9 +19,6 @@ export const DELETE = withErrorResponse(
       return jsonError('NOT_FOUND', 'Item not found', 404);
     }
 
-    // An unreadable token (rotated ENCRYPTION_KEY, hand-edited column) has
-    // nothing Plaid could revoke, and decrypt's own error message points the
-    // user at this delete — it must not 500 on the same failure.
     // Design: item-delete-plaid-first.
     let accessToken: string | null = null;
     try {
@@ -31,7 +28,6 @@ export const DELETE = withErrorResponse(
       logError('item delete: token unreadable, skipping Plaid revoke:', err);
     }
 
-    // Plaid already having forgotten the item is not a failure.
     if (accessToken !== null) {
       try {
         await removeItem(accessToken);

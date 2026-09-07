@@ -8,8 +8,7 @@ import {
   type CategoryKind,
 } from '@/lib/category-kinds';
 
-// One picker for both category kinds. Placeholders are disabled+hidden: a
-// transaction keeps a category once one is assigned. Design: no-category-clear.
+// Design: no-category-clear.
 function CategorySelect({
   value,
   valueName,
@@ -23,12 +22,9 @@ function CategorySelect({
   onSelect: (id: number) => void;
   disabled?: boolean;
 }) {
-  // A saved category the list no longer offers still renders as the current
-  // value, but is not selectable again.
   const stale = value !== null && !options.some((option) => option.id === value);
   return (
     <select
-      // Fixed-width table column; without this the select overflows its cell.
       style={{ maxWidth: '100%' }}
       value={value ?? ''}
       disabled={disabled}
@@ -54,8 +50,6 @@ function CategorySelect({
   );
 }
 
-// The rate cell's three outcomes: inflow rows have no rate, a rate whose
-// category link is gone is legacy data (shown but marked), else the rate.
 function rateCellText(txn: ApiTransaction, kind: CategoryKind): string | null {
   switch (kind) {
     case 'credit':
@@ -70,7 +64,6 @@ function rateCellText(txn: ApiTransaction, kind: CategoryKind): string | null {
   }
 }
 
-// The transaction rows for a matched card, category pickers included.
 // Design: supported-account-rule, category-kind-sign-rule.
 export function TransactionTable({
   card,
@@ -78,8 +71,7 @@ export function TransactionTable({
   transactionList,
   categoriesMayBeStale,
   patchErrors,
-  // The Action suffix is Next's convention for a function prop on a client
-  // component; this is a plain callback, not a Server Action.
+  // Action-suffixed per Next's client-component prop convention; a plain callback.
   onSelectCategoryAction,
 }: {
   card: ApiCard;
@@ -87,26 +79,22 @@ export function TransactionTable({
   transactionList: ApiTransaction[];
   // Design: stale-lists-disable-editing.
   categoriesMayBeStale: boolean;
-  // Per-row category-write failures, rendered inside the failing row.
   // Design: optimistic-category-writes.
   patchErrors: ReadonlyMap<string, string>;
-  // The returned promise never rejects and is deliberately not awaited here.
+  // Never rejects; fired un-awaited.
   onSelectCategoryAction: (
     row: ApiTransaction,
     kind: CategoryKind,
     categoryId: number,
   ) => Promise<void>;
 }) {
-  // The card's type decides how its rates are read; the header follows it.
   // Design: card-type-decides-rate-unit.
   const rateHeader = card.type === 'points' ? 'Multiplier' : 'Cashback %';
-  // Inflow rows pick from credit categories, spend rows from the card's.
   const optionsByKind = {
     card: card.categories,
     credit: creditCategories,
   } satisfies Record<CategoryKind, { id: number; name: string }[]>;
   return (
-    // Fixed layout so column widths don't shift between pages.
     <table border={1} style={{ tableLayout: 'fixed', width: '100%', overflowWrap: 'break-word' }}>
       <colgroup>
         <col style={{ width: '8%' }} />
@@ -156,7 +144,6 @@ export function TransactionTable({
                 ) : (
                   (selectedName ?? 'none')
                 )}
-                {/* Why the select snapped back; cleared by the row's next pick. */}
                 {patchError && <div>Update failed: {patchError}</div>}
               </td>
               <td>{rateCellText(txn, kind)}</td>

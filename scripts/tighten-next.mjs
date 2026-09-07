@@ -1,7 +1,5 @@
 // @ts-check
-// Tightens .next permissions (the cache can persist env secrets). The
-// directory is created first so its mode survives even a failed build
-// (postbuild only fires on success). Design: build-cache-secret-permissions.
+// Design: build-cache-secret-permissions.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

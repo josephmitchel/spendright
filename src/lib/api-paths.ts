@@ -1,5 +1,4 @@
-// Client-side /api/* path builders. Dependency-free — bundled into client
-// code. Design: client-pages-fetch-api.
+// Design: client-pages-fetch-api.
 export const apiPaths = {
   accounts: '/api/accounts',
   account: (accountId: string) => `/api/accounts/${encodeURIComponent(accountId)}`,

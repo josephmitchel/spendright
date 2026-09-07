@@ -1,6 +1,3 @@
-// One item's sync flow: Plaid drain, then a single DB transaction persisting
-// the batch (src/lib/sync-persist.ts, with the carry from src/lib/sync-carry.ts)
-// and recording the outcome (src/lib/sync-outcome.ts).
 import { inArray } from 'drizzle-orm';
 import { type AccountBase } from 'plaid';
 import { transactions, type ItemRow } from '@/db/schema';
@@ -21,23 +18,21 @@ export interface SyncItemResult {
   added: number;
   modified: number;
   removed: number;
-  // Rows for accounts not in the database. Non-zero means the item did not
-  // finish syncing cleanly even though nothing threw.
+  // Rows for accounts not in the database.
   skipped: number;
   // True when the skipped rows were dropped (cursor advanced) rather than held.
   dropped: boolean;
 }
 
 export interface SyncItemOptions {
-  // True when the caller already fetched AND stored the item's accounts (the
-  // link flow does both). Design: accounts-refreshed-per-sync.
+  // The caller already fetched AND stored the item's accounts.
+  // Design: accounts-refreshed-per-sync.
   accountsAlreadyStored?: boolean;
-  // Passed through to syncTransactions.
   notReadyRetries?: number;
 }
 
-// Per-item lock: concurrent syncItem calls on one item would race the cursor
-// write. Design: scheduled-sync.
+// Concurrent syncItem calls on one item would race the cursor write.
+// Design: scheduled-sync.
 const syncItemTails = globalSingleton('syncItemTails', () => new Map<string, Promise<void>>());
 
 export function syncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
@@ -46,9 +41,7 @@ export function syncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sync
 
 async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<SyncItemResult> {
   const accessToken = decrypt(item.accessToken);
-  // Plaid calls stay outside the DB transaction. The account refresh is
-  // best-effort: on failure the sync proceeds against stored accounts.
-  // Design: accounts-refreshed-per-sync
+  // Plaid calls stay outside the DB transaction. Design: accounts-refreshed-per-sync.
   let accountRefreshFailed = false;
   if (!options?.accountsAlreadyStored) {
     let plaidAccounts: AccountBase[] = [];
@@ -62,9 +55,8 @@ async function runSyncItem(item: ItemRow, options?: SyncItemOptions): Promise<Sy
       );
     }
     if (plaidAccounts.length > 0) {
-      // A failed upsert of an EXISTING row leaves its balances silently
-      // stale (the known-account guard only covers absent rows), so store
-      // failures count as a failed refresh.
+      // A failed upsert of an existing row leaves its balances silently stale,
+      // so store failures count as a failed refresh.
       const storeFailures = await refreshItemAccounts(item.itemId, plaidAccounts);
       if (storeFailures.length > 0) accountRefreshFailed = true;
     }

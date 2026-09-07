@@ -3,10 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '@/lib/http';
 
-// A mutation's in-flight guard, error state, and settle order.
 // Design: shared-mutation-protocol.
-// The guard reads a ref, not `pending`, so two runs in one tick cannot both
-// pass.
 export function useAsyncAction<Args extends unknown[]>(
   action: (...args: Args) => Promise<void>,
   failureMessage: string,
@@ -15,8 +12,6 @@ export function useAsyncAction<Args extends unknown[]>(
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(new Set<string>());
-  // Latest-ref pattern so `run` stays referentially stable while always
-  // calling the current render's action; `key` must be pure.
   const currentRef = useRef({ action, key: options?.key });
   useEffect(() => {
     currentRef.current = { action, key: options?.key };

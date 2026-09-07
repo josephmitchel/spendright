@@ -1,8 +1,5 @@
 // @ts-check
-// Verifies every `Design: <name>` reference in source comments points at a
-// live record in .claude/design/current/. A reference to a retired or
-// missing record fails the run, so renaming or retiring a record cannot
-// silently strand the markers that cite it. Runs as part of `npm run lint`.
+// Lint check: every `Design: <name>` reference must name a live record in .claude/design/current/.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { root, sourceFiles } from './lib/source-files.mjs';
@@ -26,23 +23,16 @@ function recordNames(dir) {
 const current = recordNames(currentDir);
 const retired = recordNames(retiredDir);
 
-// A record name: kebab-case with at least one hyphen, so prose words after
-// "Design:" can never register as a reference.
+// Requires a hyphen so prose words after "Design:" never register as a reference.
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)+$/;
 
-// Collects the names cited by one Design: marker, following the comment onto
-// continuation lines while each line ends with a comma; the continuation
-// loop advances the outer cursor so those lines are not re-scanned.
 /** @param {string[]} lines @param {string} fileLabel */
 function referencesIn(lines, fileLabel) {
   /** @type {{ name: string, line: number, file: string }[]} */
   const refs = [];
   let i = 0;
   while (i < lines.length) {
-    // Case-insensitive so a lowercase "(design: name)" marker is validated
-    // rather than silently ungated.
     const match = /design:\s*(.*)$/i.exec(lines[i] ?? '');
-    // Reported at the marker's own line, not the last continuation line.
     const markerLine = i + 1;
     i++;
     if (!match) continue;

@@ -8,11 +8,9 @@ import { sendJson } from '@/lib/http';
 import { isSyncFailure } from '@/lib/sync-failure';
 import { skippedSyncNotice } from '@/lib/sync-messages';
 
-// The "Sync all" action, its status line, and its failure.
 // Design: shared-mutation-protocol.
 export function useSyncAll(refresh: () => Promise<unknown>) {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  // When "Sync all" last came back with every item clean.
   // Design: link-notice-expires-on-clean-sync.
   const [syncSucceededAt, setSyncSucceededAt] = useState<number | null>(null);
 
@@ -25,7 +23,6 @@ export function useSyncAll(refresh: () => Promise<unknown>) {
     try {
       const data = await sendJson<SyncResponse>(apiPaths.sync, 'POST', undefined, 'Sync failed');
       const results = data.results;
-      // `skipped` rows were held back (cursor not advanced) unless `dropped`.
       // Design: bounded-cursor-hold.
       const parts = results.map((result) =>
         isSyncFailure(result)
@@ -35,7 +32,6 @@ export function useSyncAll(refresh: () => Promise<unknown>) {
             }`,
       );
       setSyncStatus(`Sync complete. ${parts.join(', ') || 'No items.'}`);
-      // Clean means every item finished with no error and no held/dropped rows.
       if (
         results.length > 0 &&
         results.every((result) => !isSyncFailure(result) && !result.skipped)
@@ -43,7 +39,6 @@ export function useSyncAll(refresh: () => Promise<unknown>) {
         setSyncSucceededAt(Date.now());
       void refresh();
     } catch (err) {
-      // The status line must not read "Syncing…" beside the failure.
       setSyncStatus(null);
       throw err;
     }

@@ -6,9 +6,11 @@ This repo is for development on SpendRight, a personal finance app primarily cen
 
 Current design information about the project is available in `.claude/design`. Familiarize yourself with the project's current design direction before making code changes.
 
-Avoid writing long comments in the code -- important information about the code that needs to be described in text should live in the design folder.
+# Comments
 
-### Code Intelligence
+Avoid writing long comments in the code -- important information about the code that needs to be described in text should live in the design folder. This repo is entirely agent authored/maintained, so no need to optimize heavily for human viewing.
+
+# Code Intelligence
 
 Prefer LSP over Grep/Glob/Read for code navigation:
 

@@ -8,8 +8,7 @@ import { logError } from '@/lib/log';
 
 const accountColumns = getTableColumns(accounts);
 
-// Served column by column: a new accounts column stays off the wire until
-// added here. Design: typed-api-contract.
+// Design: typed-api-contract.
 export const servedAccountColumns = {
   id: accountColumns.id,
   accountId: accountColumns.accountId,
@@ -52,18 +51,14 @@ function toAccountRow(plaidAccount: AccountBase, itemId: string, cardId: number 
   };
 }
 
-// One failed account store, with the caught error kept for the caller's
-// user-facing message.
 export type StoreFailure = { account: AccountBase; error: unknown };
 
-// Design: accounts-refreshed-per-sync.
 async function upsertAccount(
   tx: DbTransaction,
   plaidAccount: AccountBase,
   itemId: string,
   cardList: CardRow[],
 ): Promise<void> {
-  // card_id is re-matched and overwritten on every write.
   // Design: rematch-on-every-sync, selections-are-user-owned.
   const cardId = matchCard(cardList, plaidAccount.name ?? null)?.id ?? null;
   const accountValues = toAccountRow(plaidAccount, itemId, cardId);
@@ -78,8 +73,7 @@ async function upsertAccount(
 }
 
 // Each account commits in its own transaction, so one failing account costs
-// only its own rows; failures are logged and returned, never thrown.
-// Design: accounts-refreshed-per-sync, initial-sync-reported-not-thrown.
+// only its own rows. Design: accounts-refreshed-per-sync, initial-sync-reported-not-thrown.
 async function storeAccounts(
   plaidAccounts: AccountBase[],
   itemId: string,
@@ -102,9 +96,6 @@ async function storeAccounts(
   return failures;
 }
 
-// Stores an item's fetched accounts (catalog load plus the per-account
-// upserts); callers interpret the returned failures their own way.
-// Design: accounts-refreshed-per-sync.
 export async function refreshItemAccounts(
   itemId: string,
   plaidAccounts: AccountBase[],

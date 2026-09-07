@@ -1,7 +1,5 @@
-// Log helpers that redact caught errors. Axios hangs the full request config
-// off the error — secret headers and request bodies included — so a raw
-// Plaid error must never be printed (Verified-on: axios@1.20.0).
-// Design: plaid-error-log-redaction.
+// Axios hangs the full request config, secret headers included, off its
+// errors (Verified-on: axios@1.20.0). Design: plaid-error-log-redaction.
 import { plaidErrorBody } from '@/lib/plaid-errors';
 
 export function logError(message: string, err?: unknown): void {
@@ -18,8 +16,7 @@ export function logInfo(message: string): void {
   console.log(message);
 }
 
-// Fatal log + exit for the fail-closed startup paths. process.exit() drops
-// stderr writes still queued, so the exit waits for the queue to drain.
+// process.exit() drops queued stderr writes, so the exit waits for the drain.
 export function logFatalAndExit(message: string, err?: unknown): void {
   logError(message, err);
   process.exitCode = 1;
@@ -35,8 +32,6 @@ function loggableError(err: unknown): unknown {
   if (typeof axiosErr !== 'object' || axiosErr === null || axiosErr.isAxiosError !== true) {
     return err;
   }
-  // Only the axios message, status, and the picked Plaid body are safe to
-  // log; everything else on the error is not.
   return {
     name: 'AxiosError',
     message: axiosErr.message,

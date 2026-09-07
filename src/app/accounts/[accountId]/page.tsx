@@ -19,12 +19,9 @@ import { useTransactionPage } from './useTransactionPage';
 
 export default function AccountPage({ params }: { params: Promise<{ accountId: string }> }) {
   const { accountId } = use(params);
-  // Keyed so switching accounts remounts instead of showing stale state.
   return <AccountView key={accountId} accountId={accountId} />;
 }
 
-// deriveView enumerates the page body's legal states once; 'unresolved'
-// renders nothing beyond the error line.
 type View = 'loading' | 'not-found' | 'unsupported' | 'ready' | 'unresolved';
 
 function deriveView(inputs: {
@@ -36,18 +33,14 @@ function deriveView(inputs: {
 }): View {
   const { loading, accountLoaded, cardsLoaded, account, hasCard } = inputs;
   if (loading) return 'loading';
-  // Not-found needs positive evidence: this pass's account read succeeded
-  // and found nothing. Design: partial-load-rendering.
+  // Design: partial-load-rendering.
   if (accountLoaded && !account) return 'not-found';
-  // Unsupported needs both reads current, because the card is only
-  // recomputed when both succeeded. Design: supported-account-rule.
+  // Design: supported-account-rule.
   if (accountLoaded && cardsLoaded && account && !hasCard) return 'unsupported';
-  // Ready renders the (possibly stale) card content; failures show beside it.
   if (hasCard) return 'ready';
   return 'unresolved';
 }
 
-// The identity line under the heading.
 function AccountIdentity({ account }: { account: ApiAccount }) {
   return (
     <p>
@@ -66,8 +59,6 @@ function AccountIdentity({ account }: { account: ApiAccount }) {
   );
 }
 
-// Shown even for a single page, so "1–17 of 17" answers "is this all?".
-// Range and buttons are based on shownPage, the rows actually on screen.
 // Design: pager-keeps-stale-rows.
 function Pager({
   shownPage,
@@ -101,8 +92,7 @@ function Pager({
 
 function AccountView({ accountId }: { accountId: string }) {
   const accountData = useAccountData(accountId);
-  // One machine owns the per-row category-write state (bursts and load
-  // holds); both hooks act through it. Design: optimistic-category-writes.
+  // Design: optimistic-category-writes.
   const [categoryWrites] = useState(() => new CategoryWriteState());
   const transactionPage = useTransactionPage(accountId, categoryWrites);
   const { account, card, creditCategories, refresh: refreshAccount } = accountData;
@@ -121,16 +111,13 @@ function AccountView({ accountId }: { accountId: string }) {
     categoryWrites,
   );
 
-  // Turning the pager clears patch failures, so a long-gone edit's failure
-  // can't resurface on a later visit. Design: optimistic-category-writes.
+  // Design: optimistic-category-writes.
   useEffect(() => {
     clearPatchErrors();
   }, [shownPage, clearPatchErrors]);
 
-  // The two loads as one lifecycle: settled together, errors joined, one Retry.
   const { settled, error, retry } = combineLoadStates([accountData, transactionPage]);
 
-  // Silent poll so background sync changes show up without a reload.
   // Design: home-reflects-background-sync.
   useVisiblePoll(
     useCallback(() => {
@@ -143,7 +130,6 @@ function AccountView({ accountId }: { accountId: string }) {
   const categoriesMayBeStale = !accountData.loaded.cards || !accountData.loaded.account;
 
   const view = deriveView({
-    // The first load only; over once both loads have settled.
     loading: !settled,
     accountLoaded: accountData.loaded.account,
     cardsLoaded: accountData.loaded.cards,
@@ -171,7 +157,6 @@ function AccountView({ accountId }: { accountId: string }) {
           <code>npm run seed:cards</code>.
         </p>
       )}
-      {/* card is non-null whenever view is 'ready'; the check is for the compiler. */}
       {view === 'ready' && card && (
         <>
           <p>{`Card: ${card.name} (${card.type})`}</p>
@@ -179,7 +164,6 @@ function AccountView({ accountId }: { accountId: string }) {
           {categoriesMayBeStale && (
             <p>Category lists may be out of date — editing is off until they refresh.</p>
           )}
-          {/* total is the account's own count, so this can't fire on a page past the end. */}
           {transactionPage.loaded.transactions && total === 0 && <p>No transactions.</p>}
           {transactionList.length > 0 && (
             <TransactionTable

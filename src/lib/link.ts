@@ -13,13 +13,11 @@ import { recordSyncFailure } from '@/lib/sync-outcome';
 type PlaidItem = Awaited<ReturnType<typeof getItem>>;
 type Institution = Awaited<ReturnType<typeof getInstitutionById>>;
 
-// Cap on the inline initial sync's not-ready poll (about 6s).
 // Design: not-ready-poll-budgets.
 const INITIAL_SYNC_NOT_READY_RETRIES = 3;
 
 export interface LinkResult {
   itemId: string;
-  // From the row as written, which may have kept a previously stored name.
   institutionName: string | null;
   accountsStored: number;
   sync: SyncItemResult | null;
@@ -27,8 +25,7 @@ export interface LinkResult {
   accountErrors: string[];
 }
 
-// Best-effort: metadata is cosmetic, and a re-link keeps what is already
-// stored. Design: relink-preserves-institution-metadata.
+// Design: relink-preserves-institution-metadata.
 async function fetchInstitution(
   institutionId: string | null | undefined,
 ): Promise<Institution | null> {
@@ -41,8 +38,6 @@ async function fetchInstitution(
   }
 }
 
-// Persists the freshly exchanged token before anything else can fail.
-// Returns the ciphertext it wrote, which storeItem re-writes verbatim.
 // Design: token-stored-before-enrichment.
 async function storeItemShell(itemId: string, accessToken: string): Promise<string> {
   const encrypted = encrypt(accessToken);
@@ -56,16 +51,12 @@ async function storeItemShell(itemId: string, accessToken: string): Promise<stri
   return encrypted;
 }
 
-// Upserts the item row and returns it as written (no re-read that could fail
-// after commit). Design: initial-sync-reported-not-thrown.
 async function storeItem(
   itemId: string,
   encryptedAccessToken: string,
   plaidItem: PlaidItem,
   institution: Institution | null,
 ): Promise<ItemRow> {
-  // Split by update policy: everything in `alwaysUpdated` is written on
-  // insert and re-link alike, while the institution columns are conditional.
   // Design: relink-preserves-institution-metadata.
   const alwaysUpdated = {
     itemId,
@@ -77,9 +68,7 @@ async function storeItem(
     institutionLogo: institution?.logo ?? null,
     institutionPrimaryColor: institution?.primaryColor ?? null,
   };
-  // The id and name update whenever known (both can come from the item
-  // itself); the rest is fetched metadata that updates only when the fetch
-  // succeeded, so a failed fetch never nulls a stored value.
+  // A failed metadata fetch never nulls a stored value.
   const institutionUpdate = {
     ...(institutionValues.institutionId !== null && {
       institutionId: institutionValues.institutionId,
@@ -102,23 +91,16 @@ async function storeItem(
     })
     .returning();
   if (!storedItem) {
-    // An upsert with .returning() always yields the row; satisfies the
-    // checked index access.
     throw new Error(`item upsert returned no row for ${itemId}`);
   }
   return storedItem;
 }
 
-// The link is committed by now; a failed first sync is recorded on the item
-// row and in the result, and the link still succeeds.
 // Design: initial-sync-reported-not-thrown.
 async function runInitialSync(
   storedItem: ItemRow,
 ): Promise<{ result: SyncItemResult | null; error: string | null }> {
   try {
-    // The link flow already stored this batch's accounts; the not-ready poll
-    // is capped for this latency-sensitive route.
-    // Design: not-ready-poll-budgets, accounts-refreshed-per-sync.
     const result = await syncItem(storedItem, {
       accountsAlreadyStored: true,
       notReadyRetries: INITIAL_SYNC_NOT_READY_RETRIES,
@@ -135,8 +117,6 @@ async function runInitialSync(
   }
 }
 
-// Renders the store failures as user-facing messages.
-// Design: accounts-refreshed-per-sync, bounded-cursor-hold.
 function accountFailureMessages(failures: StoreFailure[]): string[] {
   return failures.map((failure) => {
     const name = accountDisplayName({
@@ -148,14 +128,10 @@ function accountFailureMessages(failures: StoreFailure[]): string[] {
   });
 }
 
-// The link-onboarding flow behind POST /api/exchange.
 // Design: inline-initial-sync, initial-sync-reported-not-thrown.
 export async function linkItem(publicToken: string): Promise<LinkResult> {
   const { accessToken, itemId } = await exchangePublicToken(publicToken);
-  // Stored immediately: everything after this line may fail without
-  // orphaning the Plaid Item. Design: token-stored-before-enrichment.
   const encryptedAccessToken = await storeItemShell(itemId, accessToken);
-  // Independent Plaid reads, in parallel. Design: inline-initial-sync.
   const [plaidItem, plaidAccounts] = await Promise.all([
     getItem(accessToken),
     getAccounts(accessToken),
@@ -163,9 +139,6 @@ export async function linkItem(publicToken: string): Promise<LinkResult> {
   const institution = await fetchInstitution(plaidItem.institution_id);
   const storedItem = await storeItem(itemId, encryptedAccessToken, plaidItem, institution);
 
-  // Failures are reported, not thrown. This is the batch's only store pass;
-  // the initial sync is told the accounts are already stored.
-  // Design: initial-sync-reported-not-thrown, accounts-refreshed-per-sync.
   const storeFailures = await refreshItemAccounts(itemId, plaidAccounts);
   const sync = await runInitialSync(storedItem);
   const accountErrors = accountFailureMessages(storeFailures);

@@ -7,11 +7,8 @@ import { pgErrorCode } from '@/lib/pg-errors';
 import { PublicError } from '@/lib/public-error';
 import { servedTransactionColumns, type CategorizedTransaction } from '@/lib/transactions';
 
-// Thrown inside db.transaction so the rejection rolls it back; PublicError
-// messages are user-safe. Design: error-message-allow-list.
 const badPick = (message: string) => new PublicError(message, { status: 400, code: 'BAD_REQUEST' });
 
-// The sign-gate rejection, keyed by the kind the row's amount takes.
 // Design: category-kind-sign-rule.
 const wrongKindMessage = {
   card: 'Non-negative-amount transactions take a card category, not a credit category',
@@ -24,8 +21,6 @@ interface CategoryPick {
   creditCategoryName: string | null;
 }
 
-// Validates one pick inside the caller's row-locked transaction and returns
-// the columns to write.
 // Design: category-kind-sign-rule, categorization-is-a-historical-snapshot.
 async function resolveCategoryPick(
   tx: DbTransaction,
@@ -47,7 +42,6 @@ async function resolveCategoryPick(
       if (!category || category.cardId !== cardId) {
         throw badPick("cardCategoryId does not belong to this account's card");
       }
-      // Retired categories keep old links but take no new picks.
       // Design: categories-retired-not-deleted.
       if (category.retiredAt !== null) {
         throw badPick(categoryKindSources.card.retiredPickMessage);
@@ -80,9 +74,6 @@ async function resolveCategoryPick(
   }
 }
 
-// Sets a transaction's category. The row is locked for the whole
-// read-validate-write (a concurrent sync can flip the sign or delete the
-// row); the bounded lock wait turns contention into a retryable 503.
 // Design: category-write-contract, no-category-clear.
 export async function setTransactionCategory(
   transactionId: string,
@@ -100,8 +91,7 @@ export async function setTransactionCategory(
       throw new PublicError('Transaction not found', { status: 404, code: 'NOT_FOUND' });
     }
 
-    // `for share` so a seed re-match cannot rewrite accounts.card_id between
-    // this read and the commit. Lock order is transactions-then-accounts.
+    // Lock order is transactions-then-accounts.
     const [account] = await tx
       .select()
       .from(accounts)
@@ -126,8 +116,7 @@ export async function setTransactionCategory(
       .where(eq(transactions.transactionId, transactionId))
       .returning(servedTransactionColumns)
       .catch((err: unknown) => {
-        // 23503 foreign_key_violation: the category was deleted between
-        // resolveCategoryPick and this write.
+        // 23503 foreign_key_violation
         if (pgErrorCode(err) === '23503') {
           throw new PublicError('That category no longer exists — reload the page and pick again', {
             status: 409,
@@ -137,7 +126,6 @@ export async function setTransactionCategory(
         throw err;
       });
     if (!updated) {
-      // Unreachable while the row lock is held; satisfies the checked index.
       throw new PublicError('Transaction not found', { status: 404, code: 'NOT_FOUND' });
     }
 

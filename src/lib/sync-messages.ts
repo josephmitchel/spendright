@@ -1,12 +1,7 @@
-// The bounded cursor hold's budget and every rendering of its wording.
 // Dependency-free — bundled into client code. Design: bounded-cursor-hold.
 
-// Consecutive syncs a cursor may be held back before the skipped rows are
-// dropped.
 export const MAX_SKIPPED_SYNCS = 5;
 
-// Stored on items.error while rows are held, or after they are dropped.
-// { message } is the non-Plaid shape of items.error.
 export function skippedItemErrorMessage(
   skipped: number,
   consecutiveSkippedSyncs: number,
@@ -24,8 +19,6 @@ export function skippedItemErrorMessage(
         'keeps working.';
 }
 
-// Short client-side summary, shared by the sync-all status line and the
-// connect-time notice.
 export function skippedSyncNotice(skipped: number, dropped: boolean): string {
   return dropped
     ? `${skipped} transaction(s) dropped after repeated failures — not recoverable ` +
@@ -34,7 +27,6 @@ export function skippedSyncNotice(skipped: number, dropped: boolean): string {
         'retried on the next sync (see the server log)';
 }
 
-// The server log line for a sync that skipped rows.
 export function skippedSyncLogLine(
   itemId: string,
   skipped: number,

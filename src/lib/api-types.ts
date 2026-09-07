@@ -1,6 +1,5 @@
-// The API contract: *Payload is what a handler serves, *Response what a
-// client reads after JSON serialization. Type-only imports.
-// Design: typed-api-contract, single-response-reader.
+// *Payload is what a handler serves, *Response what a client reads after
+// JSON serialization. Design: typed-api-contract, single-response-reader.
 import type { CreditCategoryRow } from '@/db/schema';
 import type { ServedAccountRow } from '@/lib/accounts';
 import type { CardWithCategories } from '@/lib/card-catalog';
@@ -9,9 +8,6 @@ import type { LinkResult } from '@/lib/link';
 import type { SyncAllResult } from '@/lib/sync-all';
 import type { CategorizedTransaction } from '@/lib/transactions';
 
-// Over JSON, timestamp columns arrive as ISO strings (numeric columns are
-// already strings in the row types). Recursive, so rows nested inside a
-// payload are mapped too.
 type Serialized<T> = T extends Date
   ? string
   : T extends Array<infer Element>
@@ -20,16 +16,10 @@ type Serialized<T> = T extends Date
       ? { [K in keyof T]: Serialized<T[K]> }
       : T;
 
-// Derived from the explicit column pick in src/lib/accounts.ts.
-// Design: typed-api-contract.
 export type ApiAccount = Serialized<ServedAccountRow>;
-// The encrypted access token is never served (the pick lives in
-// src/lib/items.ts). Design: access-tokens-encrypted.
 export type ApiItem = Serialized<PublicItemRow>;
 export type ApiCard = Serialized<CardWithCategories>;
 export type ApiCreditCategory = Serialized<CreditCategoryRow>;
-// The raw Plaid payload is never served; the joined category names ride
-// along. Design: raw-plaid-payload-stored-not-served.
 export type ApiTransaction = Serialized<CategorizedTransaction>;
 
 // GET /api/accounts
@@ -38,8 +28,8 @@ export interface AccountsPayload {
 }
 export type AccountsResponse = Serialized<AccountsPayload>;
 
-// GET /api/accounts/[accountId] — `account` is null when the id matches no
-// row (a 200, not a 404). Design: account-fetched-by-id.
+// GET /api/accounts/[accountId] — null account is a 200, not a 404.
+// Design: account-fetched-by-id.
 export interface AccountPayload {
   account: ServedAccountRow | null;
 }
@@ -63,8 +53,7 @@ export interface CardsPayload {
 }
 export type CardsResponse = Serialized<CardsPayload>;
 
-// GET /api/transactions — rows plus the account's total; the clamped bounds
-// are not echoed.
+// GET /api/transactions
 export interface TransactionsPayload {
   transactions: CategorizedTransaction[];
   total: number;
@@ -87,14 +76,12 @@ export interface SyncResponse {
   results: SyncAllResult;
 }
 
-// POST /api/exchange — snake_case wire keys, each field's type indexed off
-// LinkResult so a rename on either side breaks compilation.
+// POST /api/exchange
 export interface ExchangeResponse {
   item_id: LinkResult['itemId'];
   institution_name: LinkResult['institutionName'];
   accounts_stored: LinkResult['accountsStored'];
   sync: LinkResult['sync'];
   sync_error: LinkResult['syncError'];
-  // Empty is served as null.
   account_errors: LinkResult['accountErrors'] | null;
 }

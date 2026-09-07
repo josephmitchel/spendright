@@ -1,6 +1,4 @@
-// Account display labels. Dependency-free — bundled into client code.
-// Structural parameters (not AccountRow) so a Plaid AccountBase can be
-// adapted at the call site.
+// Dependency-free — bundled into client code.
 
 export function accountDisplayName(account: {
   name: string | null;

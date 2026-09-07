@@ -1,6 +1,3 @@
-// Upserts src/db/cards.seed.ts into Postgres and re-matches accounts to cards.
-// Run with: npm run seed:cards
-
 // Must stay the first import so env is loaded before the modules below evaluate.
 import './load-env';
 
@@ -16,8 +13,6 @@ import type { DrizzleTransaction } from '../src/lib/db';
 import { requireDatabaseUrl } from '../src/lib/env';
 import { logFatalAndExit, logInfo } from '../src/lib/log';
 
-// Keys go through normalizeAccountName (the same normalization matchCard
-// uses); `owner` names the seed entry for error messages.
 // Design: seed-validation.
 function assertUniqueKeys(
   entries: Array<{ value: string; owner: string }>,
@@ -39,8 +34,6 @@ function assertUniqueKeys(
 }
 
 function assertSeedIsValid(): void {
-  // Duplicate slugs would silently merge: the second upsert wins and the
-  // retire pass never flags either.
   assertUniqueKeys(
     cardSeeds.map((seed) => ({ value: seed.slug, owner: seed.name })),
     {
@@ -49,8 +42,6 @@ function assertSeedIsValid(): void {
     },
   );
 
-  // A blank matcher would match a whitespace-only Plaid account name, since
-  // matchCard normalizes both sides the same way.
   assertUniqueKeys(
     cardSeeds.flatMap((seed) =>
       seed.plaidAccountNames.map((name) => ({ value: name, owner: seed.slug })),
@@ -62,7 +53,6 @@ function assertSeedIsValid(): void {
     },
   );
 
-  // Per-card, and case-insensitive: stricter than the (card_id, name) unique index.
   for (const seed of cardSeeds) {
     assertUniqueKeys(
       seed.categories.map((category) => ({ value: category.name, owner: seed.slug })),
@@ -83,13 +73,8 @@ function assertSeedIsValid(): void {
   );
 }
 
-// The handle drizzle passes to a rootDb.transaction callback (this script's
-// schemaless client, not src/lib/db's schema-typed one).
 type SeedTransaction = DrizzleTransaction<NodePgDatabase>;
 
-// Each seed table paired with its key column, so retireMissing takes them
-// together; keyColumn is tied to the table's own columns so a cross-table
-// pair fails to compile.
 type SeedTable = typeof cards | typeof cardCategories | typeof creditCategories;
 interface RetireTarget<Table extends SeedTable = SeedTable> {
   table: Table;
@@ -105,10 +90,7 @@ const retireTargets = {
   creditCategories: RetireTarget<typeof creditCategories>;
 };
 
-// Retires every live row in scope whose key left `keptKeys`. An empty kept
-// list retires everything in scope: the clause is omitted, which `and()`
-// treats the same as the `true` drizzle renders notInArray([]) into
-// (Verified-on: drizzle-orm@0.45.2).
+// Empty keptKeys omits the clause — same as the `true` drizzle renders notInArray([]) into (Verified-on: drizzle-orm@0.45.2).
 // Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
 async function retireMissing<Table extends SeedTable>(
   tx: SeedTransaction,
@@ -133,8 +115,6 @@ async function retireMissing<Table extends SeedTable>(
   }
 }
 
-// Upserts each seeded card and its categories, then retires the per-card
-// categories that left the file. Returns the category count for the summary.
 async function upsertCards(tx: SeedTransaction): Promise<number> {
   let categoryCount = 0;
 
@@ -146,7 +126,6 @@ async function upsertCards(tx: SeedTransaction): Promise<number> {
       type: seed.type,
       plaidAccountNames: seed.plaidAccountNames,
     };
-    // `retiredAt: null` revives a card whose slug came back into the file.
     const [card] = await tx
       .insert(cards)
       .values(cardValues)
@@ -185,8 +164,7 @@ async function upsertCards(tx: SeedTransaction): Promise<number> {
   return categoryCount;
 }
 
-// Credit categories: upsert by name (revives retired ones), then retire the
-// rest. drizzle throws on values([]) (Verified-on: drizzle-orm@0.45.2).
+// drizzle throws on values([]) (Verified-on: drizzle-orm@0.45.2).
 async function upsertCreditCategories(tx: SeedTransaction): Promise<void> {
   if (creditCategorySeeds.length > 0) {
     await tx
@@ -205,9 +183,6 @@ async function upsertCreditCategories(tx: SeedTransaction): Promise<void> {
   );
 }
 
-// Re-matches accounts to cards by Plaid account name. Only accounts.card_id
-// is written; a null match never clears saved categories. Returns the match
-// counts for the summary.
 async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; total: number }> {
   const cardList = await loadCardCatalog(tx);
   const accountList = await tx.select().from(accounts);
@@ -229,15 +204,13 @@ async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; 
 async function main() {
   assertSeedIsValid();
 
-  // Its own pool rather than src/lib/db's singleton: the script must end()
-  // it below so the process can exit. Design: config-validated-not-assumed.
+  // Own pool, not src/lib/db's singleton — the script must end() it so the process can exit.
   const pool = new Pool({ connectionString: requireDatabaseUrl() });
   const rootDb = drizzle(pool);
 
   try {
-    // Backfill missing reward rates only; existing rates are never restated
-    // (Design: categorization-is-a-historical-snapshot). Outside the
-    // reconcile transaction so its row locks can't deadlock with a sync.
+    // Outside the reconcile transaction so its row locks can't deadlock with a sync.
+    // Design: categorization-is-a-historical-snapshot.
     await rootDb.execute(sql`
       update transactions t
       set reward_rate = cc.rate
@@ -245,14 +218,10 @@ async function main() {
       where t.card_category_id = cc.id and t.reward_rate is null
     `);
 
-    // Reconcile the catalog to the seed file in one transaction.
-    // Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
     await rootDb.transaction(async (tx) => {
       const categoryCount = await upsertCards(tx);
       await upsertCreditCategories(tx);
 
-      // Retire cards no longer in the file; their categories are left as-is
-      // since matchCard skips retired cards.
       await retireMissing(
         tx,
         retireTargets.cards,

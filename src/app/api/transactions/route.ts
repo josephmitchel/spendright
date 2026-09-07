@@ -4,8 +4,6 @@ import { badRequest, withErrorResponse } from '@/lib/errors';
 import { MAX_PAGE_LIMIT, PAGE_SIZE } from '@/lib/pagination';
 import { listTransactions } from '@/lib/transactions';
 
-// Bounds are truncated to integers and clamped, never rejected. Absent,
-// non-numeric and zero all take the fallback; ±Infinity clamps to the edge.
 // Design: query-bounds-clamped.
 function readBound(raw: string | null, fallback: number, min: number, max: number): number {
   const parsed = Math.trunc(Number(raw));
@@ -14,14 +12,12 @@ function readBound(raw: string | null, fallback: number, min: number, max: numbe
 }
 
 export const GET = withErrorResponse(async (req: NextRequest) => {
-  // Trimmed so a padded id can't pass validation yet match nothing.
   const accountId = req.nextUrl.searchParams.get('accountId')?.trim();
   if (!accountId) {
     return badRequest('accountId is required');
   }
 
   const limit = readBound(req.nextUrl.searchParams.get('limit'), PAGE_SIZE, 1, MAX_PAGE_LIMIT);
-  // MAX_SAFE_INTEGER: the largest integer that survives the bigint bind intact.
   const offset = readBound(req.nextUrl.searchParams.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER);
 
   const { transactions, total } = await listTransactions(accountId, limit, offset);

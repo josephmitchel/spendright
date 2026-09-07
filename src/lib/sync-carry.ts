@@ -1,5 +1,4 @@
-// Pending-to-posted carry: what a reposted transaction keeps of the pending
-// row's selections. Design: pending-to-posted-carry.
+// Design: pending-to-posted-carry.
 import { inArray } from 'drizzle-orm';
 import type { Transaction as PlaidTransaction } from 'plaid';
 import { transactions } from '@/db/schema';
@@ -13,8 +12,7 @@ export interface CarriedSelection {
   creditCategoryId: number | null;
 }
 
-// Ids from `candidateIds` whose category row still exists. A carry is a
-// fresh insert, so a stale id would abort the whole sync.
+// A carry is a fresh insert, so a stale category id would abort the whole sync.
 async function liveCategoryIds(
   tx: DbTransaction,
   { table }: CategoryKindSource,
@@ -26,10 +24,8 @@ async function liveCategoryIds(
   return new Set(rows.map((row) => row.id));
 }
 
-// Plaid reposts a pending transaction under a new id (old id in `removed`,
-// new one in `added` with pending_transaction_id). Resolves the selections to
-// carry over before the pending rows are deleted, keyed by pending id.
-// Design: pending-to-posted-carry.
+// Plaid reposts a pending transaction under a new id, carrying the old one
+// in pending_transaction_id. Design: pending-to-posted-carry.
 export async function resolveCarriedSelections(
   tx: DbTransaction,
   added: PlaidTransaction[],
@@ -40,10 +36,8 @@ export async function resolveCarriedSelections(
     .filter((id): id is string => Boolean(id));
   if (pendingIds.length === 0) return carried;
 
-  // Locked: a concurrent PATCH on a pending row would otherwise commit a
-  // selection after this read decided there was nothing to carry, then lose
-  // it when the row is deleted. With the lock, PATCH blocks and gets a 404
-  // (row gone) or a 503 (lock timeout) instead of a false 200.
+  // Locked: a concurrent PATCH could otherwise commit a selection after this
+  // read and lose it when the pending row is deleted.
   const pendingRows = await tx
     .select({
       transactionId: transactions.transactionId,
@@ -71,8 +65,7 @@ export async function resolveCarriedSelections(
       row.cardCategoryId !== null && liveCardCategoryIds.has(row.cardCategoryId);
     const creditCategoryExists =
       row.creditCategoryId !== null && liveCreditCategoryIds.has(row.creditCategoryId);
-    // A rate carries on its own, without a live category link: it is a
-    // historical snapshot of what the purchase earned.
+    // A rate carries without a live category link: it is a historical snapshot.
     if (cardCategoryExists || creditCategoryExists || row.rewardRate !== null) {
       carried.set(row.transactionId, {
         cardCategoryId: cardCategoryExists ? row.cardCategoryId : null,
@@ -84,9 +77,7 @@ export async function resolveCarriedSelections(
   return carried;
 }
 
-// Carry only the kind matching the posted amount's sign; a sign flip drops
-// the carry. Spend side carries on either column so an orphaned rate
-// survives. Design: category-kind-sign-rule.
+// Design: category-kind-sign-rule.
 export function carriedColumns(
   carry: CarriedSelection | undefined,
   kind: CategoryKind,

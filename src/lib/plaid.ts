@@ -1,5 +1,3 @@
-// Build-time poison against client bundling (the SDK carries PLAID_SECRET).
-// Design: client-server-boundary-enforced.
 import 'server-only';
 
 import {
@@ -17,8 +15,8 @@ import {
 import { globalSingleton } from '@/lib/global-singleton';
 import { PublicError } from '@/lib/public-error';
 
-// Validated: an unknown PLAID_ENV indexes to undefined, which the SDK treats
-// as "unset" and silently defaults to production. Design: config-validated-not-assumed
+// An unknown PLAID_ENV indexes to undefined and the SDK silently defaults to
+// production. Design: config-validated-not-assumed.
 function getBasePath(): string {
   const env = process.env.PLAID_ENV || 'sandbox';
   const basePath = PlaidEnvironments[env];
@@ -33,9 +31,6 @@ function getBasePath(): string {
   return basePath;
 }
 
-// Unset credentials would go to Plaid as blank headers and come back as
-// Plaid's INVALID_API_KEYS, which names neither variable.
-// Design: config-validated-not-assumed
 function getCredential(name: 'PLAID_CLIENT_ID' | 'PLAID_SECRET'): string {
   const value = process.env[name];
   if (!value) {
@@ -50,15 +45,10 @@ function getCredential(name: 'PLAID_CLIENT_ID' | 'PLAID_SECRET'): string {
   return value;
 }
 
-// Axios's default timeout is 0 — wait forever (Verified-on: axios@1.20.0) —
-// and a Plaid promise that never settles latches the sync guards until
-// restart. Design: requests-have-deadlines.
+// Axios's default timeout is 0 — wait forever (Verified-on: axios@1.20.0).
+// Design: requests-have-deadlines.
 const PLAID_TIMEOUT_MS = 60_000;
 
-// Built once per process, through globalSingleton like every other
-// per-process value (module scope is per module copy here — see
-// src/lib/global-singleton.ts). If validation throws, globalSingleton caches
-// nothing and the next call re-validates.
 function getClient(): PlaidApi {
   return globalSingleton(
     'plaidClient',
@@ -79,8 +69,6 @@ function getClient(): PlaidApi {
   );
 }
 
-// Comma-separated env list: entries trimmed, blanks dropped, and the fallback
-// used when the result is empty as well as when the variable is unset.
 function splitEnvList(raw: string | undefined, fallback: string): string[] {
   const parsed = (raw ?? '')
     .split(',')
@@ -89,9 +77,7 @@ function splitEnvList(raw: string | undefined, fallback: string): string[] {
   return parsed.length > 0 ? parsed : [fallback];
 }
 
-// Validated against the SDK's enum values: a typo'd entry would otherwise
-// sail through a cast and surface as a Plaid API error naming neither the
-// variable nor the bad value. Design: config-validated-not-assumed.
+// Design: config-validated-not-assumed.
 function getEnvEnumList<T extends string>(
   name: 'PLAID_PRODUCTS' | 'PLAID_COUNTRY_CODES',
   fallback: T,
@@ -120,8 +106,6 @@ function getCountryCodes(): CountryCode[] {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Create Link Token
-// https://plaid.com/docs/api/link/#create-link-token
 export async function createLinkToken(): Promise<string> {
   const configs: LinkTokenCreateRequest = {
     user: { client_user_id: 'spendright-user' },
@@ -135,8 +119,6 @@ export async function createLinkToken(): Promise<string> {
   return response.data.link_token;
 }
 
-// Exchange a Link public_token for an access_token and item_id
-// https://plaid.com/docs/api/items/#itempublic_tokenexchange
 export async function exchangePublicToken(
   publicToken: string,
 ): Promise<{ accessToken: string; itemId: string }> {
@@ -147,14 +129,11 @@ export async function exchangePublicToken(
   };
 }
 
-// https://plaid.com/docs/api/items/#itemget
 export async function getItem(accessToken: string): Promise<ItemWithConsentFields> {
   const response = await getClient().itemGet({ access_token: accessToken });
   return response.data.item;
 }
 
-// Institution metadata (logo, primary_color) by id
-// https://plaid.com/docs/api/institutions/#institutionsget_by_id
 export async function getInstitutionById(
   institutionId: string,
 ): Promise<{ logo: string | null; primaryColor: string | null; name: string }> {
@@ -171,20 +150,16 @@ export async function getInstitutionById(
   };
 }
 
-// https://plaid.com/docs/api/accounts/#accountsget
 export async function getAccounts(accessToken: string): Promise<AccountBase[]> {
   const response = await getClient().accountsGet({ access_token: accessToken });
   return response.data.accounts;
 }
 
-// https://plaid.com/docs/api/items/#itemremove
 export async function removeItem(accessToken: string): Promise<string> {
   const response = await getClient().itemRemove({ access_token: accessToken });
   return response.data.request_id;
 }
 
-// One drained transactions/sync pull, distinct on purpose from the outcome
-// types it feeds (SyncItemResult in sync.ts, SyncAllResult in sync-all.ts).
 export interface PlaidSyncBatch {
   added: PlaidTransaction[];
   modified: PlaidTransaction[];
@@ -192,21 +167,13 @@ export interface PlaidSyncBatch {
   cursor: string | null;
 }
 
-// Re-polls of transactions/sync while Plaid reports the item as not ready.
-// The budget is cumulative across a whole drain (it bounds total in-request
-// sleep), not per stall. Callers with a request timeout to respect pass a
-// smaller budget. Design: not-ready-poll-budgets
+// Cumulative across a whole drain, not per stall. Design: not-ready-poll-budgets.
 const DEFAULT_NOT_READY_RETRIES = 10;
 const NOT_READY_DELAY_MS = 2000;
 
-// Requested page size for the drain. Plaid's documented maximum (the default
-// is only 100), passed explicitly below so MAX_SYNC_PAGES' sizing argument
-// rests on a number this code actually requests.
+// Plaid's documented maximum page size.
 const SYNC_PAGE_SIZE = 500;
 
-// Bound on the has_more drain. At SYNC_PAGE_SIZE rows per page the cap is
-// several years of history — far past any real drain — so hitting it means
-// Plaid is re-serving a cursor without progress, which must not spin forever.
 // Design: requests-have-deadlines.
 const MAX_SYNC_PAGES = 200;
 
@@ -214,8 +181,6 @@ export interface SyncOptions {
   notReadyRetries?: number;
 }
 
-// Fetch transaction changes for an item using the sync endpoint
-// https://plaid.com/docs/api/products/transactions/#transactionssync
 export async function syncTransactions(
   accessToken: string,
   initialCursor?: string | null,
@@ -228,7 +193,6 @@ export async function syncTransactions(
   let removed: RemovedTransaction[] = [];
   let hasMore = true;
   let notReadyRetries = 0;
-  // `?? DEFAULT`, so an explicit 0 means zero retries rather than falling back.
   const notReadyBudget = options?.notReadyRetries ?? DEFAULT_NOT_READY_RETRIES;
 
   let pages = 0;
@@ -247,11 +211,10 @@ export async function syncTransactions(
     });
     const data = response.data;
 
-    // An empty next_cursor means Plaid hasn't finished preparing the
-    // item's transactions yet — wait and retry without advancing.
+    // An empty next_cursor means Plaid hasn't finished preparing the item's
+    // transactions yet.
     if (data.next_cursor === '') {
       if (notReadyRetries++ >= notReadyBudget) {
-        // PublicError so the message reaches the user; 503 because it is transient.
         throw new PublicError(
           'Plaid is still preparing this account’s transactions — try syncing again in a minute',
           { status: 503, code: 'NOT_READY' },

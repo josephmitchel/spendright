@@ -1,9 +1,4 @@
-// Card catalog seed data. Edit this file, then run: npm run seed:cards
-// - `slug` is a card's stable identity; changing it creates a new card.
-// - `type`: 'cashback' → rates are percentages; 'points' → point multipliers.
-// - `plaidAccountNames`: case-insensitive exact match on the Plaid account
-//   name (shown on the home page). Add a name here to support an account.
-// - Removing a card or category retires it; adding it back revives it.
+// Edit this file, then run: npm run seed:cards
 // Design: card-catalog-in-code.
 
 interface CardSeed {
@@ -15,7 +10,6 @@ interface CardSeed {
   categories: { name: string; rate: number }[];
 }
 
-// Global, rate-less categories for inflow transactions (negative amounts).
 export const creditCategorySeeds: string[] = [
   'Credit Card Payment',
   'Refund',

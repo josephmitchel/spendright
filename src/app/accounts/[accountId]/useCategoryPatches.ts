@@ -14,8 +14,6 @@ import { errorMessage, sendJson } from '@/lib/http';
 import type { CategoryPatch } from './category-patch';
 import type { CategoryWriteState } from './category-write-state';
 
-// The wire body and optimistic patch for one kind's selection. The wire key
-// comes from the kind→key mapping shared with the PATCH route's parser.
 function kindSelection(
   kind: CategoryKind,
   categoryId: number,
@@ -49,10 +47,6 @@ function kindSelection(
   }
 }
 
-// Optimistic per-row category writes, driving the shared CategoryWriteState.
-// Each row keeps a promise chain (at most one PATCH in flight, responses
-// settle in issue order), so the machine's pending counter hits zero exactly
-// when the burst's newest patch settles.
 // Design: optimistic-category-writes.
 export function useCategoryPatches(
   card: ApiCard | null,
@@ -60,7 +54,6 @@ export function useCategoryPatches(
   applyCategoryPatch: (transactionId: string, fields: CategoryPatch) => void,
   writeState: CategoryWriteState,
 ) {
-  // Each row's newest burst outcome, rendered inside the row it belongs to.
   const [patchErrors, setPatchErrors] = useState<ReadonlyMap<string, string>>(new Map());
 
   const setRowError = useCallback((transactionId: string, message: string | null) => {
@@ -82,7 +75,6 @@ export function useCategoryPatches(
       setRowError(transactionId, null);
       const { body, patch } = kindSelection(kind, categoryId, card, creditCategories);
 
-      // Optimistic update so the controlled select never snaps back.
       applyCategoryPatch(transactionId, patch);
 
       const send = async () => {
@@ -106,14 +98,11 @@ export function useCategoryPatches(
         }
       };
 
-      // send() never rejects, so joining the row's chain is the whole await.
       await serializeByKey(patchChain.current, transactionId, send);
     },
     [card, creditCategories, applyCategoryPatch, writeState, setRowError],
   );
 
-  // For the page to call when the pager leaves the page the errors were
-  // raised on.
   const clearPatchErrors = useCallback(() => setPatchErrors(new Map()), []);
 
   return { setCategory, patchErrors, clearPatchErrors };

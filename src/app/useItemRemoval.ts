@@ -5,12 +5,9 @@ import { apiPaths } from '@/lib/api-paths';
 import type { ItemDeleteResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
 
-// Removing an institution, behind a browser confirm.
 // Design: item-delete-plaid-first, shared-mutation-protocol.
 export function useItemRemoval(refresh: () => Promise<unknown>) {
   const failure = 'Failed to remove item';
-  // Keyed per item, so only a re-confirm of the same item is dropped while
-  // its DELETE is in flight.
   const { run, error: removeError } = useAsyncAction(
     async (itemId: string) => {
       await sendJson<ItemDeleteResponse>(apiPaths.item(itemId), 'DELETE', undefined, failure);

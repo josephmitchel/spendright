@@ -4,8 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '@/lib/http';
 import { logError } from '@/lib/log';
 
-// Settles a keyed set of reads together; a failed read yields null so one
-// failure never discards a sibling that did arrive.
 // Design: partial-load-rendering.
 async function settleReads<T extends Record<string, unknown>>(
   reads: T,
@@ -35,37 +33,26 @@ async function settleReads<T extends Record<string, unknown>>(
   return { bodies, succeeded, error: messages.length > 0 ? messages.join('; ') : null };
 }
 
-// The load call a hook's `perform` receives: a keyed set of reads and the
-// `apply` that writes their bodies (null where a read failed) into the
-// hook's own state.
 export type LoadReads<K extends string> = <T extends Record<K, unknown>>(
   reads: T,
   apply: (bodies: { [P in keyof T]: Awaited<T[P]> | null }) => void,
 ) => Promise<void>;
 
-// The load lifecycle every data hook shares. Caller contract: `perform` is
-// memoized (the load effect re-runs on its identity); `initialLoaded` and
-// `stickyKeys` are read once.
+// Caller contract: `perform` is memoized (the load effect re-runs on its
+// identity); `initialLoaded` and `stickyKeys` are read once.
 // Design: partial-load-rendering, superseded-loads-write-nothing,
 // home-reflects-background-sync.
 export function useLoadProtocol<K extends string>(
   initialLoaded: Record<K, boolean>,
   perform: (load: LoadReads<K>) => Promise<void>,
-  // NoInfer: K comes from initialLoaded alone, so a stickyKeys typo is an
-  // error instead of silently narrowing K.
   options?: { stickyKeys?: readonly NoInfer<K>[] },
 ) {
   const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<Record<K, boolean>>(initialLoaded);
-  // Loud reload (Retry) in flight; cleared when the next un-superseded load
-  // settles.
   const [reloading, setReloading] = useState(false);
-  // Staleness ticket: only the newest load writes. A ref, not state: `load`
-  // (referentially stable) must read the current value, not the one from its
-  // own render. Design: superseded-loads-write-nothing.
+  // Design: superseded-loads-write-nothing.
   const latestTicket = useRef(0);
-  // Captured once so `load` stays referentially stable across renders.
   const stickyKeys = useRef(options?.stickyKeys).current;
 
   const load = useCallback(
@@ -75,11 +62,9 @@ export function useLoadProtocol<K extends string>(
     ): Promise<void> => {
       const ticket = ++latestTicket.current;
       const { bodies, succeeded, error: failureMessage } = await settleReads(reads);
-      // Superseded by a newer load: write nothing, apply included.
       // Design: superseded-loads-write-nothing.
       if (ticket !== latestTicket.current) return;
-      // A throwing `apply` must not skip the settlement writes below, or the
-      // page wedges on "Loading…"; the bug surfaces in the error line.
+      // A throwing `apply` must not skip the settlement writes below.
       let applyFailure: string | null = null;
       try {
         apply(bodies);
@@ -90,7 +75,6 @@ export function useLoadProtocol<K extends string>(
       setLoaded((previous) => {
         const next = { ...previous };
         for (const key of Object.keys(previous) as K[]) {
-          // T extends Record<K, unknown>, so every K is a key of `succeeded`.
           const nowSucceeded = (succeeded as Record<K, boolean>)[key];
           next[key] = stickyKeys?.includes(key) ? previous[key] || nowSucceeded : nowSucceeded;
         }
@@ -103,9 +87,6 @@ export function useLoadProtocol<K extends string>(
     [stickyKeys],
   );
 
-  // Every call site fires refresh un-awaited (`void refresh()`), so a
-  // rejecting `perform` is caught and logged here rather than left unhandled;
-  // the returned boolean lets `reload` recover its flag on that path.
   const refresh = useCallback(async () => {
     try {
       await perform(load);
@@ -116,7 +97,6 @@ export function useLoadProtocol<K extends string>(
     }
   }, [perform, load]);
 
-  // Mount and input changes (perform's identity carries its deps).
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -124,13 +104,10 @@ export function useLoadProtocol<K extends string>(
   const clearError = useCallback(() => setError(null), []);
   const reload = useCallback(() => {
     setReloading(true);
-    // A `perform` that rejected before its load() settled the flags would
-    // otherwise leave the pager disabled for good.
     void refresh().then((performed) => {
       if (!performed) setReloading(false);
     });
   }, [refresh]);
-  // The Retry action: clear the shown error, then reload loudly.
   const retry = useCallback(() => {
     clearError();
     reload();
@@ -138,16 +115,11 @@ export function useLoadProtocol<K extends string>(
   return { settled, error, loaded, clearError, refresh, reload, retry, reloading };
 }
 
-// The slice of a protocol instance a page treats as one lifecycle. Derived
-// from the hook's return, so a renamed protocol field fails to compile here.
 type LoadState = Pick<
   ReturnType<typeof useLoadProtocol>,
   'settled' | 'error' | 'clearError' | 'reload' | 'retry'
 >;
 
-// A page running several protocol instances treats them as one lifecycle:
-// settled when every instance is, errors joined, Retry clears and reloads
-// them all.
 export function combineLoadStates(states: readonly LoadState[]): LoadState {
   return {
     settled: states.every((state) => state.settled),
@@ -158,8 +130,6 @@ export function combineLoadStates(states: readonly LoadState[]): LoadState {
         .join('; ') || null,
     clearError: () => states.forEach((state) => state.clearError()),
     reload: () => states.forEach((state) => state.reload()),
-    // Each instance's own retry is clear-then-reload; the instances are
-    // independent, so per-instance ordering is the whole requirement.
     retry: () => states.forEach((state) => state.retry()),
   };
 }

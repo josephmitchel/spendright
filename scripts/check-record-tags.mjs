@@ -1,8 +1,5 @@
 // @ts-check
-// The reverse of check-design-refs.mjs: every code-shaped tag in a
-// .claude/design/current record must still name something in the tree. A tag
-// containing whitespace is a concept, never checked — rewording with a space
-// is the opt-out for names outside the repo. Runs as part of `npm run lint`.
+// Lint check: every code-shaped tag in a .claude/design/current record must still name something in the tree.
 // Design: record-tags-checked.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -10,18 +7,13 @@ import { root, sourceFiles } from './lib/source-files.mjs';
 
 const currentDir = join(root, '.claude/design/current');
 
-// Beyond the shared source walk, records legitimately cite npm scripts and
-// dependencies (package.json) and compiler options (tsconfig.json).
-// drizzle/*.sql is deliberately absent: migrations are append-only, so their
-// text contains every identifier ever deleted and can never fail a tag.
+// drizzle/*.sql is deliberately absent: append-only migrations contain every identifier ever deleted.
 function* checkedFiles() {
   yield* sourceFiles();
   for (const extra of ['package.json', 'tsconfig.json']) yield join(root, extra);
 }
 
-// Full-line comments leave the corpus: a deleted identifier living on in
-// prose must not satisfy a tag. Design:/Verified-on: marker lines stay —
-// they are the machine-checked comment layer records cite.
+// Prose comment lines leave the corpus so a deleted identifier living on in prose can't satisfy a tag.
 /** @param {string} file @param {string} text */
 function checkableText(file, text) {
   if (!/\.(ts|tsx|mjs)$/.test(file)) return text;
@@ -49,13 +41,8 @@ const npmScripts = new Set(
   Object.keys(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts ?? {}),
 );
 
-// Live tables and their live column names, from src/db/schema.ts (never from
-// migration history). Column names are the string arguments to the column
-// builders schema.ts imports from drizzle-orm/pg-core; pgTable/index/unique/
-// check are the non-column imports. This parse is textual, so any anomaly —
-// no builder import, no tables, a table without columns, a pgTable call the
-// split missed — throws rather than degrading table.column tags to the
-// weaker corpus check.
+// Textual parse of live tables/columns from src/db/schema.ts; any anomaly throws rather than
+// degrading table.column tags to the weaker corpus check.
 function schemaTables() {
   const schema = readFileSync(join(root, 'src/db/schema.ts'), 'utf8');
   const importedBuilders = /import\s*\{([^}]*)\}\s*from 'drizzle-orm\/pg-core'/.exec(schema)?.[1];
@@ -88,13 +75,9 @@ function schemaTables() {
 }
 const tables = schemaTables();
 
-// A DB table.column tag (items.access_token): both halves must be live in
-// the schema — matching each half anywhere in the tree is how tags for
-// dropped columns used to pass forever.
 const TABLE_COLUMN = /^([a-z0-9_]+)\.([a-z0-9_]+)$/;
 
-// A word-boundary match (custom class, so `$type` and `x-forwarded-for` work
-// as tags): the tag must not sit inside a longer identifier.
+// Custom boundary class so `$type` and `x-forwarded-for` work as tags.
 /** @param {string} tag */
 function corpusHasWord(tag) {
   const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -109,8 +92,7 @@ function resolve(tag) {
   if (tableColumn) {
     const [, table = '', column = ''] = tableColumn;
     const columns = tables.get(table);
-    // A live table with a dead column fails outright; a non-table pair
-    // (db.select, console.error) is an ordinary identifier claim.
+    // A non-table pair (db.select, console.error) is an ordinary identifier claim.
     if (columns) {
       return columns.has(column)
         ? { ok: true }
@@ -128,9 +110,7 @@ function resolve(tag) {
   return corpusHasWord(tag) ? { ok: true } : { ok: false };
 }
 
-// The frontmatter tags array, tolerant of both the single-line and the
-// bracketed multi-line form the records actually use. Not YAML: tags contain
-// unquoted brackets (route paths, dynamic segments) no YAML parser accepts.
+// Not YAML on purpose: tags contain unquoted brackets no YAML parser accepts.
 /** @param {string} text @returns {string[]} */
 function tagsOf(text) {
   const lines = text.split('\n');

@@ -1,5 +1,4 @@
-// An error whose message is safe to show to the user; never construct one
-// from a caught error's message. Dependency-free.
+// Message is user-safe; never construct one from a caught error's message.
 // Design: error-message-allow-list.
 export class PublicError extends Error {
   status: number;

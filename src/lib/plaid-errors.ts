@@ -1,6 +1,4 @@
-// Allow-listed Plaid error bodies: the five documented fields, picked one by
-// one, never a whole `response.data` passed through. Dependency-free —
-// client-bundleable. Design: error-message-allow-list, plaid-error-log-redaction.
+// Design: error-message-allow-list, plaid-error-log-redaction.
 
 export interface PlaidErrorFields {
   error_type?: string;
@@ -10,18 +8,11 @@ export interface PlaidErrorFields {
   request_id?: string;
 }
 
-// The union stored on items.error (typed on the jsonb column): a picked
-// Plaid error body, or the { message } shape the sync bookkeeping writes.
-// Design: typed-api-contract.
 export type ItemErrorBody = PlaidErrorFields | { message: string };
 
-// Runtime-checked, not just picked: the input is a cast over an unvalidated
-// response body, and a non-string would be stored and rendered.
 const asString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
-// Plaid's error body, or null if this is not a Plaid SDK failure. error_code
-// identifies the shape — `response.data` alone matches other libraries.
 // Design: error-message-allow-list.
 export function plaidErrorBody(err: unknown): PlaidErrorFields | null {
   const data = (err as { response?: { data?: PlaidErrorFields } })?.response?.data;
@@ -39,9 +30,6 @@ function pickPlaidErrorFields(data: PlaidErrorFields): PlaidErrorFields {
   };
 }
 
-// Plaid's own wording when it offered any, else the caller's fallback.
-// Guarded per field: stored bodies predating the runtime checks may hold
-// non-strings, and this renders straight into the page.
 export function plaidErrorMessage(
   body: { display_message?: string | null; error_message?: string },
   fallback: string,

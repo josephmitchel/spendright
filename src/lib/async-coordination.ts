@@ -1,9 +1,5 @@
-// Async coordination primitives. Dependency-free — shared by server modules
-// and client hooks.
-
-// Chains `task` onto `key`'s tail: at most one task per key in flight,
-// settling in submission order; the returned promise is the task's own, so a
-// rejection reaches the caller, never the chain.
+// At most one task per key in flight, settling in submission order; the
+// returned promise is the task's own, so a rejection never poisons the chain.
 export function serializeByKey<T>(
   tails: Map<string, Promise<void>>,
   key: string,
@@ -22,9 +18,7 @@ export function serializeByKey<T>(
   return run;
 }
 
-// Single-flight: a caller that arrives while `slot.inFlight` is set joins
-// that run instead of starting a duplicate. The slot lives with the caller so
-// its lifetime (usually a process-wide singleton) stays the caller's choice.
+// A caller arriving while `slot.inFlight` is set joins that run.
 export function singleFlight<T>(
   slot: { inFlight: Promise<T> | null },
   run: () => Promise<T>,

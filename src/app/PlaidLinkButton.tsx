@@ -9,27 +9,22 @@ import type { ExchangeResponse, LinkTokenResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
 import { skippedSyncNotice } from '@/lib/sync-messages';
 
-// The Connect flow: create a link token, open Plaid Link, exchange the
-// public token. Design: shared-mutation-protocol.
+// Design: shared-mutation-protocol.
 export function PlaidLinkButton({
-  // The Action suffix is Next's convention for a function prop on a client
-  // component; this is a plain callback, not a Server Action.
   onConnectedAction,
-  // When "Sync all" last completed with every item clean; null if never.
   syncSucceededAt,
 }: {
   onConnectedAction: () => void;
   syncSucceededAt: number | null;
 }) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
-  // Partial-failure notice after a successful link (the institution IS
-  // connected). Design: initial-sync-reported-not-thrown.
+  // Design: initial-sync-reported-not-thrown.
   const [syncNotice, setSyncNotice] = useState<{
     message: string;
     at: number;
   } | null>(null);
 
-  // A clean "Sync all" after the notice was raised makes it stale.
+  // Design: link-notice-expires-on-clean-sync.
   const noticeIsCurrent =
     syncNotice != null && (syncSucceededAt == null || syncSucceededAt < syncNotice.at);
   const pendingOpen = useRef(false);
@@ -42,8 +37,7 @@ export function PlaidLinkButton({
       'Exchange failed',
     );
     const accountErrors = data.account_errors ?? [];
-    // A re-linked item keeps its skip streak, so this sync can be the one
-    // that drops the held rows. Design: bounded-cursor-hold.
+    // Design: bounded-cursor-hold.
     const skipped = data.sync?.skipped ?? 0;
     const dropped = data.sync?.dropped === true;
     const notices = [
@@ -58,7 +52,6 @@ export function PlaidLinkButton({
   }, 'Exchange failed');
 
   const connect = useAsyncAction(async () => {
-    // A fresh attempt clears the previous attempt's leftovers.
     exchange.clearError();
     setSyncNotice(null);
     const data = await sendJson<LinkTokenResponse>(
@@ -71,14 +64,13 @@ export function PlaidLinkButton({
     setLinkToken(data.link_token);
   }, 'Failed to create link token');
 
-  // Memoized so the config passed to usePlaidLink only changes with the token.
   const linkConfig = useMemo(
     () => ({ token: linkToken, onSuccess: exchange.run }),
     [linkToken, exchange.run],
   );
   const { open, ready } = usePlaidLink(linkConfig);
 
-  // usePlaidLink needs the token before it becomes ready, so defer opening.
+  // usePlaidLink only becomes ready after it has the token, so defer opening.
   useEffect(() => {
     if (ready && pendingOpen.current) {
       pendingOpen.current = false;
