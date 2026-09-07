@@ -22,6 +22,10 @@ not mount them.
 
 ## Database
 
+PostgreSQL **11 or newer** is required — the cross-process sync lock uses
+`hashtextextended`, which older servers don't have. The server checks this at
+startup and refuses to run against anything older.
+
 Schema lives in `src/db/schema.ts`; migrations are the source of truth for
 applying it:
 

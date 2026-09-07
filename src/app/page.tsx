@@ -5,8 +5,8 @@ import { useCallback } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
+import { apiPaths } from '@/lib/api-paths';
 import type { ApiAccount, ApiItem } from '@/lib/api-types';
-import { base64ImageMime } from '@/lib/image-mime';
 import { itemErrorMessage } from '@/lib/item-error-message';
 import { isPlaidItemError } from '@/lib/plaid-errors';
 import { PlaidLinkButton } from './PlaidLinkButton';
@@ -37,6 +37,7 @@ function AccountsTable({ accounts }: { accounts: ApiAccount[] }) {
           <th scope="col">Current</th>
           <th scope="col">Available</th>
           <th scope="col">Limit</th>
+          <th scope="col">Updated</th>
         </tr>
       </thead>
       <tbody>
@@ -50,6 +51,8 @@ function AccountsTable({ accounts }: { accounts: ApiAccount[] }) {
             <td>{account.balanceCurrent}</td>
             <td>{account.balanceAvailable}</td>
             <td>{account.balanceLimit}</td>
+            {/* The freshness cue for a balance about to inform a spending decision. */}
+            <td>{new Date(account.updatedAt).toLocaleString()}</td>
           </tr>
         ))}
       </tbody>
@@ -61,35 +64,35 @@ function InstitutionSection({
   item,
   accounts,
   accountsLoaded,
+  removePending,
   onRemoveAction,
   onRepairedAction,
 }: {
   item: ApiItem;
   accounts: ApiAccount[];
   accountsLoaded: boolean;
+  removePending: boolean;
   onRemoveAction: (itemId: string) => void;
   onRepairedAction: () => void;
 }) {
-  // The logo's format is provider-supplied and unguaranteed, so sniff it.
-  const logoMime = item.institutionLogo ? base64ImageMime(item.institutionLogo) : null;
   return (
     <section>
       <h2>
-        {item.institutionLogo && logoMime && (
+        {item.hasLogo && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={`data:${logoMime};base64,${item.institutionLogo}`}
-            alt=""
-            width={24}
-            height={24}
-          />
+          <img src={apiPaths.itemLogo(item.itemId)} alt="" width={24} height={24} />
         )}{' '}
         {item.institutionName ?? item.itemId}{' '}
-        <button onClick={() => onRemoveAction(item.itemId)}>Remove</button>
+        <button onClick={() => onRemoveAction(item.itemId)} disabled={removePending}>
+          Remove
+        </button>
+        {/* Design: async-status-announced — wrapper must stay mounted. */}
+        <span role="status">{removePending ? ' Removing…' : null}</span>
       </h2>
       {item.error != null && (
         <p>
-          Item error: {itemErrorMessage(item.error)} {/* Design: connection-repair-update-mode. */}
+          <ErrorNotice inline error={itemErrorMessage(item.error)} />{' '}
+          {/* Design: connection-repair-update-mode. */}
           {isPlaidItemError(item.error) && (
             <RepairConnectionButton itemId={item.itemId} onRepairedAction={onRepairedAction} />
           )}
@@ -104,7 +107,7 @@ function InstitutionSection({
 export default function Home() {
   const { itemList, accountList, lastSync, settled, error, loaded, refresh, retry } = useHomeData();
   const { syncAll, syncing, syncStatus, syncError, syncSucceededAt } = useSyncAll(refresh);
-  const { removeItem, removeError } = useItemRemoval(refresh);
+  const { removeItem, removing, removeError } = useItemRemoval(refresh);
 
   // Design: home-reflects-background-sync.
   useVisiblePoll(
@@ -155,6 +158,7 @@ export default function Home() {
               item={item}
               accounts={accountList.filter((account) => account.itemId === item.itemId)}
               accountsLoaded={loaded.accounts}
+              removePending={removing}
               onRemoveAction={removeItem}
               onRepairedAction={syncAll}
             />

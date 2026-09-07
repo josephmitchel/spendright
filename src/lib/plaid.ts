@@ -202,7 +202,8 @@ function toProviderTransaction(txn: PlaidTransaction): ProviderTransaction {
 }
 
 export async function getItem(accessToken: string): Promise<ProviderItem> {
-  const response = await getClient().itemGet({ access_token: accessToken });
+  // Design: transient-plaid-retry.
+  const response = await retryOnce(() => getClient().itemGet({ access_token: accessToken }));
   return toProviderItem(response.data.item);
 }
 

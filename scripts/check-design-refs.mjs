@@ -61,6 +61,27 @@ for (const file of sourceFiles()) {
   }
 }
 
+// [[name]] cross-links inside the records themselves must resolve too
+// (a retired target is fine — records may cite walked-back decisions).
+for (const dir of [currentDir, retiredDir]) {
+  /** @type {string[]} */
+  let mdFiles = [];
+  try {
+    mdFiles = readdirSync(dir).filter((entry) => entry.endsWith('.md'));
+  } catch {
+    continue;
+  }
+  for (const file of mdFiles) {
+    const text = readFileSync(join(dir, file), 'utf8');
+    for (const match of text.matchAll(/\[\[([a-z0-9-]+)\]\]/g)) {
+      const name = match[1] ?? '';
+      if (!current.has(name) && !retired.has(name)) {
+        failures.push(`${relative(root, join(dir, file))} — link [[${name}]] matches no record`);
+      }
+    }
+  }
+}
+
 if (failures.length > 0) {
   console.error('Design references out of sync with .claude/design/current:');
   for (const failure of failures) console.error(`  ${failure}`);

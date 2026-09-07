@@ -1,4 +1,4 @@
-import { eq, getTableColumns } from 'drizzle-orm';
+import { eq, getTableColumns, sql } from 'drizzle-orm';
 import { items, type ItemRow } from '@/db/schema';
 import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
@@ -8,11 +8,22 @@ import { plaidErrorBody } from '@/lib/plaid-errors';
 import { PublicError } from '@/lib/public-error';
 import { withItemSyncLock } from '@/lib/sync-lock';
 
-// Design: access-tokens-encrypted.
-const { accessToken: _accessToken, ...publicItemColumns } = getTableColumns(items);
-export { publicItemColumns };
+// The logo blob would otherwise ride every 60s poll; lists carry a flag and
+// GET /api/items/[itemId]/logo serves the bytes.
+// Design: access-tokens-encrypted, item-logo-served-separately.
+const {
+  accessToken: _accessToken,
+  institutionLogo: _institutionLogo,
+  ...listedItemColumns
+} = getTableColumns(items);
+export const publicItemColumns = {
+  ...listedItemColumns,
+  hasLogo: sql<boolean>`(${items.institutionLogo} is not null)`,
+};
 
-export type PublicItemRow = Pick<ItemRow, keyof typeof publicItemColumns & keyof ItemRow>;
+export type PublicItemRow = Pick<ItemRow, keyof typeof listedItemColumns & keyof ItemRow> & {
+  hasLogo: boolean;
+};
 
 // The sync lock keeps the delete from yanking rows out from under a running
 // sync. False means the item does not exist.

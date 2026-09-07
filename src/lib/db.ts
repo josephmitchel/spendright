@@ -1,11 +1,10 @@
 import 'server-only';
 
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
 import * as schema from '@/db/schema';
 import { requireDatabaseUrl } from '@/lib/env';
 import { globalSingleton } from '@/lib/global-singleton';
-import { logError } from '@/lib/log';
+import { createBoundedPool } from '@/lib/pool-config';
 import { PublicError } from '@/lib/public-error';
 
 // Design: config-validated-not-assumed.
@@ -17,21 +16,25 @@ function getConnectionString(): string {
   }
 }
 
-// Every wait on Postgres is bounded; query_timeout > statement_timeout so the
-// server-side cancel wins and surfaces a clean pg error.
-// Design: requests-have-deadlines, db-pool-errors-logged.
-export const POOL_TIMEOUTS = {
-  connectionTimeoutMillis: 10_000,
-  statement_timeout: 30_000,
-  query_timeout: 35_000,
-} as const;
-
 // Inside the factory so bundler module-copies can't stack duplicate listeners.
-export const pool = globalSingleton('pool', () => {
-  const created = new Pool({ connectionString: getConnectionString(), ...POOL_TIMEOUTS });
-  created.on('error', (err) => logError('postgres pool: idle client error', err));
-  return created;
-});
+// Design: shared-pool-config.
+export const pool = globalSingleton('pool', () => createBoundedPool(getConnectionString()));
+
+// hashtextextended (src/lib/sync-lock.ts) needs PostgreSQL 11+; a too-old
+// server must fail at startup, not on the first sync.
+// Design: postgres-version-floor.
+const MIN_POSTGRES_VERSION_NUM = 110_000;
+
+export async function assertSupportedPostgres(): Promise<void> {
+  const { rows } = await pool.query<{ server_version_num: string }>('show server_version_num');
+  const version = Number(rows[0]?.server_version_num);
+  if (!Number.isFinite(version) || version < MIN_POSTGRES_VERSION_NUM) {
+    throw new Error(
+      `DATABASE_URL points at PostgreSQL ${rows[0]?.server_version_num ?? '(unknown)'} — ` +
+        'SpendRight needs PostgreSQL 11 or newer',
+    );
+  }
+}
 
 export const db: NodePgDatabase<typeof schema> = globalSingleton('db', () =>
   drizzle(pool, { schema }),

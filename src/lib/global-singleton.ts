@@ -10,6 +10,7 @@ export type SingletonKey =
   | 'pool'
   | 'db'
   | 'plaidClient'
+  | 'processBackstop'
   | 'syncItemTails'
   | 'syncAllInFlight'
   | 'syncScheduler'

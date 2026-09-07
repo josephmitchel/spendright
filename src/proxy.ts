@@ -1,8 +1,28 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-// Design: non-local-request-guard, single-user-localhost-no-auth.
+// Design: non-local-request-guard, single-user-localhost-no-auth, nonce-based-csp.
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+// cdn.plaid.com serves the Plaid Link script and iframe (kept for browsers
+// that ignore 'strict-dynamic'); connect-src covers its telemetry and API
+// calls. Dev-mode React needs eval() for debugging features (never in
+// production), so 'unsafe-eval' is dev-only.
+function buildCsp(nonce: string): string {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://cdn.plaid.com` +
+      (process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''),
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "connect-src 'self' https://cdn.plaid.com https://*.plaid.com",
+    'frame-src https://cdn.plaid.com',
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+}
 
 function headerHostname(hostHeader: string): string | null {
   // new URL() would parse "evil.com@localhost" or "localhost/evil" into a
@@ -64,5 +84,14 @@ export function proxy(req: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  // The nonce rides the request's CSP header so Next stamps it onto the
+  // scripts it renders; the response carries the same policy to the browser.
+  const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
+  const csp = buildCsp(nonce);
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set('x-nonce', nonce);
+  requestHeaders.set('content-security-policy', csp);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set('content-security-policy', csp);
+  return response;
 }

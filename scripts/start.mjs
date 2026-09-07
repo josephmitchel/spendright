@@ -36,40 +36,83 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   process.exit(1);
 }
 
-// Bind and port trail the user's args so a stray `-H 0.0.0.0` cannot override them (Verified-on: next@16.3.4).
-const child = spawn(
-  process.execPath,
-  [nextBin, 'start', ...args, '-H', '127.0.0.1', '-p', String(port)],
-  {
-    stdio: 'inherit',
-  },
-);
-child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 1)));
+// A server crash (e.g. the process backstop's fatal exit) must not silently end
+// automatic syncing, so unexpected exits restart the child — with a crash-loop
+// guard so a persistent fault still surfaces as a hard stop.
+// Design: process-crash-backstop.
+let shuttingDown = false;
+/** @type {import('node:child_process').ChildProcess} */
+let child;
+/** @type {number[]} */
+const recentStarts = [];
+
+function spawnServer() {
+  recentStarts.push(Date.now());
+  // Bind and port trail the user's args so a stray `-H 0.0.0.0` cannot override them (Verified-on: next@16.3.4).
+  child = spawn(
+    process.execPath,
+    [nextBin, 'start', ...args, '-H', '127.0.0.1', '-p', String(port)],
+    {
+      stdio: 'inherit',
+    },
+  );
+  child.on('exit', (code, signal) => {
+    if (shuttingDown) process.exit(signal ? 1 : (code ?? 1));
+    while (recentStarts.length > 0 && (recentStarts[0] ?? 0) < Date.now() - 60_000) {
+      recentStarts.shift();
+    }
+    if (recentStarts.length >= 3) {
+      console.error(
+        'start.mjs: the server exited 3 times within 60s — giving up rather than crash-looping. ' +
+          'Fix the fault in the log above and start again.',
+      );
+      process.exit(1);
+    }
+    console.error(
+      `start.mjs: the server exited unexpectedly (${signal ?? `code ${code}`}) — restarting in 1s.`,
+    );
+    setTimeout(() => {
+      spawnServer();
+      void warmUp();
+    }, 1000);
+  });
+}
+
 for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
-  process.on(signal, () => child.kill(signal));
+  process.on(signal, () => {
+    shuttingDown = true;
+    child.kill(signal);
+  });
 }
 
 // The warm-up request itself triggers instrumentation, so any response status counts as done.
-const deadline = Date.now() + 60_000;
-let warmedUp = false;
-while (Date.now() < deadline && child.exitCode === null) {
-  try {
-    await fetch(`http://127.0.0.1:${port}/`, {
-      redirect: 'manual',
-      // A hung response must land in the catch and retry, not stall past the deadline.
-      signal: AbortSignal.timeout(5000),
-    });
-    warmedUp = true;
-    break;
-  } catch {
-    await new Promise((resolve) => setTimeout(resolve, 250));
+async function warmUp() {
+  const startedChild = child;
+  const deadline = Date.now() + 60_000;
+  let warmedUp = false;
+  while (Date.now() < deadline && startedChild.exitCode === null) {
+    try {
+      await fetch(`http://127.0.0.1:${port}/`, {
+        redirect: 'manual',
+        // A hung response must land in the catch and retry, not stall past the deadline.
+        signal: AbortSignal.timeout(5000),
+      });
+      warmedUp = true;
+      break;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  if (!warmedUp && startedChild.exitCode === null) {
+    console.error(
+      `start.mjs: no response from http://127.0.0.1:${port}/ within 60s — the warm-up that starts ` +
+        'the sync scheduler never ran. Stopping the server rather than leaving it up without it.',
+    );
+    shuttingDown = true;
+    startedChild.kill('SIGTERM');
+    process.exitCode = 1;
   }
 }
-if (!warmedUp && child.exitCode === null) {
-  console.error(
-    `start.mjs: no response from http://127.0.0.1:${port}/ within 60s — the warm-up that starts ` +
-      'the sync scheduler never ran. Stopping the server rather than leaving it up without it.',
-  );
-  child.kill('SIGTERM');
-  process.exitCode = 1;
-}
+
+spawnServer();
+await warmUp();

@@ -131,6 +131,16 @@ function AccountView({ accountId }: { accountId: string }) {
     }, [refreshAccount, refreshTransactions]),
   );
 
+  // A 'use client' page can't export route metadata, so the tab title (the cue
+  // that tells account tabs and history entries apart) is set here.
+  useEffect(() => {
+    if (!account) return;
+    document.title = `${accountDisplayName(account)} — SpendRight`;
+    return () => {
+      document.title = 'SpendRight';
+    };
+  }, [account]);
+
   // Design: stale-lists-disable-editing.
   const categoriesMayBeStale = !accountData.loaded.cards || !accountData.loaded.account;
 

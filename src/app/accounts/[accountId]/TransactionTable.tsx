@@ -1,12 +1,20 @@
 'use client';
 
 import type { ApiCard, ApiCreditCategory, ApiTransaction } from '@/lib/api-types';
+import type { CardType } from '@/lib/card-types';
 import {
   assertNeverKind,
   categoryKindKeys,
   kindForAmount,
   type CategoryKind,
 } from '@/lib/category-kinds';
+
+// A new CardType must name its rate unit here or fail to compile.
+// Design: card-type-decides-rate-unit.
+const RATE_HEADERS = { cashback: 'Cashback %', points: 'Multiplier' } satisfies Record<
+  CardType,
+  string
+>;
 
 // Design: no-category-clear.
 function CategorySelect({
@@ -93,7 +101,7 @@ export function TransactionTable({
   ) => Promise<void>;
 }) {
   // Design: card-type-decides-rate-unit.
-  const rateHeader = card.type === 'points' ? 'Multiplier' : 'Cashback %';
+  const rateHeader = RATE_HEADERS[card.type];
   const optionsByKind = {
     card: card.categories,
     credit: creditCategories,

@@ -7,6 +7,7 @@ export const apiPaths = {
   items: '/api/items',
   item: (itemId: string) => `/api/items/${encodeURIComponent(itemId)}`,
   itemLinkToken: (itemId: string) => `/api/items/${encodeURIComponent(itemId)}/link-token`,
+  itemLogo: (itemId: string) => `/api/items/${encodeURIComponent(itemId)}/logo`,
   linkToken: '/api/link-token',
   sync: '/api/sync',
   transactions: (accountId: string, limit: number, offset: number) =>

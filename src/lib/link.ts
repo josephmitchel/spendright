@@ -13,7 +13,7 @@ import {
   getInstitutionById,
   getItem,
 } from '@/lib/plaid';
-import type { ProviderItem } from '@/lib/provider-types';
+import type { ProviderAccount, ProviderItem } from '@/lib/provider-types';
 import { PublicError } from '@/lib/public-error';
 import { syncItem, type SyncItemResult } from '@/lib/sync';
 import { recordSyncFailure } from '@/lib/sync-outcome';
@@ -144,16 +144,41 @@ export async function createRepairLinkToken(itemId: string): Promise<string> {
   return createLinkToken(decrypt(item.accessToken));
 }
 
-// Design: inline-initial-sync, initial-sync-reported-not-thrown.
+// Design: inline-initial-sync, initial-sync-reported-not-thrown,
+// link-enrichment-reported-not-thrown.
 export async function linkItem(publicToken: string): Promise<LinkResult> {
   const { accessToken, itemId } = await exchangePublicToken(publicToken);
   const encryptedAccessToken = await storeItemShell(itemId, accessToken);
-  const [plaidItem, plaidAccounts] = await Promise.all([
-    getItem(accessToken),
-    getAccounts(accessToken),
-  ]);
-  const institution = await fetchInstitution(plaidItem.institutionId);
-  const storedItem = await storeItem(itemId, encryptedAccessToken, plaidItem, institution);
+
+  // The shell row is already durable, so an enrichment failure is recorded on
+  // it and reported — the home page then explains the new item instead of
+  // showing an unlabeled orphan.
+  let plaidItem: ProviderItem;
+  let plaidAccounts: ProviderAccount[];
+  let storedItem: ItemRow;
+  try {
+    [plaidItem, plaidAccounts] = await Promise.all([
+      getItem(accessToken),
+      getAccounts(accessToken),
+    ]);
+    const institution = await fetchInstitution(plaidItem.institutionId);
+    storedItem = await storeItem(itemId, encryptedAccessToken, plaidItem, institution);
+  } catch (err) {
+    logError(`Link enrichment failed for item ${itemId}:`, err);
+    const error = await recordSyncFailure(
+      itemId,
+      err,
+      'Linking finished but account setup failed — sync again, or remove the institution',
+    );
+    return {
+      itemId,
+      institutionName: null,
+      accountsStored: 0,
+      sync: null,
+      syncError: error,
+      accountErrors: [],
+    };
+  }
 
   const storeFailures = await refreshItemAccounts(itemId, plaidAccounts);
   const sync = await runInitialSync(storedItem);

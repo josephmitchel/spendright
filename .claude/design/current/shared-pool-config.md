@@ -1,0 +1,8 @@
+---
+name: shared-pool-config
+description: One pool definition — POOL_CONFIG/createBoundedPool in src/lib/pool-config.ts, with an explicit max of 10 — shared by the server and both standalone scripts instead of three hand-synced copies
+tags: [POOL_CONFIG, createBoundedPool, src/lib/pool-config.ts, src/lib/db.ts, scripts/seed-cards.ts, scripts/rotate-encryption-key.ts]
+date: 2026-09-07
+---
+
+Confirmed 2026-09-07: the 2026-09-07 maintainability audit found the pool timeouts and idle-error handler hand-copied across `src/lib/db.ts`, `scripts/seed-cards.ts`, and `scripts/rotate-encryption-key.ts`, synced only by a comment — no tooling would catch drift in values [[requests-have-deadlines]] treats as a deliberate invariant. The fix follows the repo's own precedent (pg-errors/plaid-errors pulled out of server-only modules): `src/lib/pool-config.ts` is importable by both the server-only `db.ts` and the scripts, and `createBoundedPool` attaches the [[db-pool-errors-logged]] listener in the same breath. `max: 10` is now explicit rather than `pg`'s silent default, because the sync design's capacity arithmetic is sized against that exact number — and the reliability audit corrected that arithmetic: each in-flight sync item holds **two** connections during persistence (the [[cross-process-sync-lock]] session for the whole critical section, plus the `db.transaction` connection), so `SYNC_CONCURRENCY = 3` can occupy up to 6 of the 10, leaving 4 for concurrent UI requests. That margin is accepted at single-user scale; raising `SYNC_CONCURRENCY` or shrinking the pool must revisit it together.

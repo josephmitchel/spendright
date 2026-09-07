@@ -4,16 +4,18 @@ import './load-env';
 import { and, eq, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { Pool } from 'pg';
 import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
 import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
 import { loadCardCatalog } from '../src/lib/card-catalog';
 import { matchCard, normalizeAccountName } from '../src/lib/cards';
 import type { DrizzleTransaction } from '../src/lib/db';
 import { requireDatabaseUrl } from '../src/lib/env';
-import { logError, logFatalAndExit, logInfo } from '../src/lib/log';
+import { logFatalAndExit, logInfo } from '../src/lib/log';
+import { createBoundedPool } from '../src/lib/pool-config';
 
 // Design: seed-validation.
+const MAX_PLAUSIBLE_RATE = 20;
+
 function assertUniqueKeys(
   entries: Array<{ value: string; owner: string }>,
   describe: {
@@ -62,6 +64,21 @@ function assertSeedIsValid(): void {
           `cards.seed.ts: "${owner}" lists the category "${value}" more than once`,
       },
     );
+
+    // A typo'd rate would ship straight to the UI as authoritative reward
+    // guidance; no real card pays more than MAX_PLAUSIBLE_RATE.
+    for (const category of seed.categories) {
+      if (
+        !Number.isFinite(category.rate) ||
+        category.rate <= 0 ||
+        category.rate > MAX_PLAUSIBLE_RATE
+      ) {
+        throw new Error(
+          `cards.seed.ts: "${seed.slug}" category "${category.name}" has an implausible rate ` +
+            `(${category.rate}) — expected a number greater than 0 and at most ${MAX_PLAUSIBLE_RATE}`,
+        );
+      }
+    }
   }
 
   assertUniqueKeys(
@@ -204,16 +221,9 @@ async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; 
 async function main() {
   assertSeedIsValid();
 
-  // Own pool, not src/lib/db's singleton — the script must end() it so the process
-  // can exit. Timeouts mirror src/lib/db's POOL_TIMEOUTS (that module is
-  // server-only). Design: requests-have-deadlines.
-  const pool = new Pool({
-    connectionString: requireDatabaseUrl(),
-    connectionTimeoutMillis: 10_000,
-    statement_timeout: 30_000,
-    query_timeout: 35_000,
-  });
-  pool.on('error', (err) => logError('postgres pool: idle client error', err));
+  // Own pool, not src/lib/db's singleton (that module is server-only) — the
+  // script must end() it so the process can exit. Design: shared-pool-config.
+  const pool = createBoundedPool(requireDatabaseUrl());
   const rootDb = drizzle(pool);
 
   try {

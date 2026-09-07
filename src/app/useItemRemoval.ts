@@ -8,7 +8,11 @@ import { sendJson } from '@/lib/http';
 // Design: item-delete-plaid-first, shared-mutation-protocol.
 export function useItemRemoval(refresh: () => Promise<unknown>) {
   const failure = 'Failed to remove item';
-  const { run, error: removeError } = useAsyncAction(
+  const {
+    run,
+    pending: removing,
+    error: removeError,
+  } = useAsyncAction(
     async (itemId: string) => {
       await sendJson<ItemDeleteResponse>(apiPaths.item(itemId), 'DELETE', undefined, failure);
       void refresh();
@@ -22,5 +26,5 @@ export function useItemRemoval(refresh: () => Promise<unknown>) {
     run(itemId);
   };
 
-  return { removeItem, removeError };
+  return { removeItem, removing, removeError };
 }
