@@ -23,7 +23,11 @@ The entire purpose of the audit is to ensure the codebase is following a set of 
 
 ## Instructions
 
+### Step 1
+
 Create a date/time specified audit folder in `.claude/audit` (meaning if /audit was called at September 7th, 2026 at 1:02pm, you are going to create the folder `.claude/audit/09-07-2026-130200` and record the audits' results in there).
+
+### Step 2
 
 For each of the following agents defined in `.claude/agents`, spin up 4 agents:
 - auditor-functional-suitability
@@ -52,3 +56,18 @@ characteristic: "i.e. functional suitability"
 
 # Minor Concerns
 ```
+
+The agents label each of their findings as **prior** (a concern from a previous audit that remains unaddressed) or **new** (found in this audit). Preserve these labels when synthesizing: prefix every concern in the report with `[prior]` or `[new]`.
+
+### Step 3
+
+Create a file in the same audit folder titled `SUMMARY.md` which contains 2 things:
+- A brief overview of the main takeaways from the audit. Use the `[prior]`/`[new]` labels here: call out which prior concerns are still lingering unaddressed versus what this audit newly surfaced.
+- A score of the audit
+
+The score of the audit is calculated this way:
+- Major concern = 5
+- Moderate concern = 2
+- Minor concern = 1
+
+Add up all of the concerns together and that's the score. Alongside the total, report the prior/new split (e.g. `Score: 23 (prior: 15, new: 8)`) — a shrinking prior subtotal across audits means old concerns are actually getting resolved.
