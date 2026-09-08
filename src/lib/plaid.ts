@@ -211,7 +211,7 @@ function toProviderTransaction(txn: PlaidTransaction): ProviderTransaction {
     amount: txn.amount,
     isoCurrencyCode: txn.iso_currency_code,
     unofficialCurrencyCode: txn.unofficial_currency_code,
-    // Design: plaid-category-reserved.
+    // Design: deferred-features.
     category: txn.personal_finance_category?.primary ?? txn.category?.[0] ?? null,
     pending: txn.pending,
     pendingTransactionId: txn.pending_transaction_id,

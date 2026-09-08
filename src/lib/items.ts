@@ -10,7 +10,7 @@ import { withItemSyncLock } from '@/lib/sync-lock';
 
 // The logo blob would otherwise ride every 60s poll; lists carry a flag and
 // GET /api/items/[itemId]/logo serves the bytes.
-// Design: access-tokens-encrypted, item-logo-served-separately.
+// Design: data-at-rest-encryption, item-logo-served-separately.
 const {
   accessToken: _accessToken,
   institutionLogo: _institutionLogo,

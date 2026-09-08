@@ -61,7 +61,7 @@ async function upsertAccount(
   itemId: string,
   cardList: CardRow[],
 ): Promise<void> {
-  // Design: rematch-on-every-sync, selections-are-user-owned.
+  // Design: account-card-matching-by-name, categorization-is-a-historical-snapshot.
   const cardId = matchCard(cardList, plaidAccount.name)?.id ?? null;
   const accountValues = toAccountRow(plaidAccount, itemId, cardId);
 
@@ -75,7 +75,7 @@ async function upsertAccount(
 }
 
 // Each account commits in its own transaction, so one failing account costs
-// only its own rows. Design: accounts-refreshed-per-sync, initial-sync-reported-not-thrown.
+// only its own rows. Design: accounts-refreshed-per-sync, link-flow.
 async function storeAccounts(
   plaidAccounts: ProviderAccount[],
   itemId: string,

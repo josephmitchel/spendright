@@ -11,7 +11,7 @@ import {
 
 type CardCatalogSource = Pick<NodePgDatabase, 'select'>;
 
-// Design: single-card-catalog-loader, account-card-matching-by-name.
+// Design: card-catalog-in-code, account-card-matching-by-name.
 export function loadCardCatalog(source: CardCatalogSource): Promise<CardRow[]> {
   return source.select().from(cards).orderBy(cards.id);
 }
@@ -23,7 +23,7 @@ export interface OfferedCatalog {
   creditCategories: CreditCategoryRow[];
 }
 
-// Design: categories-retired-not-deleted, picker-ordering.
+// Design: categories-retired-not-deleted, list-endpoints-ordered.
 export async function listOfferedCards(source: CardCatalogSource): Promise<OfferedCatalog> {
   const [cardRows, categoryRows, creditCategoryRows] = await Promise.all([
     source.select().from(cards).where(isNull(cards.retiredAt)).orderBy(cards.name),

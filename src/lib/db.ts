@@ -21,7 +21,7 @@ function getConnectionString(): string {
 export const pool = globalSingleton('pool', () => createBoundedPool(getConnectionString()));
 
 // The supported baseline; a too-old server must fail at startup, not on the
-// first sync. Design: postgres-version-floor.
+// first sync. Design: runtime-version-floors.
 const MIN_POSTGRES_VERSION_NUM = 110_000;
 
 export async function assertSupportedPostgres(): Promise<void> {

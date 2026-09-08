@@ -9,8 +9,7 @@ import { PAGE_SIZE } from '@/lib/pagination';
 import type { CategoryPatch } from './category-patch';
 import type { CategoryWriteState } from './category-write-state';
 
-// Design: pager-keeps-stale-rows, transactions-paginated,
-// partial-load-rendering.
+// Design: pager-keeps-stale-rows, transactions-paginated, partial-load-rendering.
 export function useTransactionPage(accountId: string, categoryWrites: CategoryWriteState) {
   const [transactionList, setTransactionList] = useState<ApiTransaction[]>([]);
   const [page, setPage] = useState(0);
@@ -60,7 +59,7 @@ export function useTransactionPage(accountId: string, categoryWrites: CategoryWr
     [page, reload],
   );
 
-  // Design: optimistic-category-writes, superseded-loads-write-nothing.
+  // Design: optimistic-category-writes, partial-load-rendering.
   const applyCategoryPatch = useCallback((transactionId: string, fields: CategoryPatch) => {
     setTransactionList((list) =>
       list.map((txn) => (txn.transactionId === transactionId ? { ...txn, ...fields } : txn)),

@@ -8,4 +8,4 @@ date: 2026-09-06
 
 Decided by the user 2026-09-06 (raised by a quality audit as dead stored surface): the two Plaid product-list columns were written on every link and read by nothing; Plaid still returns the data if it is ever wanted back. Dropped in `drizzle/0007_remarkable_thor.sql`, writer removed from `src/lib/link.ts`.
 
-Deliberately kept, not dead: the institution metadata columns ([[relink-preserves-institution-metadata]]) and `transactions.category` ([[plaid-category-reserved]]). Do not re-flag those in audits.
+Deliberately kept, not dead: the institution metadata columns ([[link-flow]]) and `transactions.category` ([[deferred-features]]). Do not re-flag those in audits.

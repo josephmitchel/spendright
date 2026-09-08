@@ -60,7 +60,7 @@ export const creditCategories = pgTable('credit_categories', {
 export const items = pgTable('items', {
   id: serial('id').primaryKey(),
   itemId: text('item_id').notNull().unique(),
-  // Encrypted. Design: access-tokens-encrypted.
+  // Encrypted. Design: data-at-rest-encryption.
   accessToken: text('access_token').notNull(),
   institutionId: text('institution_id'),
   institutionName: text('institution_name'),

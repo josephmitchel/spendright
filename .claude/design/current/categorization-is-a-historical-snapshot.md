@@ -1,7 +1,22 @@
 ---
 name: categorization-is-a-historical-snapshot
-description: A categorized transaction is a historical record of the category and rate that existed when it was categorized; changes to a card's benefits never mutate old transactions
-tags: [transactions.card_category_id, transactions.reward_rate, card_categories, scripts/seed-cards.ts, onDelete set null, syncItem carry, src/app/accounts/[accountId]/page.tsx]
+description: A categorized transaction is a historical record of the category and rate that existed when it was categorized — card-benefit changes never mutate old transactions, sync never overwrites a user's selection (except a sign flip), and a category is never cleared back to none, only replaced
+tags:
+  [
+    transactions.card_category_id,
+    transactions.reward_rate,
+    card_categories,
+    scripts/seed-cards.ts,
+    onDelete set null,
+    syncItem carry,
+    src/app/accounts/[accountId]/page.tsx,
+    CategorySelect,
+    PATCH /api/transactions/[transactionId],
+    isValidId,
+    src/lib/sync.ts,
+    onConflictDoUpdate,
+    transactions.credit_category_id,
+  ]
 date: 2026-09-04
 ---
 
@@ -16,4 +31,14 @@ Consequences:
 
 Resolved 2026-09-04: the seed no longer deletes category or card rows, so the `on delete set null` FKs never fire on a catalog change.
 
-Related: [[no-category-clear]], [[seed-reconcile-is-destructive]], [[unmatched-is-temporary]].
+Related: [[account-card-matching-by-name]] (unmatched is temporary), [[card-catalog-in-code]] (seed reconcile).
+
+## Selections are user-owned (decided 2026-09-04)
+
+Sync never overwrites a user's category selection. The sync upsert's `set` excludes the category columns of the matching kind, so re-syncs and replayed batches leave selections alone. The only exception: a `modified` transaction whose amount changes sign clears the now-wrong-kind selection (and, on a flip to inflow, the rate) because the DB constraint would otherwise reject the row.
+
+## No category clear (decided 2026-09-04)
+
+Once a transaction has a category there is no way to clear it back to none, in the UI or the API; a user may only re-categorize. The "none" placeholder in the picker is disabled and hidden, and that is the rule for every surface: a categorization is never retracted, only replaced. There is no reason to clear a category. Re-categorizing takes the new category's current rate, which is a user action, not a card change, so it does not violate the snapshot rule above.
+
+Resolved 2026-09-04: `PATCH /api/transactions/[transactionId]` rejects null with a 400; `isValidId` accepts only a positive integer, and the branches that cleared a category (and, for the card kind, the recorded rate) are gone. See [[category-write-contract]].

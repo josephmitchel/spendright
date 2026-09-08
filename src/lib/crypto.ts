@@ -19,7 +19,7 @@ function getKey(): Buffer {
   return Buffer.from(hex, 'hex');
 }
 
-// Design: encryption-key-rotation.
+// Design: data-at-rest-encryption.
 function getPreviousKey(): Buffer | null {
   const hex = process.env.ENCRYPTION_KEY_PREVIOUS;
   if (!hex) return null;
@@ -52,7 +52,7 @@ export function decrypt(data: string): string {
   }
   const [ivHex = '', authTagHex = '', encryptedHex = ''] = data.split(':');
   // Previous-key fallback covers the window between a rotation and
-  // `npm run rotate:key`. Design: encryption-key-rotation.
+  // `npm run rotate:key`. Design: data-at-rest-encryption.
   const keys = [getKey(), getPreviousKey()].filter((key): key is Buffer => key !== null);
   let lastError: unknown;
   for (const key of keys) {

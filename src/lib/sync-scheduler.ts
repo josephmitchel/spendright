@@ -4,7 +4,7 @@ import { syncAllItems } from '@/lib/sync-all';
 import { isSyncFailure } from '@/lib/sync-failure';
 
 // No webhook — the app has no internet-reachable origin.
-// Design: scheduled-sync, automatic-sync.
+// Design: scheduled-sync.
 
 const STARTUP_DELAY_MS = 10 * 1000;
 const INTERVAL_MS = 60 * 60 * 1000;

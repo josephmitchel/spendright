@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 
-// Design: home-reflects-background-sync, superseded-loads-write-nothing.
+// Design: home-reflects-background-sync, partial-load-rendering.
 export function useVisiblePoll(refresh: () => void, intervalMs = 60_000): void {
   const refreshRef = useRef(refresh);
   useEffect(() => {

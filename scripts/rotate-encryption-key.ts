@@ -1,7 +1,7 @@
 // Re-encrypts every stored Plaid access token under the current ENCRYPTION_KEY.
 // Rotation: move the old key to ENCRYPTION_KEY_PREVIOUS, set the new
 // ENCRYPTION_KEY, run `npm run rotate:key`, then unset the previous key.
-// Design: encryption-key-rotation.
+// Design: data-at-rest-encryption.
 
 // Must stay the first import so env is loaded before the modules below evaluate.
 import './load-env';

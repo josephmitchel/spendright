@@ -1,5 +1,5 @@
 // *Payload is what a handler serves, *Response what a client reads after
-// JSON serialization. Design: typed-api-contract, single-response-reader.
+// JSON serialization. Design: typed-api-contract.
 import type { CreditCategoryRow } from '@/db/schema';
 import type { ServedAccountRow } from '@/lib/accounts';
 import type { CardWithCategories } from '@/lib/card-catalog';

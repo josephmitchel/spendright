@@ -12,7 +12,7 @@ function isValidId(raw: unknown): raw is number {
   return typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= MAX_INT32;
 }
 
-// Design: category-write-contract, no-category-clear.
+// Design: category-write-contract, categorization-is-a-historical-snapshot.
 type ParsedCategoryPatch =
   { ok: true; kind: CategoryKind; categoryId: number } | { ok: false; message: string };
 
@@ -37,7 +37,7 @@ function parseCategoryPatch(body: unknown): ParsedCategoryPatch {
   return { ok: true, kind, categoryId: raw };
 }
 
-// Design: category-write-contract, no-category-clear.
+// Design: category-write-contract, categorization-is-a-historical-snapshot.
 export const PATCH = withErrorResponse(
   async (req: NextRequest, { params }: { params: Promise<{ transactionId: string }> }) => {
     const { transactionId } = await params;

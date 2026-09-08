@@ -1,6 +1,6 @@
 // @ts-check
 // Lint check: every code-shaped tag in a .claude/design/current record must still name something in the tree.
-// Design: record-tags-checked.
+// Design: design-consistency-checks.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { root, sourceFiles } from './lib/source-files.mjs';

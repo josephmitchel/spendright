@@ -17,13 +17,13 @@ export function PlaidLinkButton({
   onConnectedAction: () => void;
   syncSucceededAt: number | null;
 }) {
-  // Design: initial-sync-reported-not-thrown.
+  // Design: link-flow.
   const [syncNotice, setSyncNotice] = useState<{
     message: string;
     at: number;
   } | null>(null);
 
-  // Design: link-notice-expires-on-clean-sync.
+  // Design: link-flow.
   const noticeIsCurrent =
     syncNotice != null && (syncSucceededAt == null || syncSucceededAt < syncNotice.at);
 

@@ -4,7 +4,7 @@ import { badRequest, withErrorResponse } from '@/lib/errors';
 import { MAX_PAGE_LIMIT, PAGE_SIZE } from '@/lib/pagination';
 import { listTransactions } from '@/lib/transactions';
 
-// Design: query-bounds-clamped.
+// Design: transactions-paginated.
 function readBound(raw: string | null, fallback: number, min: number, max: number): number {
   const parsed = Math.trunc(Number(raw));
   if (Number.isNaN(parsed) || parsed === 0) return fallback;

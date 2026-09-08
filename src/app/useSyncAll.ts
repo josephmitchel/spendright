@@ -11,7 +11,7 @@ import { skippedSyncNotice } from '@/lib/sync-messages';
 // Design: shared-mutation-protocol.
 export function useSyncAll(refresh: () => Promise<unknown>) {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  // Design: link-notice-expires-on-clean-sync.
+  // Design: link-flow.
   const [syncSucceededAt, setSyncSucceededAt] = useState<number | null>(null);
 
   const {

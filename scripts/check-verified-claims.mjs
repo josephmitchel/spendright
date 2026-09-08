@@ -1,6 +1,6 @@
 // @ts-check
 // Lint check: every `Verified-on: <package>@<version>` marker must match the installed major.minor.
-// Design: verified-claims-checked.
+// Design: design-consistency-checks.
 import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { root, sourceFiles } from './lib/source-files.mjs';

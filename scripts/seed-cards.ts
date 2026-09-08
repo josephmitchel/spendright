@@ -13,7 +13,7 @@ import { requireDatabaseUrl } from '../src/lib/env';
 import { logFatalAndExit, logInfo } from '../src/lib/log';
 import { createBoundedPool } from '../src/lib/pool-config';
 
-// Design: seed-validation.
+// Design: card-catalog-in-code.
 const MAX_PLAUSIBLE_RATE = 20;
 
 function assertUniqueKeys(
@@ -124,7 +124,7 @@ const retireTargets = {
 };
 
 // Empty keptKeys omits the clause — same as the `true` drizzle renders notInArray([]) into (Verified-on: drizzle-orm@0.45.2).
-// Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
+// Design: card-catalog-in-code, categories-retired-not-deleted.
 async function retireMissing<Table extends SeedTable>(
   tx: SeedTransaction,
   { table, keyColumn }: RetireTarget<Table>,

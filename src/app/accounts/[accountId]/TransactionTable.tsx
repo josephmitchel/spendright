@@ -17,7 +17,7 @@ const RATE_HEADERS = { cashback: 'Cashback %', points: 'Multiplier' } satisfies 
   string
 >;
 
-// Design: no-category-clear.
+// Design: categorization-is-a-historical-snapshot.
 function CategorySelect({
   value,
   valueName,
@@ -77,7 +77,7 @@ function rateCellText(txn: ApiTransaction, kind: CategoryKind): string | null {
   }
 }
 
-// Design: supported-account-rule, category-kind-sign-rule.
+// Design: account-card-matching-by-name, category-kind-sign-rule.
 export function TransactionTable({
   card,
   creditCategories,

@@ -15,7 +15,7 @@ export type CategorizedTransaction = Pick<
   creditCategoryName: string | null;
 };
 
-// Design: transaction-list-ordering, transactions-paginated.
+// Design: list-endpoints-ordered, transactions-paginated.
 export async function listTransactions(
   accountId: string,
   limit: number,

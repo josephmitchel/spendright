@@ -4,7 +4,7 @@ import { badRequest, withErrorResponse } from '@/lib/errors';
 import { linkItem } from '@/lib/link';
 import { readJsonBody } from '@/lib/request-body';
 
-// Design: single-user-localhost-no-auth, inline-initial-sync.
+// Design: single-user-localhost-no-auth, link-flow.
 export const POST = withErrorResponse(async (req: NextRequest) => {
   const body = await readJsonBody(req);
   const publicToken = (body as { public_token?: unknown } | null)?.public_token;

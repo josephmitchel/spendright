@@ -16,8 +16,7 @@ import { useAccountData } from './useAccountData';
 import { useCategoryPatches } from './useCategoryPatches';
 import { useTransactionPage } from './useTransactionPage';
 
-// Design: supported-account-rule, selections-are-user-owned,
-// categorization-is-a-historical-snapshot.
+// Design: account-card-matching-by-name, categorization-is-a-historical-snapshot.
 
 export default function AccountPage({ params }: { params: Promise<{ accountId: string }> }) {
   const { accountId } = use(params);
@@ -37,7 +36,7 @@ function deriveView(inputs: {
   if (loading) return 'loading';
   // Design: partial-load-rendering.
   if (accountLoaded && !account) return 'not-found';
-  // Design: supported-account-rule.
+  // Design: account-card-matching-by-name.
   if (accountLoaded && cardsLoaded && account && !hasCard) return 'unsupported';
   if (hasCard) return 'ready';
   return 'unresolved';

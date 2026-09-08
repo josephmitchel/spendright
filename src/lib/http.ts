@@ -1,4 +1,4 @@
-// Design: single-response-reader.
+// Design: typed-api-contract.
 
 export function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -38,7 +38,7 @@ async function requestJson<T>(url: string, init: RequestInit, failureMessage: st
   return readJson<T>(res, failureMessage);
 }
 
-// Design: single-response-reader.
+// Design: typed-api-contract.
 async function readJson<T>(res: Response, failureMessage: string): Promise<T> {
   const data = await res.json().catch(() => undefined);
   if (!res.ok) {

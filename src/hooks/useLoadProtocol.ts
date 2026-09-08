@@ -40,8 +40,7 @@ export type LoadReads<K extends string> = <T extends Record<K, unknown>>(
 
 // Caller contract: `perform` is memoized (the load effect re-runs on its
 // identity); `initialLoaded` and `stickyKeys` are read once.
-// Design: partial-load-rendering, superseded-loads-write-nothing,
-// home-reflects-background-sync.
+// Design: partial-load-rendering, home-reflects-background-sync.
 export function useLoadProtocol<K extends string>(
   initialLoaded: Record<K, boolean>,
   perform: (load: LoadReads<K>) => Promise<void>,
@@ -51,7 +50,7 @@ export function useLoadProtocol<K extends string>(
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<Record<K, boolean>>(initialLoaded);
   const [reloading, setReloading] = useState(false);
-  // Design: superseded-loads-write-nothing.
+  // Design: partial-load-rendering.
   const latestTicket = useRef(0);
   const stickyKeys = useRef(options?.stickyKeys).current;
 
@@ -62,7 +61,7 @@ export function useLoadProtocol<K extends string>(
     ): Promise<void> => {
       const ticket = ++latestTicket.current;
       const { bodies, succeeded, error: failureMessage } = await settleReads(reads);
-      // Design: superseded-loads-write-nothing.
+      // Design: partial-load-rendering.
       if (ticket !== latestTicket.current) return;
       // A throwing `apply` must not skip the settlement writes below.
       let applyFailure: string | null = null;

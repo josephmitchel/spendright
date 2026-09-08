@@ -74,7 +74,7 @@ async function resolveCategoryPick(
   }
 }
 
-// Design: category-write-contract, no-category-clear.
+// Design: category-write-contract, categorization-is-a-historical-snapshot.
 export async function setTransactionCategory(
   transactionId: string,
   kind: CategoryKind,
@@ -97,7 +97,7 @@ export async function setTransactionCategory(
       .from(accounts)
       .where(eq(accounts.accountId, transaction.accountId))
       .for('share');
-    // Design: supported-account-rule.
+    // Design: account-card-matching-by-name.
     if (!account?.cardId) {
       throw badPick('This account has no matched card definition');
     }

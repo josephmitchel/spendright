@@ -13,15 +13,19 @@ Agents derive the purpose of code primarily from what the code does, and seconda
 
 # File Structure
 
-Each file in `current/` or `retired/` represents something that was raised to the user by agent and confirmed by the user. Each `.md` file must contain the following structure:
+Each file in `current/` or `retired/` covers one design area, holding one or more decisions that were raised to the user by agent and confirmed by the user. Each `.md` file must contain the following structure:
 
 ```markdown
 ---
 name: file-name
-description: description of design decision
-tags: list of key functions, methods, classes, etc. that relate to this decision
-date: date/time of when this decision was made
+description: description of the design area's decision(s)
+tags: list of key functions, methods, classes, etc. that relate to this area
+date: date of the area's earliest decision
 ---
 
-Brief summary of what this decision is. Keep it concise and to the point.
+Brief summary of the decision. Related follow-on decisions in the same area are added as dated `## sections` in this same file rather than as new files.
 ```
+
+# Corpus growth policy
+
+Decided 2026-09-07 (see `current/design-corpus-compaction.md`): when a new confirmed decision falls within an existing record's area, extend that record with a dated section or update — a new file is only for a genuinely new area. When the corpus fragments into many small sibling files anyway, run the `/compact-design` skill to consolidate losslessly.

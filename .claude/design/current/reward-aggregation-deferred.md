@@ -1,8 +1,0 @@
----
-name: reward-aggregation-deferred
-description: Reward computation and aggregation — rate × amount, totals by category/card/period, actual-vs-optimal comparison — is deliberately unbuilt while the single-card data-collection flow is validated; per-transaction amount and reward_rate are captured so the feature can be built on accumulated history later
-tags: [transactions.reward_rate, transactions.amount, card_categories.rate, src/db/schema.ts]
-date: 2026-09-07
----
-
-Confirmed 2026-09-07: three of four functional-suitability auditors in the 2026-09-07 audit flagged that the app's stated purpose ("credit card spending optimization") outruns what exists — `rewardRate` and `amount` are stored per transaction, but nothing multiplies, sums, or compares them anywhere, so only the data-collection half of the premise is implemented. The user confirmed this is a deliberate deferral, like the single-card catalog ([[single-card-catalog]]) and reserved Plaid categories ([[plaid-category-reserved]]): capture faithfully now, build the optimization surface once the single-card categorization flow is proven right. The per-transaction snapshot ([[categorization-is-a-historical-snapshot]]) is exactly what makes the deferred computation possible over history later. Companion deferral: [[reward-caps-deferred]] — rate modeling stays flat until aggregation exists to make caps computable. Audits should not re-flag the absence of aggregation, actual-vs-optimal comparison, or the app description's forward-looking framing while this record stands. Revisit trigger: the user calling the single-card flow validated, or a second card entering the catalog.

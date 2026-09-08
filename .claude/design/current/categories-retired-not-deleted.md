@@ -9,4 +9,4 @@ The seed reconcile sets `retired_at = now()` on any card or credit category abse
 
 Retired rows are excluded from what can be picked, in three places: `matchCard` skips retired cards, so an account on one drops to unsupported; `GET /api/cards` omits retired cards and categories, so the pickers never list them; `PATCH` refuses a retired category with a 400. `GET /api/transactions` still resolves names by join, so a retired category renders by name on the account page, as the disabled selected option in the picker.
 
-Chosen over snapshotting the category name onto the transaction row because it is the smaller change and keeps the FK honest. Replaces the hard-delete reconcile described in [[seed-reconcile-is-destructive]].
+Chosen over snapshotting the category name onto the transaction row because it is the smaller change and keeps the FK honest. Replaces the hard-delete reconcile described in [[card-catalog-in-code]].

@@ -30,12 +30,12 @@ export interface LinkResult {
   sync: SyncItemResult | null;
   syncError: string | null;
   // True when enrichment failed before any sync attempt, so callers don't
-  // describe syncError as a sync failure. Design: link-enrichment-reported-not-thrown.
+  // describe syncError as a sync failure. Design: link-flow.
   setupFailed: boolean;
   accountErrors: string[];
 }
 
-// Design: relink-preserves-institution-metadata.
+// Design: link-flow.
 async function fetchInstitution(
   institutionId: string | null | undefined,
 ): Promise<Institution | null> {
@@ -48,7 +48,7 @@ async function fetchInstitution(
   }
 }
 
-// Design: token-stored-before-enrichment.
+// Design: link-flow.
 async function storeItemShell(itemId: string, accessToken: string): Promise<string> {
   const encrypted = encrypt(accessToken);
   await db
@@ -67,7 +67,7 @@ async function storeItem(
   plaidItem: ProviderItem,
   institution: Institution | null,
 ): Promise<ItemRow> {
-  // Design: relink-preserves-institution-metadata.
+  // Design: link-flow.
   const alwaysUpdated = {
     itemId,
     accessToken: encryptedAccessToken,
@@ -106,7 +106,7 @@ async function storeItem(
   return storedItem;
 }
 
-// Design: initial-sync-reported-not-thrown.
+// Design: link-flow.
 async function runInitialSync(
   storedItem: ItemRow,
 ): Promise<{ result: SyncItemResult | null; error: string | null }> {
@@ -147,8 +147,7 @@ export async function createRepairLinkToken(itemId: string): Promise<string> {
   return createLinkToken(decrypt(item.accessToken));
 }
 
-// Design: inline-initial-sync, initial-sync-reported-not-thrown,
-// link-enrichment-reported-not-thrown.
+// Design: link-flow.
 export async function linkItem(publicToken: string): Promise<LinkResult> {
   const { accessToken, itemId } = await exchangePublicToken(publicToken);
   const encryptedAccessToken = await storeItemShell(itemId, accessToken);
