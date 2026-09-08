@@ -3,6 +3,7 @@ name: accepted-audit-risks
 description: Recurring audit findings the user has accepted as-is for this stage — the untested start.mjs supervisor and design-record meta-tooling (under the tests deferral), plaid.ts staying whole until its 400-line trigger, and the dev-only esbuild/drizzle-kit npm-audit chain; audits treat re-observations as prior/accepted, not fresh gaps
 tags: [scripts/start.mjs, src/lib/plaid.ts, scripts/check-record-tags.mjs, scripts/check-design-refs.mjs, "tests deferred", npm audit, drizzle-kit, esbuild advisory chain, GHSA 67mh-4wv8-2f99, dev dependencies]
 date: 2026-09-05
+code-refs: none
 ---
 
 ## Structural risk acceptances (confirmed 2026-09-07)
@@ -10,7 +11,7 @@ date: 2026-09-05
 Three Moderate maintainability findings recurred across audits without a recorded stance. The user's decision on each:
 
 - **`scripts/start.mjs` (stateful, untested process supervisor)** and **the design-record meta-tooling** (`check-record-tags.mjs`, `check-design-refs.mjs` — custom text parsing with no tests of its own): both are covered by the project-wide deliberate tests deferral (2026-09-06). Their correctness rests on manual trace for now; when tests land, these two are priority targets precisely because their failure modes are silent.
-- **`src/lib/plaid.ts` (multi-responsibility, 300+ lines):** the 400-line split trigger in [[plaid-module-seams]] stands — no early split. The trigger remains manually enforced (no `max-lines` lint rule), which is a known Minor gap, not an oversight.
+- **`src/lib/plaid.ts` (multi-responsibility, 300+ lines):** the 400-line split trigger in [[plaid-module-seams]] stands — no early split. Since 2026-09-07 the trigger is lint-enforced (`max-lines` 400 across src and scripts, see that record), closing the manual-enforcement gap this bullet previously accepted.
 - **The design-record corpus outgrowing the source tree**: originally accepted with no cap or pruning policy; superseded 2026-09-07 by [[design-corpus-compaction]], which sets the extend-don't-add default and the `/compact-design` consolidation path.
 
 Audits should treat re-observations of these as prior/accepted rather than fresh gaps while this record stands.

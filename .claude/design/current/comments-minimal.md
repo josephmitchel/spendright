@@ -3,6 +3,7 @@ name: comments-minimal
 description: Code comments are near-zero — bare Design markers, Verified-on claims, and rare 1-line constraints only; no orientation lines, rationale prose, or cross-module claims. Purpose is derived from the code first, the design records second
 tags: [Design markers, Verified-on, scripts/check-design-refs.mjs, code comments]
 date: 2026-09-07
+code-refs: none
 ---
 
 Decided by the user 2026-09-06 after a quality audit found the prose surface (~1,180 comment lines) rivaling the code, and tightened by the user 2026-09-07 ("keep comments to a minimum" — a full strip pass took src+scripts from ~837 comment lines to ~246, most of those bare markers or functional JSDoc/@ts-check annotations). Agents must derive the purpose of code primarily from what the code actually does, and secondarily from this design folder.

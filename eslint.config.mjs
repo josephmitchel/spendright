@@ -23,6 +23,13 @@ const eslintConfig = defineConfig([
       '@typescript-eslint/no-misused-promises': 'error',
     },
   },
+  // Design: plaid-module-seams.
+  {
+    files: ['src/**/*.ts', 'src/**/*.tsx', 'scripts/**/*.mjs', 'scripts/**/*.ts'],
+    rules: {
+      'max-lines': ['error', { max: 400, skipBlankLines: false, skipComments: false }],
+    },
+  },
   {
     rules: {
       // Load-bearing for useLoadProtocol; the preset's default warn exits 0.

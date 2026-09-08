@@ -4,6 +4,7 @@ description: The accepted current-stage architectural boundaries audits keep re-
 tags:
   [DATABASE_URL, useVisiblePoll, src/lib/pagination.ts, matchCard, syncAllItems, globalSingleton]
 date: 2026-09-07
+code-refs: none
 ---
 
 Confirmed 2026-09-07, consolidating boundary findings from the 2026-09-07 audit so future audits treat them as accepted decisions rather than fresh gaps. Each holds for the current single-user, single-process, localhost deployment ([[single-user-localhost-no-auth]]) and names what changes it:

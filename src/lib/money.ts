@@ -1,3 +1,4 @@
+// Design: money-formatted-with-intl.
 // Monetary values render through Intl so they read unambiguously (grouping,
 // currency-appropriate decimals) instead of as raw serialized numerics, and a
 // missing value renders as '—' so it can't be mistaken for zero. The currency

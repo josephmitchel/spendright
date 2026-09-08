@@ -1,5 +1,8 @@
 // @ts-check
-// Lint check: every `Design: <name>` reference must name a live record in .claude/design/current/.
+// Lint check, both directions: every `Design: <name>` reference must name a live record in
+// .claude/design/current/, and every current record must be cited by at least one Design:
+// marker in the walked files unless its frontmatter opts out with `code-refs: none`
+// (for policy/meta records with no single code site). Design: design-consistency-checks.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { root, sourceFiles } from './lib/source-files.mjs';
@@ -51,14 +54,30 @@ function referencesIn(lines, fileLabel) {
 
 /** @type {string[]} */
 const failures = [];
+const cited = new Set();
 for (const file of sourceFiles()) {
   const label = relative(root, file);
   const lines = readFileSync(file, 'utf8').split('\n');
   for (const ref of referencesIn(lines, label)) {
-    if (current.has(ref.name)) continue;
+    if (current.has(ref.name)) {
+      cited.add(ref.name);
+      continue;
+    }
     const state = retired.has(ref.name) ? 'a RETIRED record' : 'no record';
     failures.push(`${ref.file}:${ref.line} — Design: ${ref.name} matches ${state}`);
   }
+}
+
+// Reverse direction: an uncited record either opts out explicitly or fails.
+for (const name of current) {
+  if (cited.has(name)) continue;
+  const text = readFileSync(join(currentDir, `${name}.md`), 'utf8');
+  const frontmatter = /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? '';
+  if (/^code-refs:\s*none\s*$/m.test(frontmatter)) continue;
+  failures.push(
+    `.claude/design/current/${name}.md — cited by no Design: marker in the tree ` +
+      `(add the marker to the code it describes, or opt out with \`code-refs: none\` in its frontmatter)`,
+  );
 }
 
 // [[name]] cross-links inside the records themselves must resolve too
