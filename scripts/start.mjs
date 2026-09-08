@@ -1,7 +1,6 @@
 // @ts-check
 // `next start` runs instrumentation.ts lazily, on the first incoming request (Verified-on: next@16.3.4);
 // this wrapper sends that first request itself and stops the server if it cannot be delivered.
-// Design: non-local-request-guard, scheduled-sync.
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const nextBin = require.resolve('next/dist/bin/next');
 
-// Design: build-cache-secret-permissions.
 const tighten = spawnSync(
   process.execPath,
   [fileURLToPath(new URL('./tighten-next.mjs', import.meta.url))],
@@ -39,7 +37,6 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 // A server crash (e.g. the process backstop's fatal exit) must not silently end
 // automatic syncing, so unexpected exits restart the child — with a crash-loop
 // guard so a persistent fault still surfaces as a hard stop.
-// Design: process-crash-backstop.
 let shuttingDown = false;
 /** @type {import('node:child_process').ChildProcess} */
 let child;

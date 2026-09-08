@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-// Design: non-local-request-guard, single-user-localhost-no-auth, nonce-based-csp.
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 

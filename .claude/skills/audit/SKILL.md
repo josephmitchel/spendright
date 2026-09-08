@@ -3,33 +3,36 @@ name: audit
 description: audit the codebase
 ---
 
-Audit the codebase by calling the appropriate subagents and then synthesizing their findings into reports. 
+Audit the codebase by calling the appropriate subagents and then synthesizing their findings into reports.
+
+## Ground truth
+
+`.claude/snapshot/SNAPSHOT.md` is the authoritative definition of what this codebase is **supposed** to be — what's intended, and what's intentionally absent/deferred. Auditors judge the codebase against it rather than making their own judgment calls about what a "correct" codebase should look like (avoiding too many cooks in the kitchen). If SNAPSHOT.md does not exist, **stop** and tell the user to run `/snapshot` first.
 
 ## What will be audited
-Each agent being sent out will either be auditing a quality requirement from the "ISO ISO/IEC 25010:2023":
 
-Specifically, there will be subagents called to assess:
-- Functional Suitability (ISO/IEC 25010:2023 3.1)
-- Performance Efficiency (ISO/IEC 25010:2023 3.2)
-- Compatibility (ISO/IEC 25010:2023 3.3)
-- Interaction Capability (ISO/IEC 25010:2023 3.4)
-- Reliability (ISO/IEC 25010:2023 3.5)
-- Security (ISO/IEC 25010:2023 3.6)
-- Maintainability (ISO/IEC 25010:2023 3.7)
-- Flexibility (ISO/IEC 25010:2023 3.8)
-- Safety (ISO/IEC 25010:2023 3.9)
+Each agent being sent out will be auditing a quality requirement from ISO/IEC 25010:2023:
 
-The entire purpose of the audit is to ensure the codebase is following a set of human designed standards so that diferent agents aren't constantly making their own judgement calls about what a "correct" codebase should look like (trying to avoid too many cooks in the kitchen).
+- Functional Suitability (3.1)
+- Performance Efficiency (3.2)
+- Compatibility (3.3)
+- Interaction Capability (3.4)
+- Reliability (3.5)
+- Security (3.6)
+- Maintainability (3.7)
+- Flexibility (3.8)
+- Safety (3.9)
 
 ## Instructions
 
 ### Step 1
 
-Create a date/time specified audit folder in `.claude/audit` (meaning if /audit was called at September 7th, 2026 at 1:02pm, you are going to create the folder `.claude/audit/09-07-2026-130200` and record the audits' results in there).
+Create a date/time specified audit folder in `.claude/snapshot/audits` (meaning if /audit was called September 7th, 2026 at 1:02pm, create `.claude/snapshot/audits/09-07-2026-130200` and record the audit's results there). Audits in this folder all belong to the current snapshot's era — accepting a new snapshot clears the folder, so if it's empty before this run, this is the first audit of the era and every finding will be `[new]`.
 
 ### Step 2
 
-For each of the following agents defined in `.claude/agents`, spin up 4 agents:
+For each of the following agents defined in `.claude/agents`, spin up 3 agents:
+
 - auditor-functional-suitability
 - auditor-performance-efficiency
 - auditor-compatibility
@@ -40,14 +43,16 @@ For each of the following agents defined in `.claude/agents`, spin up 4 agents:
 - auditor-flexibility
 - auditor-safety
 
-For each agent, synthesize the 4 agents' findings into a `.md` report named after the requirement they were auditing.
+Remind each agent in its prompt to read `.claude/snapshot/SNAPSHOT.md` before auditing.
+
+For each requirement, synthesize the 3 agents' findings into a `.md` report named after the requirement they were auditing.
 - For example, the synthesized findings from the 3 auditor-functional-suitability agents would be saved as `functional-suitability.md`.
 
 Each report should be structured as follows:
 ```
 ---
 characteristic: "i.e. functional suitability"
---- 
+---
 # Summary
 
 # Major Concerns
@@ -57,7 +62,7 @@ characteristic: "i.e. functional suitability"
 # Minor Concerns
 ```
 
-The agents label each of their findings as **prior** (a concern from a previous audit that remains unaddressed) or **new** (found in this audit). Preserve these labels when synthesizing: prefix every concern in the report with `[prior]` or `[new]`.
+The agents label each of their findings as **prior** (a concern from a previous audit in this era that remains unaddressed) or **new** (found in this audit). Preserve these labels when synthesizing: prefix every concern in the report with `[prior]` or `[new]`.
 
 ### Step 3
 

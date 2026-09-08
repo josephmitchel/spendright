@@ -4,7 +4,6 @@ export function normalizeAccountName(name: string): string {
   return name.trim().toLowerCase();
 }
 
-// Design: account-card-matching-by-name, categories-retired-not-deleted.
 export function matchCard(cardList: CardRow[], accountName: string | null): CardRow | null {
   if (!accountName) return null;
   const normalized = normalizeAccountName(accountName);

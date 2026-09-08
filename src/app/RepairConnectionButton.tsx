@@ -10,7 +10,7 @@ import { sendJson } from '@/lib/http';
 
 // Opens Plaid Link in update mode for a broken item. Update mode leaves the
 // stored access token valid, so success needs no exchange — just a sync to
-// confirm recovery. Design: connection-repair-update-mode.
+// confirm recovery.
 export function RepairConnectionButton({
   itemId,
   onRepairedAction,
@@ -35,7 +35,7 @@ export function RepairConnectionButton({
       <button onClick={connect.run} disabled={connect.pending}>
         Fix connection
       </button>
-      {/* Design: async-status-announced — wrapper must stay mounted. */}
+      {/* Wrapper must stay mounted. */}
       <span role="status">{connect.pending && ' Opening Plaid Link…'}</span>
       {connect.error && <ErrorNotice error={connect.error} inline />}
     </span>

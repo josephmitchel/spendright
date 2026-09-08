@@ -1,7 +1,7 @@
 import { globalSingleton } from '@/lib/global-singleton';
 
 // In-memory is correct here: the scheduler runs in this process, and a
-// whole-run failure has no item row to carry it. Design: scheduled-sync.
+// whole-run failure has no item row to carry it.
 export interface LastSyncStatus {
   finishedAt: number;
   // Null when the run itself completed; per-item failures live on items.error.

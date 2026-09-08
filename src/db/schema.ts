@@ -17,10 +17,6 @@ import { CARD_TYPES } from '@/lib/card-types';
 import type { ItemErrorBody } from '@/lib/plaid-errors';
 import type { RawProviderPayload } from '@/lib/provider-types';
 
-// Parsed textually by scripts/check-record-tags.mjs — keep each pgTable call
-// and its table-name literal together on one line.
-
-// Design: categories-retired-not-deleted, card-type-decides-rate-unit.
 export const cards = pgTable('cards', {
   id: serial('id').primaryKey(),
   slug: text('slug').notNull().unique(),
@@ -60,7 +56,7 @@ export const creditCategories = pgTable('credit_categories', {
 export const items = pgTable('items', {
   id: serial('id').primaryKey(),
   itemId: text('item_id').notNull().unique(),
-  // Encrypted. Design: data-at-rest-encryption.
+  // Encrypted.
   accessToken: text('access_token').notNull(),
   institutionId: text('institution_id'),
   institutionName: text('institution_name'),
@@ -68,7 +64,6 @@ export const items = pgTable('items', {
   institutionPrimaryColor: text('institution_primary_color'),
   cursor: text('cursor'),
   error: jsonb('error').$type<ItemErrorBody>(),
-  // Design: bounded-cursor-hold.
   skippedSyncs: integer('skipped_syncs').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -92,7 +87,6 @@ export const accounts = pgTable(
     balanceLimit: numeric('balance_limit'),
     isoCurrencyCode: text('iso_currency_code'),
     unofficialCurrencyCode: text('unofficial_currency_code'),
-    // Design: account-card-matching-by-name.
     cardId: integer('card_id').references(() => cards.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -119,7 +113,6 @@ export const transactions = pgTable(
     unofficialCurrencyCode: text('unofficial_currency_code'),
     category: text('category'),
     pending: boolean('pending'),
-    // Design: categorization-is-a-historical-snapshot.
     cardCategoryId: integer('card_category_id').references(() => cardCategories.id, {
       onDelete: 'set null',
     }),
@@ -127,7 +120,6 @@ export const transactions = pgTable(
     creditCategoryId: integer('credit_category_id').references(() => creditCategories.id, {
       onDelete: 'set null',
     }),
-    // Design: raw-plaid-payload-stored-not-served.
     plaidTransaction: jsonb('plaid_transaction').$type<RawProviderPayload>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -137,7 +129,6 @@ export const transactions = pgTable(
     index('transactions_item_id_idx').on(table.itemId),
     index('transactions_card_category_id_idx').on(table.cardCategoryId),
     index('transactions_credit_category_id_idx').on(table.creditCategoryId),
-    // Design: category-kind-sign-rule.
     check(
       'transactions_category_kind_sign_ck',
       sql`(${table.cardCategoryId} is null or ${table.amount} >= 0) and (${table.creditCategoryId} is null or ${table.amount} < 0)`,

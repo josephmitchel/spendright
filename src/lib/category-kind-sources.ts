@@ -1,7 +1,6 @@
 import { cardCategories, creditCategories } from '@/db/schema';
 import type { CategoryKind } from '@/lib/category-kinds';
 
-// Design: category-kind-sign-rule, categories-retired-not-deleted.
 export interface CategoryKindSource {
   table: typeof cardCategories | typeof creditCategories;
   retiredPickMessage: string;

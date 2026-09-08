@@ -9,7 +9,6 @@ import type { ExchangeResponse, LinkTokenResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
 import { skippedSyncNotice } from '@/lib/sync-messages';
 
-// Design: shared-mutation-protocol.
 export function PlaidLinkButton({
   onConnectedAction,
   syncSucceededAt,
@@ -17,13 +16,11 @@ export function PlaidLinkButton({
   onConnectedAction: () => void;
   syncSucceededAt: number | null;
 }) {
-  // Design: link-flow.
   const [syncNotice, setSyncNotice] = useState<{
     message: string;
     at: number;
   } | null>(null);
 
-  // Design: link-flow.
   const noticeIsCurrent =
     syncNotice != null && (syncSucceededAt == null || syncSucceededAt < syncNotice.at);
 
@@ -35,7 +32,6 @@ export function PlaidLinkButton({
       'Exchange failed',
     );
     const accountErrors = data.account_errors ?? [];
-    // Design: bounded-cursor-hold.
     const skipped = data.sync?.skipped ?? 0;
     const dropped = data.sync?.dropped === true;
     const notices = [
@@ -75,7 +71,7 @@ export function PlaidLinkButton({
       <button onClick={connect.run} disabled={connect.pending || exchange.pending}>
         Connect a bank
       </button>
-      {/* Design: async-status-announced — wrapper must stay mounted. */}
+      {/* Wrapper must stay mounted. */}
       <span role="status">
         {connect.pending && ' Opening Plaid Link…'}
         {exchange.pending && ' Connecting and syncing transactions… (this can take a minute)'}

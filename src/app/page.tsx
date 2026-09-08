@@ -21,7 +21,6 @@ type View = 'loading' | 'no-institutions' | 'list' | 'unresolved';
 function deriveView(inputs: { loading: boolean; itemsLoaded: boolean; itemCount: number }): View {
   const { loading, itemsLoaded, itemCount } = inputs;
   if (loading) return 'loading';
-  // Design: partial-load-rendering.
   if (itemsLoaded && itemCount === 0) return 'no-institutions';
   if (itemCount > 0) return 'list';
   return 'unresolved';
@@ -92,13 +91,12 @@ function InstitutionSection({
         >
           Remove
         </button>
-        {/* Design: async-status-announced — wrapper must stay mounted. */}
+        {/* Wrapper must stay mounted. */}
         <span role="status">{removePending ? ' Removing…' : null}</span>
       </h2>
       {item.error != null && (
         <p>
           <ErrorNotice inline error={itemErrorMessage(item.error)} />{' '}
-          {/* Design: connection-repair-update-mode. */}
           {isPlaidItemError(item.error) && (
             <RepairConnectionButton itemId={item.itemId} onRepairedAction={onRepairedAction} />
           )}
@@ -109,14 +107,12 @@ function InstitutionSection({
   );
 }
 
-// Design: client-pages-fetch-api.
 export default function Home() {
   const { itemList, accountList, lastSync, settled, error, loaded, refresh, retry, reloading } =
     useHomeData();
   const { syncAll, syncing, syncStatus, syncError, syncSucceededAt } = useSyncAll(refresh);
   const { removeItem, removingItems, removeError } = useItemRemoval(refresh);
 
-  // Design: home-reflects-background-sync.
   useVisiblePoll(
     useCallback(() => {
       void refresh();
@@ -140,14 +136,14 @@ export default function Home() {
         <button onClick={syncAll} disabled={syncing || view === 'no-institutions'}>
           Sync all
         </button>
-        {/* Design: async-status-announced — wrapper must stay mounted. */}
+        {/* Wrapper must stay mounted. */}
         <span role="status">{syncStatus ? ` ${syncStatus}` : null}</span>
       </p>
       {lastSync && (
         <p>Last automatic sync finished {new Date(lastSync.finishedAt).toLocaleString()}.</p>
       )}
 
-      {/* Design: async-status-announced — wrapper must stay mounted. */}
+      {/* Wrapper must stay mounted. */}
       <p role="status">{view === 'loading' ? 'Loading…' : null}</p>
       {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
       {lastSync?.error != null && (

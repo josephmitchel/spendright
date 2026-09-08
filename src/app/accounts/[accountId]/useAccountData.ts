@@ -12,7 +12,6 @@ import type {
 } from '@/lib/api-types';
 import { getJson } from '@/lib/http';
 
-// Design: partial-load-rendering, stale-lists-disable-editing.
 export function useAccountData(accountId: string) {
   const [account, setAccount] = useState<ApiAccount | null>(null);
   const [itemError, setItemError] = useState<AccountResponse['itemError']>(null);

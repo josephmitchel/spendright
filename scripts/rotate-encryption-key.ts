@@ -1,7 +1,6 @@
 // Re-encrypts every stored Plaid access token under the current ENCRYPTION_KEY.
 // Rotation: move the old key to ENCRYPTION_KEY_PREVIOUS, set the new
 // ENCRYPTION_KEY, run `npm run rotate:key`, then unset the previous key.
-// Design: data-at-rest-encryption.
 
 // Must stay the first import so env is loaded before the modules below evaluate.
 import './load-env';
@@ -16,7 +15,7 @@ import { createBoundedPool } from '../src/lib/pool-config';
 
 async function main() {
   // Own pool, not src/lib/db's singleton (that module is server-only) — the
-  // script must end() it so the process can exit. Design: shared-pool-config.
+  // script must end() it so the process can exit.
   const pool = createBoundedPool(requireDatabaseUrl());
   const rootDb = drizzle(pool);
 

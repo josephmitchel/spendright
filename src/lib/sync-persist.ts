@@ -25,7 +25,7 @@ function toTransactionRow(txn: ProviderTransaction, itemId: string) {
 }
 
 // Must mirror the transactions.account_id FK exactly: keyed on account_id
-// alone, read from the DB. Design: bounded-cursor-hold.
+// alone, read from the DB.
 export async function knownAccountIdsFor(
   tx: DbTransaction,
   batch: ProviderTransaction[],
@@ -68,7 +68,6 @@ const excludedBaseColumns = {
   plaidTransaction: excluded(transactionColumns.plaidTransaction),
 } satisfies Record<BaseRowKey, SQL>;
 
-// Design: category-kind-sign-rule.
 function conflictSetForKind(kind: CategoryKind): PgUpdateSetSource<typeof transactions> {
   const set: PgUpdateSetSource<typeof transactions> = {
     ...excludedBaseColumns,
@@ -118,7 +117,7 @@ function batchRows(
 }
 
 // The transaction holds locks category PATCHes compete for, so its duration
-// must stay bounded by statement count. Design: bounded-cursor-hold.
+// must stay bounded by statement count.
 export async function upsertTransactions(
   tx: DbTransaction,
   itemId: string,
@@ -129,7 +128,6 @@ export async function upsertTransactions(
   const { rowsById, skipped } = batchRows(itemId, upserts, knownAccountIds, carried);
 
   // A field a row omits renders as DEFAULT (Verified-on: drizzle-orm@0.45.2).
-  // Design: pending-to-posted-carry.
   const groups: Record<CategoryKind, TransactionUpsertValues[]> = { card: [], credit: [] };
   for (const { values, kind } of rowsById.values()) groups[kind].push(values);
   for (const kind of Object.keys(groups) as CategoryKind[]) {

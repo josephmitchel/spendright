@@ -9,7 +9,6 @@ import { servedTransactionColumns, type CategorizedTransaction } from '@/lib/tra
 
 const badPick = (message: string) => new PublicError(message, { status: 400, code: 'BAD_REQUEST' });
 
-// Design: category-kind-sign-rule.
 const wrongKindMessage = {
   card: 'Non-negative-amount transactions take a card category, not a credit category',
   credit: 'Negative-amount transactions take a credit category, not a card category',
@@ -21,7 +20,6 @@ interface CategoryPick {
   creditCategoryName: string | null;
 }
 
-// Design: category-kind-sign-rule, categorization-is-a-historical-snapshot.
 async function resolveCategoryPick(
   tx: DbTransaction,
   kind: CategoryKind,
@@ -42,7 +40,6 @@ async function resolveCategoryPick(
       if (!category || category.cardId !== cardId) {
         throw badPick("cardCategoryId does not belong to this account's card");
       }
-      // Design: categories-retired-not-deleted.
       if (category.retiredAt !== null) {
         throw badPick(categoryKindSources.card.retiredPickMessage);
       }
@@ -74,7 +71,6 @@ async function resolveCategoryPick(
   }
 }
 
-// Design: category-write-contract, categorization-is-a-historical-snapshot.
 export async function setTransactionCategory(
   transactionId: string,
   kind: CategoryKind,
@@ -97,7 +93,6 @@ export async function setTransactionCategory(
       .from(accounts)
       .where(eq(accounts.accountId, transaction.accountId))
       .for('share');
-    // Design: account-card-matching-by-name.
     if (!account?.cardId) {
       throw badPick('This account has no matched card definition');
     }

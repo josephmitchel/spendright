@@ -1,5 +1,4 @@
 // @ts-check
-// Design: build-cache-secret-permissions.
 import { chmodSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -2,7 +2,6 @@ import { desc, eq, getTableColumns, sql } from 'drizzle-orm';
 import { cardCategories, creditCategories, transactions, type TransactionRow } from '@/db/schema';
 import { db } from '@/lib/db';
 
-// Design: raw-plaid-payload-stored-not-served.
 const { plaidTransaction: _plaidTransaction, ...servedTransactionColumns } =
   getTableColumns(transactions);
 export { servedTransactionColumns };
@@ -15,7 +14,6 @@ export type CategorizedTransaction = Pick<
   creditCategoryName: string | null;
 };
 
-// Design: list-endpoints-ordered, transactions-paginated.
 export async function listTransactions(
   accountId: string,
   limit: number,

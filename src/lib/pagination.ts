@@ -1,4 +1,3 @@
-// Design: transactions-paginated.
 
 export const PAGE_SIZE = 20;
 

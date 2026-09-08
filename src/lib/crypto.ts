@@ -6,7 +6,6 @@ import { PublicError } from '@/lib/public-error';
 
 const ENCRYPTION_KEY_PATTERN = /^[0-9a-fA-F]{64}$/;
 
-// Design: config-validated-not-assumed.
 function getKey(): Buffer {
   const hex = process.env.ENCRYPTION_KEY;
   if (!hex || !ENCRYPTION_KEY_PATTERN.test(hex)) {
@@ -19,7 +18,6 @@ function getKey(): Buffer {
   return Buffer.from(hex, 'hex');
 }
 
-// Design: data-at-rest-encryption.
 function getPreviousKey(): Buffer | null {
   const hex = process.env.ENCRYPTION_KEY_PREVIOUS;
   if (!hex) return null;
@@ -52,7 +50,7 @@ export function decrypt(data: string): string {
   }
   const [ivHex = '', authTagHex = '', encryptedHex = ''] = data.split(':');
   // Previous-key fallback covers the window between a rotation and
-  // `npm run rotate:key`. Design: data-at-rest-encryption.
+  // `npm run rotate:key`.
   const keys = [getKey(), getPreviousKey()].filter((key): key is Buffer => key !== null);
   let lastError: unknown;
   for (const key of keys) {

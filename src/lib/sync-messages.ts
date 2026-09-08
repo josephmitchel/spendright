@@ -1,4 +1,4 @@
-// Dependency-free — bundled into client code. Design: bounded-cursor-hold.
+// Dependency-free — bundled into client code.
 
 export const MAX_SKIPPED_SYNCS = 5;
 

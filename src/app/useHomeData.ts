@@ -6,7 +6,6 @@ import { apiPaths } from '@/lib/api-paths';
 import type { AccountsResponse, ApiAccount, ApiItem, ItemsResponse } from '@/lib/api-types';
 import { getJson } from '@/lib/http';
 
-// Design: home-reflects-background-sync, partial-load-rendering.
 export function useHomeData() {
   const [itemList, setItemList] = useState<ApiItem[]>([]);
   const [accountList, setAccountList] = useState<ApiAccount[]>([]);

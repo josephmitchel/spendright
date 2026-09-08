@@ -5,7 +5,6 @@ import { apiPaths } from '@/lib/api-paths';
 import type { ItemDeleteResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
 
-// Design: item-delete-plaid-first, shared-mutation-protocol.
 export function useItemRemoval(refresh: () => Promise<unknown>) {
   const {
     run,

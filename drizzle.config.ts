@@ -8,7 +8,6 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    // Design: config-validated-not-assumed.
     url: requireDatabaseUrl(),
   },
 });

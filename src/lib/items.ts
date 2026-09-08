@@ -10,7 +10,6 @@ import { withItemSyncLock } from '@/lib/sync-lock';
 
 // The logo blob would otherwise ride every 60s poll; lists carry a flag and
 // GET /api/items/[itemId]/logo serves the bytes.
-// Design: data-at-rest-encryption, item-logo-served-separately.
 const {
   accessToken: _accessToken,
   institutionLogo: _institutionLogo,
@@ -27,7 +26,6 @@ export type PublicItemRow = Pick<ItemRow, keyof typeof listedItemColumns & keyof
 
 // The sync lock keeps the delete from yanking rows out from under a running
 // sync. False means the item does not exist.
-// Design: item-delete-plaid-first, thin-routes-domain-in-lib, cross-process-sync-lock.
 export function removeItemCompletely(itemId: string): Promise<boolean> {
   return withItemSyncLock(itemId, async () => {
     const [item] = await db.select().from(items).where(eq(items.itemId, itemId));

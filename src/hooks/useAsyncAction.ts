@@ -5,7 +5,7 @@ import { errorMessage } from '@/lib/http';
 
 // Errors and pending state are both tracked per run key so concurrent actions
 // on different targets can't clear each other's failure or claim each other's
-// in-flight status. Design: shared-mutation-protocol.
+// in-flight status.
 export function useAsyncAction<Args extends unknown[]>(
   action: (...args: Args) => Promise<void>,
   failureMessage: string,

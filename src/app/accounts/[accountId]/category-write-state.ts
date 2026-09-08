@@ -6,7 +6,6 @@ interface RowWriteState {
   hold: 'held' | 'releasing';
 }
 
-// Design: optimistic-category-writes.
 export class CategoryWriteState {
   private rows = new Map<string, RowWriteState>();
 

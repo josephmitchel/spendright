@@ -1,8 +1,0 @@
----
-name: nonce-based-csp
-description: The CSP is built per-request in src/proxy.ts with a script-src nonce and 'strict-dynamic' — no 'unsafe-inline' scripts — which requires every page to render dynamically
-tags: [src/proxy.ts, buildCsp, x-nonce, next.config.ts, connection, src/app/layout.tsx]
-date: 2026-09-07
----
-
-Confirmed 2026-09-07: the 2026-09-07 security audit (3 of 4 auditors) found `script-src 'unsafe-inline'` in the static `next.config.ts` CSP defeated the policy's stated purpose of containing injected script, and no record showed that trade-off was accepted. The user chose the nonce route over recording acceptance. `src/proxy.ts` now generates a per-request nonce (`buildCsp`), sets it on both the request headers (`x-nonce` + `content-security-policy`, which Next reads to stamp the nonce onto the scripts it renders) and the response; `script-src` is `'self' 'nonce-…' 'strict-dynamic'` plus `https://cdn.plaid.com` for browsers that ignore `'strict-dynamic'` (Plaid Link's loader script is injected by nonce-trusted bundle code, so `'strict-dynamic'` covers it in modern browsers), with dev-only `'unsafe-eval'` for React debugging. The cost, accepted: nonces exist only per-request, so the root layout awaits `connection()` and every page renders dynamically — no static optimization (irrelevant for this all-data-driven, localhost app). `style-src` keeps `'unsafe-inline'`: Next injects inline styles, and CSS injection cannot reach script execution — a knowingly smaller hole. The static headers (`X-Frame-Options`, `nosniff`, `Referrer-Policy`) stay in `next.config.ts`. [[non-local-request-guard]] still provides the request-origin guarding; the CSP is the containment layer behind it.

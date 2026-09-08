@@ -1,5 +1,4 @@
 // Edit this file, then run: npm run seed:cards
-// Design: card-catalog-in-code.
 import type { CardType } from '@/lib/card-types';
 
 interface CardSeed {

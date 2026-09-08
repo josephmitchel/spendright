@@ -6,7 +6,6 @@ import { withErrorResponse } from '@/lib/errors';
 import { base64ImageMime } from '@/lib/image-mime';
 
 // The logo only changes on link/relink, so the browser may cache it for a day.
-// Design: item-logo-served-separately, thin-routes-domain-in-lib.
 export const GET = withErrorResponse(
   async (_req: NextRequest, { params }: { params: Promise<{ itemId: string }> }) => {
     const { itemId } = await params;

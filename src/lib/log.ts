@@ -1,5 +1,5 @@
 // Axios hangs the full request config, secret headers included, off its
-// errors (Verified-on: axios@1.20.0). Design: plaid-error-log-redaction.
+// errors (Verified-on: axios@1.20.0).
 import { plaidErrorBody } from '@/lib/plaid-errors';
 
 export function logError(message: string, err?: unknown): void {

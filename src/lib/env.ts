@@ -1,4 +1,3 @@
-// Design: config-validated-not-assumed.
 
 // pg accepts a missing/wrong-scheme connectionString (Verified-on: pg@8.23.0),
 // so a bad DATABASE_URL must fail here.

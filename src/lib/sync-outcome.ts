@@ -6,7 +6,7 @@ import { logError } from '@/lib/log';
 import { plaidErrorBody } from '@/lib/plaid-errors';
 import { MAX_SKIPPED_SYNCS, skippedItemErrorMessage } from '@/lib/sync-messages';
 
-// Best-effort; returns the user-facing message. Design: error-message-allow-list.
+// Best-effort; returns the user-facing message.
 export async function recordSyncFailure(
   itemId: string,
   err: unknown,
@@ -26,13 +26,12 @@ export async function recordSyncFailure(
   return message;
 }
 
-// Design: accounts-refreshed-per-sync.
 export const ACCOUNT_REFRESH_FAILED_MESSAGE =
   'The account refresh failed on the last sync — balances may be stale (check the server ' +
   'log). Transactions still synced.';
 
 // The skip counter is read under lock, not from the caller's possibly stale
-// ItemRow. Design: bounded-cursor-hold, accounts-refreshed-per-sync.
+// ItemRow.
 export async function recordSyncOutcome(
   tx: DbTransaction,
   itemId: string,

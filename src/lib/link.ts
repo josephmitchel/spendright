@@ -20,7 +20,6 @@ import { recordSyncFailure } from '@/lib/sync-outcome';
 
 type Institution = Awaited<ReturnType<typeof getInstitutionById>>;
 
-// Design: not-ready-poll-budgets.
 const INITIAL_SYNC_NOT_READY_RETRIES = 3;
 
 export interface LinkResult {
@@ -30,12 +29,11 @@ export interface LinkResult {
   sync: SyncItemResult | null;
   syncError: string | null;
   // True when enrichment failed before any sync attempt, so callers don't
-  // describe syncError as a sync failure. Design: link-flow.
+  // describe syncError as a sync failure.
   setupFailed: boolean;
   accountErrors: string[];
 }
 
-// Design: link-flow.
 async function fetchInstitution(
   institutionId: string | null | undefined,
 ): Promise<Institution | null> {
@@ -48,7 +46,6 @@ async function fetchInstitution(
   }
 }
 
-// Design: link-flow.
 async function storeItemShell(itemId: string, accessToken: string): Promise<string> {
   const encrypted = encrypt(accessToken);
   await db
@@ -67,7 +64,6 @@ async function storeItem(
   plaidItem: ProviderItem,
   institution: Institution | null,
 ): Promise<ItemRow> {
-  // Design: link-flow.
   const alwaysUpdated = {
     itemId,
     accessToken: encryptedAccessToken,
@@ -106,7 +102,6 @@ async function storeItem(
   return storedItem;
 }
 
-// Design: link-flow.
 async function runInitialSync(
   storedItem: ItemRow,
 ): Promise<{ result: SyncItemResult | null; error: string | null }> {
@@ -138,7 +133,6 @@ function accountFailureMessages(failures: StoreFailure[]): string[] {
   });
 }
 
-// Design: connection-repair-update-mode.
 export async function createRepairLinkToken(itemId: string): Promise<string> {
   const [item] = await db.select().from(items).where(eq(items.itemId, itemId));
   if (!item) {
@@ -147,7 +141,6 @@ export async function createRepairLinkToken(itemId: string): Promise<string> {
   return createLinkToken(decrypt(item.accessToken));
 }
 
-// Design: link-flow.
 export async function linkItem(publicToken: string): Promise<LinkResult> {
   const { accessToken, itemId } = await exchangePublicToken(publicToken);
   const encryptedAccessToken = await storeItemShell(itemId, accessToken);

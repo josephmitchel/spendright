@@ -1,4 +1,3 @@
-// Design: client-pages-fetch-api.
 export const apiPaths = {
   accounts: '/api/accounts',
   account: (accountId: string) => `/api/accounts/${encodeURIComponent(accountId)}`,

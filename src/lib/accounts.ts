@@ -8,7 +8,6 @@ import type { ProviderAccount } from '@/lib/provider-types';
 
 const accountColumns = getTableColumns(accounts);
 
-// Design: typed-api-contract.
 export const servedAccountColumns = {
   id: accountColumns.id,
   accountId: accountColumns.accountId,
@@ -61,7 +60,6 @@ async function upsertAccount(
   itemId: string,
   cardList: CardRow[],
 ): Promise<void> {
-  // Design: account-card-matching-by-name, categorization-is-a-historical-snapshot.
   const cardId = matchCard(cardList, plaidAccount.name)?.id ?? null;
   const accountValues = toAccountRow(plaidAccount, itemId, cardId);
 
@@ -75,7 +73,7 @@ async function upsertAccount(
 }
 
 // Each account commits in its own transaction, so one failing account costs
-// only its own rows. Design: accounts-refreshed-per-sync, link-flow.
+// only its own rows.
 async function storeAccounts(
   plaidAccounts: ProviderAccount[],
   itemId: string,

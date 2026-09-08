@@ -8,10 +8,8 @@ import { sendJson } from '@/lib/http';
 import { isSyncFailure } from '@/lib/sync-failure';
 import { skippedSyncNotice } from '@/lib/sync-messages';
 
-// Design: shared-mutation-protocol.
 export function useSyncAll(refresh: () => Promise<unknown>) {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  // Design: link-flow.
   const [syncSucceededAt, setSyncSucceededAt] = useState<number | null>(null);
 
   const {
@@ -23,7 +21,6 @@ export function useSyncAll(refresh: () => Promise<unknown>) {
     try {
       const data = await sendJson<SyncResponse>(apiPaths.sync, 'POST', undefined, 'Sync failed');
       const results = data.results;
-      // Design: bounded-cursor-hold.
       const parts = results.map((result) =>
         isSyncFailure(result)
           ? `${result.institutionName ?? result.itemId}: ${result.error}`

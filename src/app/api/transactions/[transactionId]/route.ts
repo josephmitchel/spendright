@@ -12,7 +12,6 @@ function isValidId(raw: unknown): raw is number {
   return typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= MAX_INT32;
 }
 
-// Design: category-write-contract, categorization-is-a-historical-snapshot.
 type ParsedCategoryPatch =
   { ok: true; kind: CategoryKind; categoryId: number } | { ok: false; message: string };
 
@@ -21,7 +20,6 @@ function parseCategoryPatch(body: unknown): ParsedCategoryPatch {
     return { ok: false, message: 'Request body must be a JSON object' };
   }
   const record = body as Record<string, unknown>;
-  // Design: category-kind-exhaustive.
   const kinds = Object.keys(categoryKindKeys) as CategoryKind[];
   const present = kinds.filter((kind) => categoryKindKeys[kind].id in record);
   const [kind] = present;
@@ -37,7 +35,6 @@ function parseCategoryPatch(body: unknown): ParsedCategoryPatch {
   return { ok: true, kind, categoryId: raw };
 }
 
-// Design: category-write-contract, categorization-is-a-historical-snapshot.
 export const PATCH = withErrorResponse(
   async (req: NextRequest, { params }: { params: Promise<{ transactionId: string }> }) => {
     const { transactionId } = await params;

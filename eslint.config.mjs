@@ -18,12 +18,10 @@ const eslintConfig = defineConfig([
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
     rules: {
-      // Design: promise-discipline-linted.
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
     },
   },
-  // Design: plaid-module-seams.
   {
     files: ['src/**/*.ts', 'src/**/*.tsx', 'scripts/**/*.mjs', 'scripts/**/*.ts'],
     rules: {
@@ -34,7 +32,6 @@ const eslintConfig = defineConfig([
     rules: {
       // Load-bearing for useLoadProtocol; the preset's default warn exits 0.
       'react-hooks/exhaustive-deps': 'error',
-      // Design: client-server-boundary-enforced.
       '@typescript-eslint/consistent-type-imports': [
         'error',
         { prefer: 'type-imports', fixStyle: 'inline-type-imports' },

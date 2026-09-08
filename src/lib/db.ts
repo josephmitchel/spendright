@@ -7,7 +7,6 @@ import { globalSingleton } from '@/lib/global-singleton';
 import { createBoundedPool } from '@/lib/pool-config';
 import { PublicError } from '@/lib/public-error';
 
-// Design: config-validated-not-assumed.
 function getConnectionString(): string {
   try {
     return requireDatabaseUrl();
@@ -17,11 +16,10 @@ function getConnectionString(): string {
 }
 
 // Inside the factory so bundler module-copies can't stack duplicate listeners.
-// Design: shared-pool-config.
 export const pool = globalSingleton('pool', () => createBoundedPool(getConnectionString()));
 
 // The supported baseline; a too-old server must fail at startup, not on the
-// first sync. Design: runtime-version-floors.
+// first sync.
 const MIN_POSTGRES_VERSION_NUM = 110_000;
 
 export async function assertSupportedPostgres(): Promise<void> {

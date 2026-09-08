@@ -1,6 +1,5 @@
 import type { TransactionRow } from '@/db/schema';
 
-// Design: category-kind-sign-rule.
 export type CategoryKind = 'card' | 'credit';
 
 // Plaid sign convention: positive = outflow; zero and NaN count as spend.
@@ -24,7 +23,6 @@ export const categoryKindKeys = {
   { id: keyof TransactionRow; name: string; writeColumns: readonly (keyof TransactionRow)[] }
 >;
 
-// Design: category-kind-exhaustive.
 export function assertNeverKind(kind: never): never {
   throw new Error(`Unhandled category kind: ${String(kind)}`);
 }

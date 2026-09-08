@@ -5,7 +5,6 @@
 // error. max is explicit because the sync concurrency budget is sized against
 // it (each in-flight item holds its lock session plus a transaction
 // connection).
-// Design: shared-pool-config, requests-have-deadlines.
 import { Pool } from 'pg';
 import { logError } from '@/lib/log';
 

@@ -8,7 +8,6 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: LayoutProps<'/'>) {
   // Per-request rendering so the CSP nonce reaches every script tag.
-  // Design: nonce-based-csp.
   await connection();
   return (
     <html lang="en">

@@ -20,7 +20,7 @@ export function ErrorNotice({
           <button onClick={onRetryAction} disabled={retryPending}>
             Retry
           </button>
-          {/* Design: async-status-announced — wrapper must stay mounted. */}
+          {/* Wrapper must stay mounted. */}
           <span role="status">{retryPending ? ' Retrying…' : null}</span>
         </>
       )}

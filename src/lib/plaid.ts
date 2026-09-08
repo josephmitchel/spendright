@@ -1,4 +1,3 @@
-// Design: plaid-module-seams.
 import 'server-only';
 
 import {
@@ -23,7 +22,7 @@ import type {
 import { PublicError } from '@/lib/public-error';
 
 // An unknown PLAID_ENV indexes to undefined and the SDK silently defaults to
-// production. Design: config-validated-not-assumed.
+// production.
 function getBasePath(): string {
   const env = process.env.PLAID_ENV || 'sandbox';
   const basePath = PlaidEnvironments[env];
@@ -53,7 +52,6 @@ function getCredential(name: 'PLAID_CLIENT_ID' | 'PLAID_SECRET'): string {
 }
 
 // Axios's default timeout is 0 — wait forever (Verified-on: axios@1.20.0).
-// Design: requests-have-deadlines.
 const PLAID_TIMEOUT_MS = 60_000;
 
 function getClient(): PlaidApi {
@@ -85,7 +83,6 @@ function splitEnvList(raw: string | undefined, fallback: string): string[] {
   return parsed.length > 0 ? parsed : [fallback];
 }
 
-// Design: config-validated-not-assumed.
 function getEnvEnumList<T extends string>(
   name: 'PLAID_PRODUCTS' | 'PLAID_COUNTRY_CODES',
   fallback: T,
@@ -116,7 +113,6 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 // A missing response or a 5xx is transport-level, and a 429 is Plaid's own
 // throttling signal asking to be retried; any other 4xx is Plaid's real answer.
-// Design: transient-plaid-retry.
 const TRANSIENT_RETRY_DELAY_MS = 1000;
 const MAX_RETRY_AFTER_MS = 30_000;
 
@@ -153,7 +149,7 @@ async function retryOnce<T>(task: () => Promise<T>): Promise<T> {
 }
 
 // With an access token, Plaid Link opens in update mode for that item
-// (products must be omitted). Design: connection-repair-update-mode.
+// (products must be omitted).
 export async function createLinkToken(accessToken?: string): Promise<string> {
   const configs: LinkTokenCreateRequest = {
     user: { client_user_id: 'spendright-user' },
@@ -177,7 +173,6 @@ export async function exchangePublicToken(
   };
 }
 
-// Design: plaid-types-adapted-at-ingest.
 function toProviderItem(item: ItemWithConsentFields): ProviderItem {
   return {
     institutionId: item.institution_id ?? null,
@@ -212,7 +207,6 @@ function toProviderTransaction(txn: PlaidTransaction): ProviderTransaction {
     amount: txn.amount,
     isoCurrencyCode: txn.iso_currency_code,
     unofficialCurrencyCode: txn.unofficial_currency_code,
-    // Design: deferred-features.
     category: txn.personal_finance_category?.primary ?? txn.category?.[0] ?? null,
     pending: txn.pending,
     pendingTransactionId: txn.pending_transaction_id,
@@ -221,7 +215,6 @@ function toProviderTransaction(txn: PlaidTransaction): ProviderTransaction {
 }
 
 export async function getItem(accessToken: string): Promise<ProviderItem> {
-  // Design: transient-plaid-retry.
   const response = await retryOnce(() => getClient().itemGet({ access_token: accessToken }));
   return toProviderItem(response.data.item);
 }
@@ -252,14 +245,13 @@ export async function removeItem(accessToken: string): Promise<string> {
   return response.data.request_id;
 }
 
-// Cumulative across a whole drain, not per stall. Design: not-ready-poll-budgets.
+// Cumulative across a whole drain, not per stall.
 const DEFAULT_NOT_READY_RETRIES = 10;
 const NOT_READY_DELAY_MS = 2000;
 
 // Plaid's documented maximum page size.
 const SYNC_PAGE_SIZE = 500;
 
-// Design: requests-have-deadlines.
 const MAX_SYNC_PAGES = 200;
 
 export interface SyncOptions {

@@ -1,5 +1,4 @@
 // App-owned shapes for provider-ingested data, adapted in src/lib/plaid.ts.
-// Design: plaid-types-adapted-at-ingest.
 
 export interface ProviderAccount {
   accountId: string;
@@ -16,7 +15,6 @@ export interface ProviderAccount {
   unofficialCurrencyCode: string | null;
 }
 
-// Design: raw-plaid-payload-stored-not-served.
 export type RawProviderPayload = unknown;
 
 export interface ProviderTransaction {

@@ -101,8 +101,7 @@ where the UI surfaces them.
 
 Nothing about syncing is internet-reachable: every route answers loopback
 callers only. Do not put a tunnel or any other forwarder in front of this
-app — the webhook-plus-tunnel design was retired over exactly that exposure
-(see `.claude/design/retired/webhook-triggered-sync.md` for the history),
+app — the webhook-plus-tunnel design was retired over exactly that exposure,
 and it is also why production mode is the everyday mode (the `/__nextjs_*`
 warning under Getting Started).
 

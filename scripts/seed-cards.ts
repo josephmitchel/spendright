@@ -13,7 +13,6 @@ import { requireDatabaseUrl } from '../src/lib/env';
 import { logFatalAndExit, logInfo } from '../src/lib/log';
 import { createBoundedPool } from '../src/lib/pool-config';
 
-// Design: card-catalog-in-code.
 const MAX_PLAUSIBLE_RATE = 20;
 
 function assertUniqueKeys(
@@ -124,7 +123,6 @@ const retireTargets = {
 };
 
 // Empty keptKeys omits the clause — same as the `true` drizzle renders notInArray([]) into (Verified-on: drizzle-orm@0.45.2).
-// Design: card-catalog-in-code, categories-retired-not-deleted.
 async function retireMissing<Table extends SeedTable>(
   tx: SeedTransaction,
   { table, keyColumn }: RetireTarget<Table>,
@@ -238,13 +236,12 @@ async function main() {
   assertSeedIsValid();
 
   // Own pool, not src/lib/db's singleton (that module is server-only) — the
-  // script must end() it so the process can exit. Design: shared-pool-config.
+  // script must end() it so the process can exit.
   const pool = createBoundedPool(requireDatabaseUrl());
   const rootDb = drizzle(pool);
 
   try {
     // Outside the reconcile transaction so its row locks can't deadlock with a sync.
-    // Design: categorization-is-a-historical-snapshot.
     await rootDb.execute(sql`
       update transactions t
       set reward_rate = cc.rate

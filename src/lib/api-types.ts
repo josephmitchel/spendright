@@ -1,5 +1,5 @@
 // *Payload is what a handler serves, *Response what a client reads after
-// JSON serialization. Design: typed-api-contract.
+// JSON serialization.
 import type { CreditCategoryRow } from '@/db/schema';
 import type { ServedAccountRow } from '@/lib/accounts';
 import type { CardWithCategories } from '@/lib/card-catalog';
@@ -32,7 +32,7 @@ export type AccountsResponse = Serialized<AccountsPayload>;
 
 // GET /api/accounts/[accountId] — null account is a 200, not a 404.
 // The owning item's error rides along so the detail page can warn about
-// staleness. Design: account-fetched-by-id.
+// staleness.
 export interface AccountPayload {
   account: ServedAccountRow | null;
   itemError: ItemErrorBody | null;

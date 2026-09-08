@@ -16,7 +16,6 @@ import { useAccountData } from './useAccountData';
 import { useCategoryPatches } from './useCategoryPatches';
 import { useTransactionPage } from './useTransactionPage';
 
-// Design: account-card-matching-by-name, categorization-is-a-historical-snapshot.
 
 export default function AccountPage({ params }: { params: Promise<{ accountId: string }> }) {
   const { accountId } = use(params);
@@ -34,9 +33,7 @@ function deriveView(inputs: {
 }): View {
   const { loading, accountLoaded, cardsLoaded, account, hasCard } = inputs;
   if (loading) return 'loading';
-  // Design: partial-load-rendering.
   if (accountLoaded && !account) return 'not-found';
-  // Design: account-card-matching-by-name.
   if (accountLoaded && cardsLoaded && account && !hasCard) return 'unsupported';
   if (hasCard) return 'ready';
   return 'unresolved';
@@ -63,7 +60,6 @@ function AccountIdentity({ account }: { account: ApiAccount }) {
   );
 }
 
-// Design: pager-keeps-stale-rows.
 function Pager({
   shownPage,
   shownCount,
@@ -89,7 +85,7 @@ function Pager({
       <button onClick={() => goToPage(shownPage + 1)} disabled={onLastPage || pageLoading}>
         Next
       </button>
-      {/* Design: async-status-announced — wrapper must stay mounted. */}
+      {/* Wrapper must stay mounted. */}
       <span role="status">{pageLoading ? ' Loading…' : null}</span>
     </p>
   );
@@ -97,7 +93,6 @@ function Pager({
 
 function AccountView({ accountId }: { accountId: string }) {
   const accountData = useAccountData(accountId);
-  // Design: optimistic-category-writes.
   const [categoryWrites] = useState(() => new CategoryWriteState());
   const transactionPage = useTransactionPage(accountId, categoryWrites);
   const { account, itemError, card, creditCategories, refresh: refreshAccount } = accountData;
@@ -116,14 +111,12 @@ function AccountView({ accountId }: { accountId: string }) {
     categoryWrites,
   );
 
-  // Design: optimistic-category-writes.
   useEffect(() => {
     clearPatchErrors();
   }, [shownPage, clearPatchErrors]);
 
   const { settled, error, retry, reloading } = combineLoadStates([accountData, transactionPage]);
 
-  // Design: home-reflects-background-sync.
   useVisiblePoll(
     useCallback(() => {
       void refreshAccount();
@@ -141,7 +134,6 @@ function AccountView({ accountId }: { accountId: string }) {
     };
   }, [account]);
 
-  // Design: stale-lists-disable-editing.
   const categoriesMayBeStale = !accountData.loaded.cards || !accountData.loaded.account;
 
   const view = deriveView({
@@ -162,7 +154,7 @@ function AccountView({ accountId }: { accountId: string }) {
       {/* The owning item's warning must reach this page too — it's the one a
           user checks before spending. */}
       {itemError != null && <ErrorNotice error={itemErrorMessage(itemError)} />}
-      {/* Design: async-status-announced — wrapper must stay mounted. */}
+      {/* Wrapper must stay mounted. */}
       <p role="status">{view === 'loading' ? 'Loading…' : null}</p>
       {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
       {view === 'not-found' && (

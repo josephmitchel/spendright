@@ -27,13 +27,11 @@ export interface SyncItemResult {
 
 export interface SyncItemOptions {
   // The caller already fetched AND stored the item's accounts.
-  // Design: accounts-refreshed-per-sync.
   accountsAlreadyStored?: boolean;
   notReadyRetries?: number;
 }
 
 // Concurrent syncItem calls on one item would race the cursor write.
-// Design: scheduled-sync, cross-process-sync-lock.
 const syncItemTails = globalSingleton('syncItemTails', () => new Map<string, Promise<void>>());
 
 export function syncItem(itemId: string, options?: SyncItemOptions): Promise<SyncItemResult> {
@@ -47,7 +45,7 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
   const [item] = await db.select().from(items).where(eq(items.itemId, itemId));
   if (!item) throw new Error(`sync ${itemId}: item row not found`);
   const accessToken = decrypt(item.accessToken);
-  // Plaid calls stay outside the DB transaction. Design: accounts-refreshed-per-sync.
+  // Plaid calls stay outside the DB transaction.
   let accountRefreshFailed = false;
   if (!options?.accountsAlreadyStored) {
     let plaidAccounts: ProviderAccount[] = [];
@@ -74,7 +72,6 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
 
   const { skipped, outcome } = await db.transaction(async (tx) => {
     // Bounds the row locks below, like the category PATCH path.
-    // Design: requests-have-deadlines.
     await tx.execute(sql`set local lock_timeout = '10s'`);
     const upserts = [...added, ...modified];
     const knownAccountIds = await knownAccountIdsFor(tx, upserts);

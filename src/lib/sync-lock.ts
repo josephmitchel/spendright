@@ -6,7 +6,6 @@ import { logWarn } from '@/lib/log';
 import { pgErrorCode } from '@/lib/pg-errors';
 import { PublicError } from '@/lib/public-error';
 
-// Design: cross-process-sync-lock.
 const LOCK_TIMEOUT_MS = 60_000;
 const SLOW_ACQUIRE_WARN_MS = 1_000;
 

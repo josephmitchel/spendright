@@ -8,7 +8,6 @@ import { syncItem, type SyncItemResult } from '@/lib/sync';
 import { recordSyncFailure } from '@/lib/sync-outcome';
 import { recordLastSync } from '@/lib/sync-status';
 
-// Design: scheduled-sync.
 
 export interface SyncItemFailure {
   itemId: string;

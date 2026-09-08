@@ -11,13 +11,11 @@ import {
 import { formatMoney, rowCurrency } from '@/lib/money';
 
 // A new CardType must name its rate unit here or fail to compile.
-// Design: card-type-decides-rate-unit.
 const RATE_HEADERS = { cashback: 'Cashback %', points: 'Multiplier' } satisfies Record<
   CardType,
   string
 >;
 
-// Design: categorization-is-a-historical-snapshot.
 function CategorySelect({
   value,
   valueName,
@@ -77,7 +75,6 @@ function rateCellText(txn: ApiTransaction, kind: CategoryKind): string | null {
   }
 }
 
-// Design: account-card-matching-by-name, category-kind-sign-rule.
 export function TransactionTable({
   card,
   creditCategories,
@@ -90,9 +87,7 @@ export function TransactionTable({
   card: ApiCard;
   creditCategories: ApiCreditCategory[];
   transactionList: ApiTransaction[];
-  // Design: stale-lists-disable-editing.
   categoriesMayBeStale: boolean;
-  // Design: optimistic-category-writes.
   patchErrors: ReadonlyMap<string, string>;
   // Never rejects; fired un-awaited.
   onSelectCategoryAction: (
@@ -101,7 +96,6 @@ export function TransactionTable({
     categoryId: number,
   ) => Promise<void>;
 }) {
-  // Design: card-type-decides-rate-unit.
   const rateHeader = RATE_HEADERS[card.type];
   const optionsByKind = {
     card: card.categories,
