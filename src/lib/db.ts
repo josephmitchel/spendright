@@ -33,6 +33,31 @@ export async function assertSupportedPostgres(): Promise<void> {
   }
 }
 
+// Per-item sync locks rely on session-scoped advisory locks and session SETs;
+// a transaction-pooling proxy silently breaks both, so it must fail at startup
+// instead. Same backend pid across queries plus a persisting SET means the
+// client holds one real session.
+export async function assertSessionModeConnection(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const first = await client.query<{ pid: number }>('select pg_backend_pid() as pid');
+    await client.query("set application_name = 'spendright'");
+    const second = await client.query<{ pid: number; name: string }>(
+      "select pg_backend_pid() as pid, current_setting('application_name') as name",
+    );
+    if (first.rows[0]?.pid !== second.rows[0]?.pid || second.rows[0]?.name !== 'spendright') {
+      throw new Error(
+        'DATABASE_URL appears to go through a transaction-pooling proxy (session state ' +
+          "did not persist across queries on one connection) — SpendRight's per-item sync " +
+          "locks need a direct session-mode connection; use the database's direct or " +
+          'session-mode port',
+      );
+    }
+  } finally {
+    client.release(true);
+  }
+}
+
 export const db: NodePgDatabase<typeof schema> = globalSingleton('db', () =>
   drizzle(pool, { schema }),
 );

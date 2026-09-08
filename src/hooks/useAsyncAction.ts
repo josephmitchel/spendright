@@ -57,6 +57,7 @@ export function useAsyncAction<Args extends unknown[]>(
     pending: pendingKeys.size > 0,
     pendingKeys,
     error: errors.size > 0 ? [...errors.values()].join('; ') : null,
+    errors,
     clearError,
   };
 }

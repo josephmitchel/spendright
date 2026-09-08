@@ -2,6 +2,13 @@
 
 export const MAX_SKIPPED_SYNCS = 5;
 
+export const ACCOUNT_REFRESH_FAILED_MESSAGE =
+  'The account refresh failed on the last sync — balances may be stale (check the server ' +
+  'log). Transactions still synced.';
+
+export const ACCOUNT_REFRESH_SYNC_NOTICE =
+  'account refresh failed — balances may be stale (see the server log)';
+
 export function skippedItemErrorMessage(
   skipped: number,
   consecutiveSkippedSyncs: number,

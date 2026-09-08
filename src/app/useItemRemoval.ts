@@ -9,7 +9,7 @@ export function useItemRemoval(refresh: () => Promise<unknown>) {
   const {
     run,
     pendingKeys: removingItems,
-    error: removeError,
+    errors: removeErrors,
   } = useAsyncAction(
     async (itemId: string, institutionName: string) => {
       await sendJson<ItemDeleteResponse>(
@@ -29,5 +29,5 @@ export function useItemRemoval(refresh: () => Promise<unknown>) {
     run(itemId, institutionName);
   };
 
-  return { removeItem, removingItems, removeError };
+  return { removeItem, removingItems, removeErrors };
 }

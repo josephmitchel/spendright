@@ -4,6 +4,6 @@ import { withErrorResponse } from '@/lib/errors';
 import { syncAllItems } from '@/lib/sync-all';
 
 export const POST = withErrorResponse(async () => {
-  const results = await syncAllItems();
+  const results = await syncAllItems('manual');
   return NextResponse.json<SyncResponse>({ results });
 });

@@ -2,6 +2,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import { items, transactions } from '@/db/schema';
 import { refreshItemAccounts } from '@/lib/accounts';
 import { serializeByKey } from '@/lib/async-coordination';
+import { chunkArray, ID_CHUNK_SIZE } from '@/lib/chunk';
 import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { globalSingleton } from '@/lib/global-singleton';
@@ -23,6 +24,8 @@ export interface SyncItemResult {
   skipped: number;
   // True when the skipped rows were dropped (cursor advanced) rather than held.
   dropped: boolean;
+  // True when the pre-sync account/balance refresh failed; transactions still synced.
+  accountRefreshFailed: boolean;
 }
 
 export interface SyncItemOptions {
@@ -86,8 +89,8 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
     );
 
     const removedIds = removed.map((r) => r.transactionId).filter((id) => Boolean(id));
-    if (removedIds.length > 0) {
-      await tx.delete(transactions).where(inArray(transactions.transactionId, removedIds));
+    for (const ids of chunkArray(removedIds, ID_CHUNK_SIZE)) {
+      await tx.delete(transactions).where(inArray(transactions.transactionId, ids));
     }
 
     return {
@@ -114,5 +117,6 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
     removed: removed.length,
     skipped,
     dropped: outcome.dropped,
+    accountRefreshFailed,
   };
 }

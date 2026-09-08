@@ -8,8 +8,9 @@ export async function register(): Promise<void> {
   try {
     const { installProcessBackstop } = await import('@/lib/process-backstop');
     installProcessBackstop();
-    const { assertSupportedPostgres } = await import('@/lib/db');
+    const { assertSupportedPostgres, assertSessionModeConnection } = await import('@/lib/db');
     await assertSupportedPostgres();
+    await assertSessionModeConnection();
     const { startSyncScheduler } = await import('@/lib/sync-scheduler');
     startSyncScheduler();
   } catch (err) {

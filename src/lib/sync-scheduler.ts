@@ -16,7 +16,7 @@ export function startSyncScheduler(): void {
 
   const run = async () => {
     try {
-      const results = await syncAllItems();
+      const results = await syncAllItems('scheduled');
       const failures = results.filter((result) => isSyncFailure(result)).length;
       logInfo(
         `scheduled sync: ${results.length} item(s)${failures > 0 ? `, ${failures} failed` : ''}`,

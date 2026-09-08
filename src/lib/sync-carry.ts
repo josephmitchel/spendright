@@ -2,6 +2,7 @@ import { inArray } from 'drizzle-orm';
 import { transactions } from '@/db/schema';
 import { categoryKindSources, type CategoryKindSource } from '@/lib/category-kind-sources';
 import { assertNeverKind, type CategoryKind } from '@/lib/category-kinds';
+import { chunkArray, ID_CHUNK_SIZE } from '@/lib/chunk';
 import type { DbTransaction } from '@/lib/db';
 import type { ProviderTransaction } from '@/lib/provider-types';
 
@@ -37,16 +38,21 @@ export async function resolveCarriedSelections(
 
   // Locked: a concurrent PATCH could otherwise commit a selection after this
   // read and lose it when the pending row is deleted.
-  const pendingRows = await tx
-    .select({
-      transactionId: transactions.transactionId,
-      cardCategoryId: transactions.cardCategoryId,
-      rewardRate: transactions.rewardRate,
-      creditCategoryId: transactions.creditCategoryId,
-    })
-    .from(transactions)
-    .where(inArray(transactions.transactionId, pendingIds))
-    .for('update');
+  const pendingRows = [];
+  for (const ids of chunkArray(pendingIds, ID_CHUNK_SIZE)) {
+    pendingRows.push(
+      ...(await tx
+        .select({
+          transactionId: transactions.transactionId,
+          cardCategoryId: transactions.cardCategoryId,
+          rewardRate: transactions.rewardRate,
+          creditCategoryId: transactions.creditCategoryId,
+        })
+        .from(transactions)
+        .where(inArray(transactions.transactionId, ids))
+        .for('update')),
+    );
+  }
 
   const liveCardCategoryIds = await liveCategoryIds(
     tx,

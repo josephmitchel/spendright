@@ -67,6 +67,7 @@ function InstitutionSection({
   accounts,
   accountsLoaded,
   removePending,
+  removeError,
   onRemoveAction,
   onRepairedAction,
 }: {
@@ -74,6 +75,7 @@ function InstitutionSection({
   accounts: ApiAccount[];
   accountsLoaded: boolean;
   removePending: boolean;
+  removeError: string | null;
   onRemoveAction: (itemId: string, institutionName: string) => void;
   onRepairedAction: () => void;
 }) {
@@ -93,6 +95,7 @@ function InstitutionSection({
         </button>
         {/* Wrapper must stay mounted. */}
         <span role="status">{removePending ? ' Removing…' : null}</span>
+        {removeError != null && <ErrorNotice inline error={removeError} />}
       </h2>
       {item.error != null && (
         <p>
@@ -111,7 +114,7 @@ export default function Home() {
   const { itemList, accountList, lastSync, settled, error, loaded, refresh, retry, reloading } =
     useHomeData();
   const { syncAll, syncing, syncStatus, syncError, syncSucceededAt } = useSyncAll(refresh);
-  const { removeItem, removingItems, removeError } = useItemRemoval(refresh);
+  const { removeItem, removingItems, removeErrors } = useItemRemoval(refresh);
 
   useVisiblePoll(
     useCallback(() => {
@@ -140,17 +143,23 @@ export default function Home() {
         <span role="status">{syncStatus ? ` ${syncStatus}` : null}</span>
       </p>
       {lastSync && (
-        <p>Last automatic sync finished {new Date(lastSync.finishedAt).toLocaleString()}.</p>
+        <p>
+          Last {lastSync.trigger === 'manual' ? 'manual' : 'automatic'} sync finished{' '}
+          {new Date(lastSync.finishedAt).toLocaleString()}.
+        </p>
       )}
 
       {/* Wrapper must stay mounted. */}
       <p role="status">{view === 'loading' ? 'Loading…' : null}</p>
       {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
       {lastSync?.error != null && (
-        <ErrorNotice error={`The last automatic sync failed: ${lastSync.error}`} />
+        <ErrorNotice
+          error={`The last ${
+            lastSync.trigger === 'manual' ? 'manual' : 'automatic'
+          } sync failed: ${lastSync.error}`}
+        />
       )}
       {syncError && <ErrorNotice error={syncError} />}
-      {removeError && <ErrorNotice error={removeError} />}
       {view === 'no-institutions' && <p>No institutions connected yet.</p>}
       {view === 'list' && (
         <>
@@ -162,6 +171,7 @@ export default function Home() {
               accounts={accountList.filter((account) => account.itemId === item.itemId)}
               accountsLoaded={loaded.accounts}
               removePending={removingItems.has(item.itemId)}
+              removeError={removeErrors.get(item.itemId) ?? null}
               onRemoveAction={removeItem}
               onRepairedAction={syncAll}
             />

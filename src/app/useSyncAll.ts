@@ -6,7 +6,7 @@ import { apiPaths } from '@/lib/api-paths';
 import type { SyncResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
 import { isSyncFailure } from '@/lib/sync-failure';
-import { skippedSyncNotice } from '@/lib/sync-messages';
+import { ACCOUNT_REFRESH_SYNC_NOTICE, skippedSyncNotice } from '@/lib/sync-messages';
 
 export function useSyncAll(refresh: () => Promise<unknown>) {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
@@ -26,12 +26,14 @@ export function useSyncAll(refresh: () => Promise<unknown>) {
           ? `${result.institutionName ?? result.itemId}: ${result.error}`
           : `+${result.added} added${
               result.skipped ? `, ${skippedSyncNotice(result.skipped, result.dropped)}` : ''
-            }`,
+            }${result.accountRefreshFailed ? `, ${ACCOUNT_REFRESH_SYNC_NOTICE}` : ''}`,
       );
       setSyncStatus(`Sync complete. ${parts.join(', ') || 'No items.'}`);
       if (
         results.length > 0 &&
-        results.every((result) => !isSyncFailure(result) && !result.skipped)
+        results.every(
+          (result) => !isSyncFailure(result) && !result.skipped && !result.accountRefreshFailed,
+        )
       )
         setSyncSucceededAt(Date.now());
       void refresh();

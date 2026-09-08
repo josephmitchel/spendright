@@ -5,8 +5,14 @@
 // error. max is explicit because the sync concurrency budget is sized against
 // it (each in-flight item holds its lock session plus a transaction
 // connection).
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import { logError } from '@/lib/log';
+
+// pg's default parser turns date columns into local-timezone JS Dates, which
+// drizzle's string-mode date() re-serializes through toISOString() — shifting
+// the day on UTC-positive hosts. Pass the string through untouched.
+// Verified-on: pg@8.23.0, drizzle-orm@0.45.2
+types.setTypeParser(1082, (value) => value);
 
 export const POOL_CONFIG = {
   max: 10,

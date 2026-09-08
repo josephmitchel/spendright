@@ -6,7 +6,7 @@ import { globalSingleton } from '@/lib/global-singleton';
 import { logError } from '@/lib/log';
 import { syncItem, type SyncItemResult } from '@/lib/sync';
 import { recordSyncFailure } from '@/lib/sync-outcome';
-import { recordLastSync } from '@/lib/sync-status';
+import { recordLastSync, type SyncTrigger } from '@/lib/sync-status';
 
 
 export interface SyncItemFailure {
@@ -20,8 +20,8 @@ const syncAllSlot = globalSingleton('syncAllInFlight', () => ({
   inFlight: null as Promise<SyncAllResult> | null,
 }));
 
-export function syncAllItems(): Promise<SyncAllResult> {
-  return singleFlight(syncAllSlot, runSyncAll);
+export function syncAllItems(trigger: SyncTrigger): Promise<SyncAllResult> {
+  return singleFlight(syncAllSlot, () => runSyncAll(trigger));
 }
 
 // Bounded well below the pool max (10): each in-flight item holds up to two
@@ -30,7 +30,7 @@ export function syncAllItems(): Promise<SyncAllResult> {
 // comes from the item locks, not ordering.
 const SYNC_CONCURRENCY = 3;
 
-async function runSyncAll(): Promise<SyncAllResult> {
+async function runSyncAll(trigger: SyncTrigger): Promise<SyncAllResult> {
   let allItems: Array<{ itemId: string; institutionName: string | null }>;
   try {
     allItems = await db
@@ -38,7 +38,7 @@ async function runSyncAll(): Promise<SyncAllResult> {
       .from(items);
   } catch (err) {
     // A failure this early has no item row to carry it — record it globally.
-    recordLastSync(publicErrorMessage(err, 'Sync failed — check the server log'));
+    recordLastSync(publicErrorMessage(err, 'Sync failed — check the server log'), trigger);
     throw err;
   }
 
@@ -70,6 +70,6 @@ async function runSyncAll(): Promise<SyncAllResult> {
     Array.from({ length: Math.min(SYNC_CONCURRENCY, allItems.length) }, () => worker()),
   );
 
-  recordLastSync(null);
+  recordLastSync(null, trigger);
   return results;
 }
