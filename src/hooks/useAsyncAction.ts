@@ -3,14 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '@/lib/http';
 
-// Errors are tracked per run key so concurrent actions on different targets
-// can't clear each other's failure. Design: shared-mutation-protocol.
+// Errors and pending state are both tracked per run key so concurrent actions
+// on different targets can't clear each other's failure or claim each other's
+// in-flight status. Design: shared-mutation-protocol.
 export function useAsyncAction<Args extends unknown[]>(
   action: (...args: Args) => Promise<void>,
   failureMessage: string,
   options?: { key?: (...args: Args) => string },
 ) {
-  const [pendingCount, setPendingCount] = useState(0);
+  const [pendingKeys, setPendingKeys] = useState<ReadonlySet<string>>(new Set());
   const [errors, setErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const inFlight = useRef(new Set<string>());
   const currentRef = useRef({ action, key: options?.key });
@@ -23,7 +24,7 @@ export function useAsyncAction<Args extends unknown[]>(
       const key = currentRef.current.key?.(...args) ?? '';
       if (inFlight.current.has(key)) return;
       inFlight.current.add(key);
-      setPendingCount((count) => count + 1);
+      setPendingKeys((previous) => new Set(previous).add(key));
       setErrors((previous) => {
         if (!previous.has(key)) return previous;
         const next = new Map(previous);
@@ -38,7 +39,11 @@ export function useAsyncAction<Args extends unknown[]>(
           setErrors((previous) => new Map(previous).set(key, message));
         } finally {
           inFlight.current.delete(key);
-          setPendingCount((count) => count - 1);
+          setPendingKeys((previous) => {
+            const next = new Set(previous);
+            next.delete(key);
+            return next;
+          });
         }
       })();
     },
@@ -49,7 +54,8 @@ export function useAsyncAction<Args extends unknown[]>(
 
   return {
     run,
-    pending: pendingCount > 0,
+    pending: pendingKeys.size > 0,
+    pendingKeys,
     error: errors.size > 0 ? [...errors.values()].join('; ') : null,
     clearError,
   };

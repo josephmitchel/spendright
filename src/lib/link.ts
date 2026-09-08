@@ -29,6 +29,9 @@ export interface LinkResult {
   accountsStored: number;
   sync: SyncItemResult | null;
   syncError: string | null;
+  // True when enrichment failed before any sync attempt, so callers don't
+  // describe syncError as a sync failure. Design: link-enrichment-reported-not-thrown.
+  setupFailed: boolean;
   accountErrors: string[];
 }
 
@@ -176,6 +179,7 @@ export async function linkItem(publicToken: string): Promise<LinkResult> {
       accountsStored: 0,
       sync: null,
       syncError: error,
+      setupFailed: true,
       accountErrors: [],
     };
   }
@@ -190,6 +194,7 @@ export async function linkItem(publicToken: string): Promise<LinkResult> {
     accountsStored: plaidAccounts.length - accountErrors.length,
     sync: sync.result,
     syncError: sync.error,
+    setupFailed: false,
     accountErrors,
   };
 }

@@ -3,10 +3,12 @@
 export function ErrorNotice({
   error,
   onRetryAction,
+  retryPending,
   inline,
 }: {
   error: string;
   onRetryAction?: () => void;
+  retryPending?: boolean;
   inline?: boolean;
 }) {
   const content = (
@@ -15,7 +17,11 @@ export function ErrorNotice({
       {onRetryAction && (
         <>
           {' '}
-          <button onClick={onRetryAction}>Retry</button>
+          <button onClick={onRetryAction} disabled={retryPending}>
+            Retry
+          </button>
+          {/* Design: async-status-announced — wrapper must stay mounted. */}
+          <span role="status">{retryPending ? ' Retrying…' : null}</span>
         </>
       )}
     </>

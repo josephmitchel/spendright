@@ -22,3 +22,5 @@ Confirmed 2026-09-06 after a quality audit found the read side sharing one rigor
 - Page-specific state beside the mutation (the sync status line, the link notice) stays in the calling hook, which resets it in a catch-and-rethrow when a failure must clear it.
 
 Consumers: `useSyncAll`, `useItemRemoval`, and both of `PlaidLinkButton`'s mutations (whose old hand-rolled 4-value status union is now derived from the two actions' `pending`/`error`). `useCategoryPatches` deliberately stays on its own protocol — per-row optimistic bursts are a different shape with their own record ([[optimistic-category-writes]]).
+
+Update 2026-09-07: `pending` is now derived from a per-key `pendingKeys` set (exposed alongside it) rather than one shared counter — the 2026-09-07 audits traced the multi-institution "Removing…" mislabel to the asymmetry of per-key errors next to page-wide pending, a trap for any keyed caller. Keyed callers (`useItemRemoval`) read `pendingKeys.has(key)`; keyless callers keep reading the aggregate `pending`. The removal failure message now names the institution (`Failed to remove <name>`), matching the per-key error scoping.

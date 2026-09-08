@@ -45,7 +45,12 @@ export function PlaidLinkButton({
         ? [`${accountErrors.length} account(s) not stored — ${accountErrors.join('; ')}`]
         : []),
     ];
-    setSyncNotice(notices.length > 0 ? { message: notices.join(' · '), at: Date.now() } : null);
+    // A setup failure happens before any sync attempt, so its notice must not
+    // claim a sync ran; that message is already a complete sentence.
+    const prefix = data.setup_failed ? '' : "Connected, but the first sync didn't finish: ";
+    setSyncNotice(
+      notices.length > 0 ? { message: `${prefix}${notices.join(' · ')}`, at: Date.now() } : null,
+    );
     onConnectedAction();
   }, 'Exchange failed');
 
@@ -74,9 +79,7 @@ export function PlaidLinkButton({
       <span role="status">
         {connect.pending && ' Opening Plaid Link…'}
         {exchange.pending && ' Connecting and syncing transactions… (this can take a minute)'}
-        {syncNotice &&
-          noticeIsCurrent &&
-          ` Connected, but the first sync didn't finish: ${syncNotice.message}`}
+        {syncNotice && noticeIsCurrent && ` ${syncNotice.message}`}
       </span>
       {linkError && <ErrorNotice error={linkError} inline />}
     </span>

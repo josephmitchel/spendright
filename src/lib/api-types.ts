@@ -88,5 +88,6 @@ export interface ExchangeResponse {
   accounts_stored: LinkResult['accountsStored'];
   sync: LinkResult['sync'];
   sync_error: LinkResult['syncError'];
+  setup_failed: LinkResult['setupFailed'];
   account_errors: LinkResult['accountErrors'] | null;
 }

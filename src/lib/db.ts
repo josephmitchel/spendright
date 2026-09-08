@@ -20,9 +20,8 @@ function getConnectionString(): string {
 // Design: shared-pool-config.
 export const pool = globalSingleton('pool', () => createBoundedPool(getConnectionString()));
 
-// hashtextextended (src/lib/sync-lock.ts) needs PostgreSQL 11+; a too-old
-// server must fail at startup, not on the first sync.
-// Design: postgres-version-floor.
+// The supported baseline; a too-old server must fail at startup, not on the
+// first sync. Design: postgres-version-floor.
 const MIN_POSTGRES_VERSION_NUM = 110_000;
 
 export async function assertSupportedPostgres(): Promise<void> {

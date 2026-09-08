@@ -8,6 +8,7 @@ import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
 import type { ApiAccount } from '@/lib/api-types';
 import { itemErrorMessage } from '@/lib/item-error-message';
+import { formatMoney, rowCurrency } from '@/lib/money';
 import { PAGE_SIZE } from '@/lib/pagination';
 import { CategoryWriteState } from './category-write-state';
 import { TransactionTable } from './TransactionTable';
@@ -43,6 +44,7 @@ function deriveView(inputs: {
 }
 
 function AccountIdentity({ account }: { account: ApiAccount }) {
+  const currency = rowCurrency(account);
   return (
     <p>
       {account.officialName && account.officialName !== account.name
@@ -51,12 +53,11 @@ function AccountIdentity({ account }: { account: ApiAccount }) {
       {account.mask ? `••${account.mask} — ` : ''}
       {accountTypeLabel(account)}
       {' — current: '}
-      {account.balanceCurrent ?? '—'}
+      {formatMoney(account.balanceCurrent, currency)}
       {', available: '}
-      {account.balanceAvailable ?? '—'}
-      {account.balanceLimit != null ? `, limit: ${account.balanceLimit}` : ''}
-      {(account.isoCurrencyCode ?? account.unofficialCurrencyCode)
-        ? ` ${account.isoCurrencyCode ?? account.unofficialCurrencyCode}`
+      {formatMoney(account.balanceAvailable, currency)}
+      {account.balanceLimit != null
+        ? `, limit: ${formatMoney(account.balanceLimit, currency)}`
         : ''}
       {` — updated ${new Date(account.updatedAt).toLocaleString()}`}
     </p>
@@ -121,7 +122,7 @@ function AccountView({ accountId }: { accountId: string }) {
     clearPatchErrors();
   }, [shownPage, clearPatchErrors]);
 
-  const { settled, error, retry } = combineLoadStates([accountData, transactionPage]);
+  const { settled, error, retry, reloading } = combineLoadStates([accountData, transactionPage]);
 
   // Design: home-reflects-background-sync.
   useVisiblePoll(
@@ -164,7 +165,7 @@ function AccountView({ accountId }: { accountId: string }) {
       {itemError != null && <ErrorNotice error={itemErrorMessage(itemError)} />}
       {/* Design: async-status-announced — wrapper must stay mounted. */}
       <p role="status">{view === 'loading' ? 'Loading…' : null}</p>
-      {error && <ErrorNotice error={error} onRetryAction={retry} />}
+      {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
       {view === 'not-found' && (
         <p>Account not found. It may have been disconnected — check the list on the home page.</p>
       )}

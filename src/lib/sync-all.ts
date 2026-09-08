@@ -25,8 +25,10 @@ export function syncAllItems(): Promise<SyncAllResult> {
   return singleFlight(syncAllSlot, runSyncAll);
 }
 
-// Bounded well below the pool max (10): each in-flight item holds a dedicated
-// lock client. Per-item correctness comes from the item locks, not ordering.
+// Bounded well below the pool max (10): each in-flight item holds up to two
+// pool connections — its dedicated lock session plus the transaction that
+// commits its batch — so 3 items can occupy 6 of the 10. Per-item correctness
+// comes from the item locks, not ordering.
 const SYNC_CONCURRENCY = 3;
 
 async function runSyncAll(): Promise<SyncAllResult> {

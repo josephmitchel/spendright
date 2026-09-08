@@ -8,6 +8,7 @@ import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
 import { apiPaths } from '@/lib/api-paths';
 import type { ApiAccount, ApiItem } from '@/lib/api-types';
 import { itemErrorMessage } from '@/lib/item-error-message';
+import { formatMoney, rowCurrency } from '@/lib/money';
 import { isPlaidItemError } from '@/lib/plaid-errors';
 import { PlaidLinkButton } from './PlaidLinkButton';
 import { RepairConnectionButton } from './RepairConnectionButton';
@@ -37,6 +38,7 @@ function AccountsTable({ accounts }: { accounts: ApiAccount[] }) {
           <th scope="col">Current</th>
           <th scope="col">Available</th>
           <th scope="col">Limit</th>
+          <th scope="col">Currency</th>
           <th scope="col">Updated</th>
         </tr>
       </thead>
@@ -48,9 +50,10 @@ function AccountsTable({ accounts }: { accounts: ApiAccount[] }) {
             </td>
             <td>{account.mask}</td>
             <td>{accountTypeLabel(account)}</td>
-            <td>{account.balanceCurrent}</td>
-            <td>{account.balanceAvailable}</td>
-            <td>{account.balanceLimit}</td>
+            <td>{formatMoney(account.balanceCurrent, rowCurrency(account))}</td>
+            <td>{formatMoney(account.balanceAvailable, rowCurrency(account))}</td>
+            <td>{formatMoney(account.balanceLimit, rowCurrency(account))}</td>
+            <td>{rowCurrency(account)}</td>
             {/* The freshness cue for a balance about to inform a spending decision. */}
             <td>{new Date(account.updatedAt).toLocaleString()}</td>
           </tr>
@@ -72,7 +75,7 @@ function InstitutionSection({
   accounts: ApiAccount[];
   accountsLoaded: boolean;
   removePending: boolean;
-  onRemoveAction: (itemId: string) => void;
+  onRemoveAction: (itemId: string, institutionName: string) => void;
   onRepairedAction: () => void;
 }) {
   return (
@@ -83,7 +86,10 @@ function InstitutionSection({
           <img src={apiPaths.itemLogo(item.itemId)} alt="" width={24} height={24} />
         )}{' '}
         {item.institutionName ?? item.itemId}{' '}
-        <button onClick={() => onRemoveAction(item.itemId)} disabled={removePending}>
+        <button
+          onClick={() => onRemoveAction(item.itemId, item.institutionName ?? item.itemId)}
+          disabled={removePending}
+        >
           Remove
         </button>
         {/* Design: async-status-announced — wrapper must stay mounted. */}
@@ -105,9 +111,10 @@ function InstitutionSection({
 
 // Design: client-pages-fetch-api.
 export default function Home() {
-  const { itemList, accountList, lastSync, settled, error, loaded, refresh, retry } = useHomeData();
+  const { itemList, accountList, lastSync, settled, error, loaded, refresh, retry, reloading } =
+    useHomeData();
   const { syncAll, syncing, syncStatus, syncError, syncSucceededAt } = useSyncAll(refresh);
-  const { removeItem, removing, removeError } = useItemRemoval(refresh);
+  const { removeItem, removingItems, removeError } = useItemRemoval(refresh);
 
   // Design: home-reflects-background-sync.
   useVisiblePoll(
@@ -142,7 +149,7 @@ export default function Home() {
 
       {/* Design: async-status-announced — wrapper must stay mounted. */}
       <p role="status">{view === 'loading' ? 'Loading…' : null}</p>
-      {error && <ErrorNotice error={error} onRetryAction={retry} />}
+      {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
       {lastSync?.error != null && (
         <ErrorNotice error={`The last automatic sync failed: ${lastSync.error}`} />
       )}
@@ -158,7 +165,7 @@ export default function Home() {
               item={item}
               accounts={accountList.filter((account) => account.itemId === item.itemId)}
               accountsLoaded={loaded.accounts}
-              removePending={removing}
+              removePending={removingItems.has(item.itemId)}
               onRemoveAction={removeItem}
               onRepairedAction={syncAll}
             />

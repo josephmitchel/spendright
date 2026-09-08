@@ -113,14 +113,32 @@ function getCountryCodes(): CountryCode[] {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// A missing response or a 5xx is transport-level; a 4xx is Plaid's real answer.
+// A missing response or a 5xx is transport-level, and a 429 is Plaid's own
+// throttling signal asking to be retried; any other 4xx is Plaid's real answer.
 // Design: transient-plaid-retry.
 const TRANSIENT_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_AFTER_MS = 30_000;
+
+interface PlaidFailureShape {
+  isAxiosError?: boolean;
+  response?: { status?: number; headers?: Record<string, unknown> };
+}
 
 function isTransientPlaidFailure(err: unknown): boolean {
-  const maybe = err as { isAxiosError?: boolean; response?: { status?: number } };
+  const maybe = err as PlaidFailureShape;
   if (maybe?.isAxiosError !== true) return false;
-  return maybe.response?.status === undefined || maybe.response.status >= 500;
+  const status = maybe.response?.status;
+  return status === undefined || status >= 500 || status === 429;
+}
+
+// Axios lower-cases response header names (Verified-on: axios@1.20.0).
+function retryDelayMs(err: unknown): number {
+  const maybe = err as PlaidFailureShape;
+  const retryAfter = Number(maybe?.response?.headers?.['retry-after']);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return Math.min(retryAfter * 1000, MAX_RETRY_AFTER_MS);
+  }
+  return TRANSIENT_RETRY_DELAY_MS;
 }
 
 async function retryOnce<T>(task: () => Promise<T>): Promise<T> {
@@ -128,7 +146,7 @@ async function retryOnce<T>(task: () => Promise<T>): Promise<T> {
     return await task();
   } catch (err) {
     if (!isTransientPlaidFailure(err)) throw err;
-    await sleep(TRANSIENT_RETRY_DELAY_MS);
+    await sleep(retryDelayMs(err));
     return task();
   }
 }

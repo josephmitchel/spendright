@@ -79,6 +79,22 @@ function assertSeedIsValid(): void {
         );
       }
     }
+
+    // An in-range typo passes the bound above, so rates also need human
+    // provenance: when they were checked and against what.
+    if (!seed.ratesVerified.source.trim()) {
+      throw new Error(`cards.seed.ts: "${seed.slug}" ratesVerified.source is blank`);
+    }
+    const verifiedOn = new Date(seed.ratesVerified.on);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(seed.ratesVerified.on) || Number.isNaN(verifiedOn.getTime())) {
+      throw new Error(
+        `cards.seed.ts: "${seed.slug}" ratesVerified.on (${seed.ratesVerified.on}) must be a ` +
+          'YYYY-MM-DD date',
+      );
+    }
+    if (verifiedOn.getTime() > Date.now()) {
+      throw new Error(`cards.seed.ts: "${seed.slug}" ratesVerified.on is in the future`);
+    }
   }
 
   assertUniqueKeys(

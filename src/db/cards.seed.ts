@@ -9,6 +9,9 @@ interface CardSeed {
   type: CardType;
   plaidAccountNames: string[];
   categories: { name: string; rate: number }[];
+  // An in-range rate typo can't be caught mechanically, so every card must
+  // attest when and where its rates were checked against issuer terms.
+  ratesVerified: { on: string; source: string };
 }
 
 export const creditCategorySeeds: string[] = [
@@ -33,5 +36,9 @@ export const cardSeeds: CardSeed[] = [
       { name: 'Gas', rate: 3 },
       { name: 'Other', rate: 1 },
     ],
+    ratesVerified: {
+      on: '2026-09-07',
+      source: 'americanexpress.com — Blue Cash Preferred benefit terms',
+    },
   },
 ];

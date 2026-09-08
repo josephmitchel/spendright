@@ -8,6 +8,7 @@ import {
   kindForAmount,
   type CategoryKind,
 } from '@/lib/category-kinds';
+import { formatMoney, rowCurrency } from '@/lib/money';
 
 // A new CardType must name its rate unit here or fail to compile.
 // Design: card-type-decides-rate-unit.
@@ -142,8 +143,8 @@ export function TransactionTable({
               <td>{txn.date}</td>
               <td>{txn.name}</td>
               <td>{txn.merchantName}</td>
-              <td>{txn.amount}</td>
-              <td>{txn.isoCurrencyCode ?? txn.unofficialCurrencyCode}</td>
+              <td>{formatMoney(txn.amount, rowCurrency(txn))}</td>
+              <td>{rowCurrency(txn)}</td>
               <td>
                 {options.length > 0 ? (
                   <CategorySelect

@@ -19,6 +19,7 @@ export const POST = withErrorResponse(async (req: NextRequest) => {
     accounts_stored: result.accountsStored,
     sync: result.sync,
     sync_error: result.syncError,
+    setup_failed: result.setupFailed,
     account_errors: result.accountErrors.length > 0 ? result.accountErrors : null,
   });
 });

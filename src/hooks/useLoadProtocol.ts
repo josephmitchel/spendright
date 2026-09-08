@@ -117,7 +117,7 @@ export function useLoadProtocol<K extends string>(
 
 type LoadState = Pick<
   ReturnType<typeof useLoadProtocol>,
-  'settled' | 'error' | 'clearError' | 'reload' | 'retry'
+  'settled' | 'error' | 'clearError' | 'reload' | 'retry' | 'reloading'
 >;
 
 export function combineLoadStates(states: readonly LoadState[]): LoadState {
@@ -131,5 +131,6 @@ export function combineLoadStates(states: readonly LoadState[]): LoadState {
     clearError: () => states.forEach((state) => state.clearError()),
     reload: () => states.forEach((state) => state.reload()),
     retry: () => states.forEach((state) => state.retry()),
+    reloading: states.some((state) => state.reloading),
   };
 }
