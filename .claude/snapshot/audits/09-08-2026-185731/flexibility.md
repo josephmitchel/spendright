@@ -1,6 +1,7 @@
 ---
-characteristic: "flexibility"
+characteristic: 'flexibility'
 ---
+
 # Summary
 
 Three auditors assessed Adaptability, Scalability, Installability, and Replaceability. The codebase's deliberate inflexibilities (single-user, single-process, single-card, no export, Plaid non-abstracted) are all pre-declared in SNAPSHOT.md with revisit triggers and were not re-raised. The genuinely flexible parts held up under inspection: the card catalog is fully data-driven (the single card is a data decision, not a logic constraint — grep-verified that no card name leaks outside `cards.seed.ts`), `CardType`/`CategoryKind` are compiler-exhaustive extension points, Plaid products/regions are env-configurable against SDK enums, money formatting adapts to the runtime locale, and the README's migration-baselining procedure is an installability strength. Two of three auditors converged on the same single finding; the third considered the same coupling adequately discoverable via comments. All findings are `[new]` (first audit of the era).

@@ -1,3 +1,18 @@
+// Keep in sync with package.json "engines". next's own floor is only >=20.9.0
+// (Verified-on: next@16.3.4), so a mismatched Node major would otherwise run
+// silently; .npmrc's engine-strict only guards `npm install`, not runtime.
+const SUPPORTED_NODE_MAJOR = 24;
+
+export function assertSupportedNode(): void {
+  const major = Number(process.versions.node.split('.')[0]);
+  if (major !== SUPPORTED_NODE_MAJOR) {
+    throw new Error(
+      `Node ${process.versions.node} is running — SpendRight supports Node ` +
+        `${SUPPORTED_NODE_MAJOR}.x (package.json engines); switch versions (e.g. nvm use) ` +
+        'and restart',
+    );
+  }
+}
 
 // pg accepts a missing/wrong-scheme connectionString (Verified-on: pg@8.23.0),
 // so a bad DATABASE_URL must fail here.

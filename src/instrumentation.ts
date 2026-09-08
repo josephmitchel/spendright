@@ -1,4 +1,3 @@
-
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
@@ -8,6 +7,10 @@ export async function register(): Promise<void> {
   try {
     const { installProcessBackstop } = await import('@/lib/process-backstop');
     installProcessBackstop();
+    const { assertSupportedNode } = await import('@/lib/env');
+    assertSupportedNode();
+    const { assertAxiosErrorRedaction } = await import('@/lib/redaction-check');
+    assertAxiosErrorRedaction();
     const { assertSupportedPostgres, assertSessionModeConnection } = await import('@/lib/db');
     await assertSupportedPostgres();
     await assertSessionModeConnection();

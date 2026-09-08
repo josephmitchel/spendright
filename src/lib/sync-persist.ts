@@ -2,6 +2,7 @@ import { getTableColumns, inArray, sql, type SQL } from 'drizzle-orm';
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import { accounts, transactions } from '@/db/schema';
 import { categoryKindKeys, kindForAmount, type CategoryKind } from '@/lib/category-kinds';
+import { chunkArray, DB_CHUNK_SIZE } from '@/lib/chunk';
 import type { DbTransaction } from '@/lib/db';
 import { logError } from '@/lib/log';
 import type { ProviderTransaction } from '@/lib/provider-types';
@@ -38,9 +39,6 @@ export async function knownAccountIdsFor(
     .where(inArray(accounts.accountId, batchAccountIds));
   return new Set(rows.map((row) => row.accountId));
 }
-
-// Keeps each INSERT under Postgres's 65,535 bind-parameter cap.
-const UPSERT_CHUNK_SIZE = 500;
 
 const SKIPPED_ROW_LOG_CAP = 20;
 
@@ -134,10 +132,10 @@ export async function upsertTransactions(
     const rows = groups[kind];
     if (rows.length === 0) continue;
     const set = conflictSetForKind(kind);
-    for (let start = 0; start < rows.length; start += UPSERT_CHUNK_SIZE) {
+    for (const chunk of chunkArray(rows, DB_CHUNK_SIZE)) {
       await tx
         .insert(transactions)
-        .values(rows.slice(start, start + UPSERT_CHUNK_SIZE))
+        .values(chunk)
         .onConflictDoUpdate({ target: transactions.transactionId, set });
     }
   }

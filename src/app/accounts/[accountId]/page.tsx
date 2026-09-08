@@ -16,7 +16,6 @@ import { useAccountData } from './useAccountData';
 import { useCategoryPatches } from './useCategoryPatches';
 import { useTransactionPage } from './useTransactionPage';
 
-
 export default function AccountPage({ params }: { params: Promise<{ accountId: string }> }) {
   const { accountId } = use(params);
   return <AccountView key={accountId} accountId={accountId} />;

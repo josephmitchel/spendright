@@ -17,9 +17,9 @@ Since this is the era's baseline audit, everything above is newly surfaced; the 
 ## Score
 
 | Severity | Count | Points |
-|---|---|---|
-| Major | 1 | 5 |
-| Moderate | 5 | 10 |
-| Minor | 11 | 11 |
+| -------- | ----- | ------ |
+| Major    | 1     | 5      |
+| Moderate | 5     | 10     |
+| Minor    | 11    | 11     |
 
 **Score: 26 (prior: 0, new: 26)**

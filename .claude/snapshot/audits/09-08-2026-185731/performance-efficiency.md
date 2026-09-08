@@ -1,6 +1,7 @@
 ---
-characteristic: "performance efficiency"
+characteristic: 'performance efficiency'
 ---
+
 # Summary
 
 Three auditors reviewed the sync pipeline, connection pooling, schema/indices, API routes, and client polling/rendering. The performance design is disciplined and internally consistent with SNAPSHOT.md: pool sized against sync concurrency, hot queries indexed, upserts chunked, every wait bounded, and all scale trade-offs (offset pagination, 60s polling, sequential per-account upserts) explicitly blessed by the snapshot's deferred section. One auditor found a genuine capacity gap in the sync pipeline; one found a small render-path inefficiency; the third reported a clean pass. All findings are `[new]` (first audit of the era).

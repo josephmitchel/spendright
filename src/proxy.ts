@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 // cdn.plaid.com serves the Plaid Link script and iframe (kept for browsers

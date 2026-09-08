@@ -16,6 +16,7 @@ The app is deliberately unstyled.
 # Features
 
 ## Connecting a bank (Plaid Link)
+
 - Link flow stores the encrypted access token in a minimal item row **before**
   enrichment, so an enrichment failure never strands a live Plaid item behind a
   discarded token. Enrichment reads run in parallel; failures are recorded on the
@@ -28,6 +29,7 @@ The app is deliberately unstyled.
 - Re-link writes institution metadata only when a value was actually obtained.
 
 ## Home page (`/`)
+
 - Institutions with logo, accounts table (balances, freshness stamp), Connect,
   Sync all, Remove (native `confirm()`), last-automatic-sync line.
 - Logos served from a separate endpoint with `private, max-age=86400` — a stale
@@ -45,6 +47,7 @@ The app is deliberately unstyled.
   nothing below the error line — the error notice is the surface at this stage.
 
 ## Account detail (`/accounts/[accountId]`)
+
 - Header repeats the owning item's error (this is the page checked before spending).
 - Transaction table: date/name/merchant/amount/currency/category select/reward
   rate/pending. Rate column header follows the card type (`Cashback %` vs
@@ -63,6 +66,7 @@ The app is deliberately unstyled.
   single page, silent polls never disable it.
 
 ## Sync engine
+
 - Hourly in-process scheduler plus one run ~10s after start; timers unref'd; no
   webhook (the app has no internet-reachable origin, and never will — no tunnels).
 - `syncAllItems` is single-flight (manual sync joins a running pass); fan-out
@@ -100,6 +104,7 @@ The app is deliberately unstyled.
   deliberately has no supervisor. Pool `'error'` events are logged, not crashed.
 
 ## Cards & categories
+
 - The catalog is code (`src/db/cards.seed.ts`) applied by `npm run seed:cards`;
   no UI/API writes it. Slug is identity. Reconcile **retires** (soft-delete)
   anything absent — nothing is ever deleted, FK set-nulls never fire. A retired
@@ -126,6 +131,7 @@ The app is deliberately unstyled.
   the one site a new kind must extend by hand via migration.
 
 ## API surface
+
 - Typed contract: payloads declared once in `api-types.ts`, checked on both sides;
   clients read only `Serialized<Payload>` through the single response reader
   (`getJson`/`sendJson`; hand-parsing a response is a violation). Column omissions
@@ -149,6 +155,7 @@ The app is deliberately unstyled.
   read in a page is not the pattern); page-local hooks live beside their pages.
 
 ## Security posture
+
 - Loopback-only: the `-H 127.0.0.1` bind (appended last by `start.mjs`, so
   unoverridable) is the enforcement; `proxy.ts` is defense-in-depth — bodyless 404
   for non-local requests on every path, Host structure rejected before URL parsing,
@@ -175,6 +182,7 @@ The app is deliberately unstyled.
 - 128kb proxy body cap; X-Frame-Options DENY, nosniff, no-referrer static headers.
 
 ## Accessibility & formatting
+
 - Live-region rule for async UI: errors render conditionally with `role="alert"`;
   status text lives inside always-mounted `role="status"` wrappers whose content
   toggles ("wrapper must stay mounted"). New async UI must follow this.

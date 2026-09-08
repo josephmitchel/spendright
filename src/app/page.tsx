@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
@@ -47,7 +47,7 @@ function AccountsTable({ accounts }: { accounts: ApiAccount[] }) {
             <td>
               <Link href={`/accounts/${account.accountId}`}>{accountDisplayName(account)}</Link>
             </td>
-            <td>{account.mask}</td>
+            <td>{account.mask ?? '—'}</td>
             <td>{accountTypeLabel(account)}</td>
             <td>{formatMoney(account.balanceCurrent, rowCurrency(account))}</td>
             <td>{formatMoney(account.balanceAvailable, rowCurrency(account))}</td>
@@ -90,6 +90,9 @@ function InstitutionSection({
         <button
           onClick={() => onRemoveAction(item.itemId, item.institutionName ?? item.itemId)}
           disabled={removePending}
+          // The institution context a screen reader's buttons list can't get
+          // from the heading alone.
+          aria-label={`Remove ${item.institutionName ?? item.itemId}`}
         >
           Remove
         </button>
@@ -101,7 +104,11 @@ function InstitutionSection({
         <p>
           <ErrorNotice inline error={itemErrorMessage(item.error)} />{' '}
           {isPlaidItemError(item.error) && (
-            <RepairConnectionButton itemId={item.itemId} onRepairedAction={onRepairedAction} />
+            <RepairConnectionButton
+              itemId={item.itemId}
+              institutionName={item.institutionName ?? item.itemId}
+              onRepairedAction={onRepairedAction}
+            />
           )}
         </p>
       )}
@@ -114,7 +121,18 @@ export default function Home() {
   const { itemList, accountList, lastSync, settled, error, loaded, refresh, retry, reloading } =
     useHomeData();
   const { syncAll, syncing, syncStatus, syncError, syncSucceededAt } = useSyncAll(refresh);
-  const { removeItem, removingItems, removeErrors } = useItemRemoval(refresh);
+  // A successful removal unmounts the whole institution section, so the
+  // confirmation must live in a permanently-mounted region and focus must land
+  // somewhere real instead of vanishing with the button.
+  const [removalStatus, setRemovalStatus] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const { removeItem, removingItems, removeErrors } = useItemRemoval(
+    refresh,
+    useCallback((institutionName: string) => {
+      setRemovalStatus(`Removed ${institutionName}.`);
+      headingRef.current?.focus();
+    }, []),
+  );
 
   useVisiblePoll(
     useCallback(() => {
@@ -130,7 +148,9 @@ export default function Home() {
 
   return (
     <main>
-      <h1>SpendRight</h1>
+      <h1 tabIndex={-1} ref={headingRef}>
+        SpendRight
+      </h1>
       <p>
         <PlaidLinkButton
           onConnectedAction={() => void refresh()}
@@ -141,6 +161,8 @@ export default function Home() {
         </button>
         {/* Wrapper must stay mounted. */}
         <span role="status">{syncStatus ? ` ${syncStatus}` : null}</span>
+        {/* Wrapper must stay mounted. */}
+        <span role="status">{removalStatus ? ` ${removalStatus}` : null}</span>
       </p>
       {lastSync && (
         <p>

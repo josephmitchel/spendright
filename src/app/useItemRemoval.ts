@@ -5,7 +5,10 @@ import { apiPaths } from '@/lib/api-paths';
 import type { ItemDeleteResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
 
-export function useItemRemoval(refresh: () => Promise<unknown>) {
+export function useItemRemoval(
+  refresh: () => Promise<unknown>,
+  onRemovedAction?: (institutionName: string) => void,
+) {
   const {
     run,
     pendingKeys: removingItems,
@@ -19,6 +22,7 @@ export function useItemRemoval(refresh: () => Promise<unknown>) {
         `Failed to remove ${institutionName}`,
       );
       void refresh();
+      onRemovedAction?.(institutionName);
     },
     'Failed to remove item',
     { key: (itemId) => itemId },

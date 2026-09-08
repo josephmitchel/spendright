@@ -69,7 +69,7 @@ function rateCellText(txn: ApiTransaction, kind: CategoryKind): string | null {
       if (txn.rewardRate !== null && txn.cardCategoryId === null) {
         return `${txn.rewardRate} (unlinked)`;
       }
-      return txn.rewardRate;
+      return txn.rewardRate ?? '—';
     default:
       return assertNeverKind(kind);
   }
@@ -135,8 +135,8 @@ export function TransactionTable({
           return (
             <tr key={txn.transactionId}>
               <td>{txn.date}</td>
-              <td>{txn.name}</td>
-              <td>{txn.merchantName}</td>
+              <td>{txn.name ?? '—'}</td>
+              <td>{txn.merchantName ?? '—'}</td>
               <td>{formatMoney(txn.amount, rowCurrency(txn))}</td>
               <td>{rowCurrency(txn)}</td>
               <td>

@@ -3,6 +3,7 @@
 // this wrapper sends that first request itself and stops the server if it cannot be delivered.
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
@@ -110,6 +111,24 @@ async function warmUp() {
     process.exitCode = 1;
   }
 }
+
+// A busy port must fail fast with a clear message, not spin through the
+// crash-loop guard into a generic "exited 3 times". Probed only at initial
+// startup — restarts re-use a port the exiting child just freed.
+await new Promise((resolve, reject) => {
+  const probe = createServer();
+  probe.once('error', reject);
+  probe.listen(port, '127.0.0.1', () => probe.close(resolve));
+}).catch((err) => {
+  if (err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE') {
+    console.error(
+      `start.mjs: port ${port} is already in use by another process — stop it, or pass ` +
+        '-p/--port (or set PORT) to start on a different port.',
+    );
+    process.exit(1);
+  }
+  throw err;
+});
 
 spawnServer();
 await warmUp();

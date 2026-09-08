@@ -1,6 +1,7 @@
 ---
-characteristic: "functional suitability"
+characteristic: 'functional suitability'
 ---
+
 # Summary
 
 Three auditors reviewed the codebase against SNAPSHOT.md. The sync engine, category/card matching, API contract, data model, and UI behavior all track the snapshot's specific claims with high fidelity — including subtle edge cases (carried category selections, sign-flip clearing, retired-category display) verified line-by-line. Three genuine findings emerged, all in how sync outcomes and load state are surfaced to the user rather than in core data handling. This is the first audit of the era, so all findings are `[new]`.

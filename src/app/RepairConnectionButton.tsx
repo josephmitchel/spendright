@@ -13,9 +13,13 @@ import { sendJson } from '@/lib/http';
 // confirm recovery.
 export function RepairConnectionButton({
   itemId,
+  institutionName,
   onRepairedAction,
 }: {
   itemId: string;
+  // The institution context a screen reader's buttons list can't get from the
+  // surrounding section alone.
+  institutionName: string;
   onRepairedAction: () => void;
 }) {
   const openWithToken = usePlaidLinkOpen(useCallback(() => onRepairedAction(), [onRepairedAction]));
@@ -32,7 +36,11 @@ export function RepairConnectionButton({
 
   return (
     <span>
-      <button onClick={connect.run} disabled={connect.pending}>
+      <button
+        onClick={connect.run}
+        disabled={connect.pending}
+        aria-label={`Fix connection for ${institutionName}`}
+      >
         Fix connection
       </button>
       {/* Wrapper must stay mounted. */}

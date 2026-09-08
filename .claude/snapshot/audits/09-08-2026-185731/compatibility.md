@@ -1,6 +1,7 @@
 ---
-characteristic: "compatibility"
+characteristic: 'compatibility'
 ---
+
 # Summary
 
 Three auditors examined co-existence (shared machine/DB/ports) and interoperability (Plaid, Postgres, browser). Most compatibility safeguards the snapshot claims were directly verified against installed dependency versions (Plaid-Version pin, advisory-lock namespacing, PG11-compatible migrations, peer-dep ranges). However, this characteristic produced the audit's single Major finding — an empirically confirmed timezone-dependent date-corruption bug at the pg/drizzle boundary — plus a fail-silent gap around pooled Postgres connections and two environment-enforcement nits. All findings are `[new]` (first audit of the era).

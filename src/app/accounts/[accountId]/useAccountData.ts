@@ -43,6 +43,9 @@ export function useAccountData(accountId: string) {
         ),
       [accountId],
     ),
+    // Sticky: the not-found and unsupported-card views must survive a transient
+    // poll failure instead of dropping to a generic error until the next poll.
+    { stickyKeys: ['account', 'cards'] },
   );
 
   return { account, itemError, card, creditCategories, ...protocol };

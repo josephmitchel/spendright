@@ -4,12 +4,12 @@ import { db } from '@/lib/db';
 import { publicErrorMessage } from '@/lib/errors';
 import { globalSingleton } from '@/lib/global-singleton';
 import { logError } from '@/lib/log';
+import { POOL_CONFIG } from '@/lib/pool-config';
 import { syncItem, type SyncItemResult } from '@/lib/sync';
 import { recordSyncFailure } from '@/lib/sync-outcome';
 import { recordLastSync, type SyncTrigger } from '@/lib/sync-status';
 
-
-export interface SyncItemFailure {
+interface SyncItemFailure {
   itemId: string;
   institutionName: string | null;
   error: string;
@@ -24,11 +24,16 @@ export function syncAllItems(trigger: SyncTrigger): Promise<SyncAllResult> {
   return singleFlight(syncAllSlot, () => runSyncAll(trigger));
 }
 
-// Bounded well below the pool max (10): each in-flight item holds up to two
-// pool connections — its dedicated lock session plus the transaction that
-// commits its batch — so 3 items can occupy 6 of the 10. Per-item correctness
-// comes from the item locks, not ordering.
+// Bounded well below the pool max: each in-flight item holds up to two pool
+// connections — its dedicated lock session plus the transaction that commits
+// its batch. Per-item correctness comes from the item locks, not ordering.
 const SYNC_CONCURRENCY = 3;
+if (SYNC_CONCURRENCY * 2 > POOL_CONFIG.max) {
+  throw new Error(
+    `SYNC_CONCURRENCY (${SYNC_CONCURRENCY}) needs ${SYNC_CONCURRENCY * 2} pool connections but ` +
+      `POOL_CONFIG.max is ${POOL_CONFIG.max} — revisit both together`,
+  );
+}
 
 async function runSyncAll(trigger: SyncTrigger): Promise<SyncAllResult> {
   let allItems: Array<{ itemId: string; institutionName: string | null }>;

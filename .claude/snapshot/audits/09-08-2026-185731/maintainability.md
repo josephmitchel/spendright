@@ -1,6 +1,7 @@
 ---
-characteristic: "maintainability"
+characteristic: 'maintainability'
 ---
+
 # Summary
 
 Three auditors read essentially the entire application (~4,300 lines) and ran the toolchain independently. The verdict is consistent: unusually well-maintained for its stage — `lint` and `typecheck` pass clean, zero circular dependencies (`madge`), zero `any`/suppressions beyond one justified `eslint-disable`, cohesive single-purpose modules with no backward `src/app → src/lib` violations, all cross-request mutable state routed through the closed `SingletonKey` union, thin API routes uniformly wrapped in `withErrorResponse`, the `Verified-on:` comment convention followed exactly, and README/SNAPSHOT both accurate against the code. The only findings are two housekeeping items. All findings are `[new]` (first audit of the era). Missing tests were excluded per the user's standing deferral.

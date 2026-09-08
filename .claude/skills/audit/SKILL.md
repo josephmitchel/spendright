@@ -46,9 +46,11 @@ For each of the following agents defined in `.claude/agents`, spin up 3 agents:
 Remind each agent in its prompt to read `.claude/snapshot/SNAPSHOT.md` before auditing.
 
 For each requirement, synthesize the 3 agents' findings into a `.md` report named after the requirement they were auditing.
+
 - For example, the synthesized findings from the 3 auditor-functional-suitability agents would be saved as `functional-suitability.md`.
 
 Each report should be structured as follows:
+
 ```
 ---
 characteristic: "i.e. functional suitability"
@@ -67,10 +69,12 @@ The agents label each of their findings as **prior** (a concern from a previous 
 ### Step 3
 
 Create a file in the same audit folder titled `SUMMARY.md` which contains 2 things:
+
 - A brief overview of the main takeaways from the audit. Use the `[prior]`/`[new]` labels here: call out which prior concerns are still lingering unaddressed versus what this audit newly surfaced.
 - A score of the audit
 
 The score of the audit is calculated this way:
+
 - Major concern = 5
 - Moderate concern = 2
 - Minor concern = 1

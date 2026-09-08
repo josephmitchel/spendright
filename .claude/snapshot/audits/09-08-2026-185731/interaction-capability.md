@@ -1,6 +1,7 @@
 ---
-characteristic: "interaction capability"
+characteristic: 'interaction capability'
 ---
+
 # Summary
 
 Three auditors reviewed the full interactive surface (pages, hooks, live regions, error messaging, keyboard/screen-reader operability) against the snapshot's blessed scope (deliberately unstyled, `confirm()` for destructive actions, only the live-region and money-formatter rules as binding obligations). The interaction layer is unusually disciplined: live-region conventions applied uniformly, per-row `aria-label`s, native controls, no focus-outline suppression, clear failure-path messaging. The findings cluster around the institution-removal flow and a few consistency gaps in the transaction table. All findings are `[new]` (first audit of the era).

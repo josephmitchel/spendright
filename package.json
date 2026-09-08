@@ -5,10 +5,13 @@
   "engines": {
     "node": "24.x"
   },
+  "overrides": {
+    "axios": "$axios"
+  },
   "scripts": {
     "predev": "node scripts/tighten-next.mjs",
     "dev": "next dev -H 127.0.0.1",
-    "prebuild": "node scripts/tighten-next.mjs && npm run lint && npm run typecheck",
+    "prebuild": "node scripts/tighten-next.mjs && npm run lint && npm run typecheck && npm run format:check",
     "build": "next build",
     "postbuild": "node scripts/tighten-next.mjs",
     "start": "node scripts/start.mjs",
@@ -23,6 +26,7 @@
     "rotate:key": "tsx --conditions=react-server scripts/rotate-encryption-key.ts"
   },
   "dependencies": {
+    "axios": "1.20.0",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.4",
     "pg": "^8.23.0",

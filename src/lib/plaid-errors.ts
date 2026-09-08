@@ -1,4 +1,3 @@
-
 export interface PlaidErrorFields {
   error_type?: string;
   error_code?: string;

@@ -23,7 +23,8 @@ export function logFatalAndExit(message: string, err?: unknown): void {
   process.stderr.write('', () => process.exit(1));
 }
 
-function loggableError(err: unknown): unknown {
+// Exported for the startup redaction self-test (src/lib/redaction-check.ts).
+export function loggableError(err: unknown): unknown {
   const axiosErr = err as {
     isAxiosError?: boolean;
     message?: string;

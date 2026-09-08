@@ -29,7 +29,9 @@ export function useHomeData() {
         ),
       [],
     ),
-    { stickyKeys: ['accounts'] },
+    // Both sticky: an established view (including "no institutions yet") must
+    // survive a transient poll failure instead of blanking until the next poll.
+    { stickyKeys: ['items', 'accounts'] },
   );
 
   return { itemList, accountList, lastSync, ...protocol };

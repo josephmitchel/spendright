@@ -109,6 +109,12 @@ function getCountryCodes(): CountryCode[] {
   return getEnvEnumList('PLAID_COUNTRY_CODES', CountryCode.Us, Object.values(CountryCode));
 }
 
+// The SDK types language as a plain string (no enum to validate against);
+// Plaid rejects unsupported codes at link-token creation with its own error.
+function getLanguage(): string {
+  return process.env.PLAID_LANGUAGE?.trim() || 'en';
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 // A missing response or a 5xx is transport-level, and a 429 is Plaid's own
@@ -155,7 +161,7 @@ export async function createLinkToken(accessToken?: string): Promise<string> {
     user: { client_user_id: 'spendright-user' },
     client_name: 'SpendRight',
     country_codes: getCountryCodes(),
-    language: 'en',
+    language: getLanguage(),
     ...(accessToken !== undefined ? { access_token: accessToken } : { products: getProducts() }),
   };
 

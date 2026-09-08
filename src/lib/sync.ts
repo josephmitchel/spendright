@@ -2,7 +2,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import { items, transactions } from '@/db/schema';
 import { refreshItemAccounts } from '@/lib/accounts';
 import { serializeByKey } from '@/lib/async-coordination';
-import { chunkArray, ID_CHUNK_SIZE } from '@/lib/chunk';
+import { chunkArray, DB_CHUNK_SIZE } from '@/lib/chunk';
 import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { globalSingleton } from '@/lib/global-singleton';
@@ -89,7 +89,7 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
     );
 
     const removedIds = removed.map((r) => r.transactionId).filter((id) => Boolean(id));
-    for (const ids of chunkArray(removedIds, ID_CHUNK_SIZE)) {
+    for (const ids of chunkArray(removedIds, DB_CHUNK_SIZE)) {
       await tx.delete(transactions).where(inArray(transactions.transactionId, ids));
     }
 

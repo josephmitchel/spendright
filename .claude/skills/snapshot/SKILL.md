@@ -18,9 +18,10 @@ Read `.claude/snapshot/SNAPSHOT.md` if it exists — it is your working draft, n
 ### 2. Verify against the code
 
 Explore the codebase thoroughly (spin up Explore agents as needed). Compare it to the draft and collect:
+
 - draft claims that are no longer true
 - features/behavior present in code but absent from the draft
-- anything where the *intent* is ambiguous (could be deliberate, could be cruft)
+- anything where the _intent_ is ambiguous (could be deliberate, could be cruft)
 
 ### 3. Interview the user
 
