@@ -47,6 +47,9 @@ export function useLoadProtocol<K extends string>(
   const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<Record<K, boolean>>(initialLoaded);
+  // `fresh` is never sticky: it reports the latest settled load's reads only,
+  // so write-safety gates see a failed poll that sticky view state ignores.
+  const [fresh, setFresh] = useState<Record<K, boolean>>(initialLoaded);
   const [reloading, setReloading] = useState(false);
   const latestTicket = useRef(0);
   const stickyKeys = useRef(options?.stickyKeys).current;
@@ -72,6 +75,13 @@ export function useLoadProtocol<K extends string>(
         for (const key of Object.keys(previous) as K[]) {
           const nowSucceeded = (succeeded as Record<K, boolean>)[key];
           next[key] = stickyKeys?.includes(key) ? previous[key] || nowSucceeded : nowSucceeded;
+        }
+        return next;
+      });
+      setFresh((previous) => {
+        const next = { ...previous };
+        for (const key of Object.keys(previous) as K[]) {
+          next[key] = (succeeded as Record<K, boolean>)[key];
         }
         return next;
       });
@@ -107,7 +117,7 @@ export function useLoadProtocol<K extends string>(
     clearError();
     reload();
   }, [clearError, reload]);
-  return { settled, error, loaded, clearError, refresh, reload, retry, reloading };
+  return { settled, error, loaded, fresh, clearError, refresh, reload, retry, reloading };
 }
 
 type LoadState = Pick<

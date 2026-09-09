@@ -22,7 +22,9 @@ export function RepairConnectionButton({
   institutionName: string;
   onRepairedAction: () => void;
 }) {
-  const openWithToken = usePlaidLinkOpen(useCallback(() => onRepairedAction(), [onRepairedAction]));
+  const { openWithToken, opening, openError } = usePlaidLinkOpen(
+    useCallback(() => onRepairedAction(), [onRepairedAction]),
+  );
 
   const connect = useAsyncAction(async () => {
     const data = await sendJson<LinkTokenResponse>(
@@ -34,18 +36,20 @@ export function RepairConnectionButton({
     openWithToken(data.link_token);
   }, 'Failed to start the repair');
 
+  const repairError = connect.error ?? openError;
+
   return (
     <span>
       <button
         onClick={connect.run}
-        disabled={connect.pending}
+        disabled={connect.pending || opening}
         aria-label={`Fix connection for ${institutionName}`}
       >
         Fix connection
       </button>
       {/* Wrapper must stay mounted. */}
-      <span role="status">{connect.pending && ' Opening Plaid Link…'}</span>
-      {connect.error && <ErrorNotice error={connect.error} inline />}
+      <span role="status">{(connect.pending || opening) && ' Opening Plaid Link…'}</span>
+      {repairError && <ErrorNotice error={repairError} inline />}
     </span>
   );
 }

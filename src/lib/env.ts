@@ -1,9 +1,16 @@
-// Keep in sync with package.json "engines". next's own floor is only >=20.9.0
-// (Verified-on: next@16.3.4), so a mismatched Node major would otherwise run
-// silently; .npmrc's engine-strict only guards `npm install`, not runtime.
-const SUPPORTED_NODE_MAJOR = 24;
+import packageJson from '../../package.json';
+
+// next's own floor is only >=20.9.0 (Verified-on: next@16.3.4), so a mismatched
+// Node major would otherwise run silently; .npmrc's engine-strict only guards
+// `npm install`, not runtime. package.json "engines" is the single source.
+const SUPPORTED_NODE_MAJOR = Number.parseInt(packageJson.engines.node, 10);
 
 export function assertSupportedNode(): void {
+  if (Number.isNaN(SUPPORTED_NODE_MAJOR)) {
+    throw new Error(
+      `package.json engines.node ("${packageJson.engines.node}") must start with a major version`,
+    );
+  }
   const major = Number(process.versions.node.split('.')[0]);
   if (major !== SUPPORTED_NODE_MAJOR) {
     throw new Error(

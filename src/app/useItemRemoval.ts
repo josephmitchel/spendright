@@ -29,7 +29,7 @@ export function useItemRemoval(
   );
 
   const removeItem = (itemId: string, institutionName: string) => {
-    if (!confirm('Remove this institution and all of its accounts and transactions?')) return;
+    if (!confirm(`Remove ${institutionName} and all of its accounts and transactions?`)) return;
     run(itemId, institutionName);
   };
 

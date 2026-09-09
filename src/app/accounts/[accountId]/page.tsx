@@ -11,7 +11,7 @@ import { itemErrorMessage } from '@/lib/item-error-message';
 import { formatMoney, rowCurrency } from '@/lib/money';
 import { PAGE_SIZE } from '@/lib/pagination';
 import { CategoryWriteState } from './category-write-state';
-import { TransactionTable } from './TransactionTable';
+import { CATEGORY_STALE_NOTICE_ID, TransactionTable } from './TransactionTable';
 import { useAccountData } from './useAccountData';
 import { useCategoryPatches } from './useCategoryPatches';
 import { useTransactionPage } from './useTransactionPage';
@@ -133,7 +133,9 @@ function AccountView({ accountId }: { accountId: string }) {
     };
   }, [account]);
 
-  const categoriesMayBeStale = !accountData.loaded.cards || !accountData.loaded.account;
+  // `fresh`, not `loaded`: the sticky loaded flags never revert, so they can't
+  // gate write safety — a failed poll must re-disable the pickers.
+  const categoriesMayBeStale = !accountData.fresh.cards || !accountData.fresh.account;
 
   const view = deriveView({
     loading: !settled,
@@ -172,7 +174,9 @@ function AccountView({ accountId }: { accountId: string }) {
           <p>{`Card: ${card.name} (${card.type})`}</p>
           <h2>Transactions</h2>
           {categoriesMayBeStale && (
-            <p>Category lists may be out of date — editing is off until they refresh.</p>
+            <p id={CATEGORY_STALE_NOTICE_ID}>
+              Category lists may be out of date — editing is off until they refresh.
+            </p>
           )}
           {transactionPage.loaded.transactions && total === 0 && <p>No transactions.</p>}
           {transactionList.length > 0 && (

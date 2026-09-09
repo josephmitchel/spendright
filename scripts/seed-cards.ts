@@ -44,6 +44,14 @@ function assertSeedIsValid(): void {
   );
 
   assertUniqueKeys(
+    cardSeeds.map((seed) => ({ value: seed.name, owner: seed.slug })),
+    {
+      blank: (owner) => `cards.seed.ts: "${owner}" has a blank name`,
+      duplicate: (value) => `cards.seed.ts: name "${value}" is used by more than one card`,
+    },
+  );
+
+  assertUniqueKeys(
     cardSeeds.flatMap((seed) =>
       seed.plaidAccountNames.map((name) => ({ value: name, owner: seed.slug })),
     ),

@@ -50,7 +50,7 @@ export function PlaidLinkButton({
     onConnectedAction();
   }, 'Exchange failed');
 
-  const openWithToken = usePlaidLinkOpen(exchange.run);
+  const { openWithToken, opening, openError } = usePlaidLinkOpen(exchange.run);
 
   const connect = useAsyncAction(async () => {
     exchange.clearError();
@@ -64,16 +64,16 @@ export function PlaidLinkButton({
     openWithToken(data.link_token);
   }, 'Failed to create link token');
 
-  const linkError = connect.error ?? exchange.error;
+  const linkError = connect.error ?? exchange.error ?? openError;
 
   return (
     <span>
-      <button onClick={connect.run} disabled={connect.pending || exchange.pending}>
+      <button onClick={connect.run} disabled={connect.pending || opening || exchange.pending}>
         Connect a bank
       </button>
       {/* Wrapper must stay mounted. */}
       <span role="status">
-        {connect.pending && ' Opening Plaid Link…'}
+        {(connect.pending || opening) && ' Opening Plaid Link…'}
         {exchange.pending && ' Connecting and syncing transactions… (this can take a minute)'}
         {syncNotice && noticeIsCurrent && ` ${syncNotice.message}`}
       </span>

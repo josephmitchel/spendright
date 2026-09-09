@@ -3,24 +3,56 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlaidLink, type PlaidLinkOnSuccess } from 'react-plaid-link';
 
-// usePlaidLink only becomes ready after it has a token, so opening is deferred
-// until then. Returns a setter that opens Link once the given token is ready.
+const LINK_LOAD_TIMEOUT_MS = 15_000;
+const LINK_LOAD_FAILURE =
+  'Plaid Link failed to load — check your connection (and any ad blocker), then try again.';
+
+// usePlaidLink only becomes ready after it has a token, so opening is deferred:
+// every open request sets a fresh token, and that handler's onLoad opens Link.
+// `opening` covers the whole wait; a script-load error or timeout ends it with
+// `openError` instead of leaving the button silently idle.
 export function usePlaidLinkOpen(onSuccess: PlaidLinkOnSuccess) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
-  const pendingOpen = useRef(false);
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const openRef = useRef<(() => void) | null>(null);
 
-  const linkConfig = useMemo(() => ({ token: linkToken, onSuccess }), [linkToken, onSuccess]);
-  const { open, ready } = usePlaidLink(linkConfig);
+  const linkConfig = useMemo(
+    () => ({
+      token: linkToken,
+      onSuccess,
+      onLoad: () => {
+        setOpening(false);
+        openRef.current?.();
+      },
+    }),
+    [linkToken, onSuccess],
+  );
+  const { open, error } = usePlaidLink(linkConfig);
 
   useEffect(() => {
-    if (ready && pendingOpen.current) {
-      pendingOpen.current = false;
-      open();
-    }
-  }, [ready, open]);
+    openRef.current = open as () => void;
+  });
 
-  return (token: string) => {
-    pendingOpen.current = true;
+  useEffect(() => {
+    if (!opening) return;
+    // A known script error fails now; otherwise the timeout catches a load
+    // that never finishes (network, ad blocker).
+    const timer = setTimeout(
+      () => {
+        setOpening(false);
+        setOpenError(LINK_LOAD_FAILURE);
+      },
+      error ? 0 : LINK_LOAD_TIMEOUT_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [opening, error]);
+
+  const openWithToken = (token: string) => {
+    setOpenError(null);
+    setOpening(true);
     setLinkToken(token);
   };
+
+  return { openWithToken, opening, openError };
 }

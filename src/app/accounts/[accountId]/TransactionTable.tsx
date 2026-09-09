@@ -16,6 +16,10 @@ const RATE_HEADERS = { cashback: 'Cashback %', points: 'Multiplier' } satisfies 
   string
 >;
 
+// The staleness notice the page renders whenever the pickers are disabled;
+// referenced from each disabled select so the reason is not sighted-only.
+export const CATEGORY_STALE_NOTICE_ID = 'category-stale-notice';
+
 function CategorySelect({
   value,
   valueName,
@@ -39,6 +43,7 @@ function CategorySelect({
       value={value ?? ''}
       disabled={disabled}
       aria-label={ariaLabel}
+      aria-describedby={disabled ? CATEGORY_STALE_NOTICE_ID : undefined}
       onChange={(e) => {
         if (!e.target.value) return;
         onSelect(Number(e.target.value));
