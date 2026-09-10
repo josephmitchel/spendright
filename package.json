@@ -11,11 +11,15 @@
   "scripts": {
     "predev": "node scripts/tighten-next.mjs",
     "dev": "next dev -H 127.0.0.1",
-    "prebuild": "node scripts/tighten-next.mjs && npm run lint && npm run typecheck && npm run format:check",
+    "prebuild": "node scripts/tighten-next.mjs && npm run lint && npm run typecheck && npm run format:check && npm test",
     "build": "next build",
     "postbuild": "node scripts/tighten-next.mjs",
     "start": "node scripts/start.mjs",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:db": "vitest run --config vitest.config.db.mts",
+    "test:supervisor": "vitest run --config vitest.config.supervisor.mts",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -46,6 +50,7 @@
     "eslint-config-next": "16.3.4",
     "prettier": "3.9.6",
     "tsx": "^4.23.13",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.0"
   }
 }

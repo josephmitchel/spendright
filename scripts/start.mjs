@@ -7,7 +7,9 @@ import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const nextBin = require.resolve('next/dist/bin/next');
+// Env seams for the supervisor tests (test/start-supervisor.test.ts); unset in production.
+const nextBin = process.env.SPENDRIGHT_SERVER_BIN ?? require.resolve('next/dist/bin/next');
+const WARMUP_DEADLINE_MS = Number(process.env.SPENDRIGHT_WARMUP_DEADLINE_MS) || 60_000;
 
 const tighten = spawnSync(
   process.execPath,
@@ -92,7 +94,7 @@ for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
 // The warm-up request itself triggers instrumentation, so any response status counts as done.
 async function warmUp() {
   const startedChild = child;
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + WARMUP_DEADLINE_MS;
   let warmedUp = false;
   while (Date.now() < deadline && startedChild.exitCode === null) {
     try {
@@ -109,7 +111,7 @@ async function warmUp() {
   }
   if (!warmedUp && startedChild.exitCode === null) {
     console.error(
-      `start.mjs: no response from http://127.0.0.1:${port}/ within 60s — the warm-up that starts ` +
+      `start.mjs: no response from http://127.0.0.1:${port}/ within ${WARMUP_DEADLINE_MS / 1000}s — the warm-up that starts ` +
         'the sync scheduler never ran. Stopping the server rather than leaving it up without it.',
     );
     shuttingDown = true;
