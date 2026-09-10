@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
+import { GuardedButton } from '@/components/GuardedButton';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { usePlaidLinkOpen } from '@/hooks/usePlaidLinkOpen';
 import { apiPaths } from '@/lib/api-paths';
@@ -31,19 +32,21 @@ export function PlaidLinkButton({
       { public_token: publicToken },
       'Exchange failed',
     );
-    const accountErrors = data.account_errors ?? [];
+    const accountErrors = data.accountErrors ?? [];
     const skipped = data.sync?.skipped ?? 0;
     const dropped = data.sync?.dropped === true;
     const notices = [
-      ...(data.sync_error ? [data.sync_error] : []),
+      ...(data.syncError ? [data.syncError] : []),
       ...(skipped > 0 ? [skippedSyncNotice(skipped, dropped)] : []),
       ...(accountErrors.length > 0
         ? [`${accountErrors.length} account(s) not stored — ${accountErrors.join('; ')}`]
         : []),
     ];
-    // A setup failure happens before any sync attempt, so its notice must not
-    // claim a sync ran; that message is already a complete sentence.
-    const prefix = data.setup_failed ? '' : "Connected, but the first sync didn't finish: ";
+    // Only an actual sync failure may claim the sync didn't finish — skipped
+    // rows and account-store notices can ride a fully successful sync, and a
+    // setup failure's message is already a complete sentence.
+    const prefix =
+      data.syncError && !data.setupFailed ? "Connected, but the first sync didn't finish: " : '';
     setSyncNotice(
       notices.length > 0 ? { message: `${prefix}${notices.join(' · ')}`, at: Date.now() } : null,
     );
@@ -68,9 +71,12 @@ export function PlaidLinkButton({
 
   return (
     <span>
-      <button onClick={connect.run} disabled={connect.pending || opening || exchange.pending}>
+      <GuardedButton
+        onClick={connect.run}
+        unavailable={connect.pending || opening || exchange.pending}
+      >
         Connect a bank
-      </button>
+      </GuardedButton>
       {/* Wrapper must stay mounted. */}
       <span role="status">
         {(connect.pending || opening) && ' Opening Plaid Link…'}

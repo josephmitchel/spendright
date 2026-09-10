@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
+import { GuardedButton } from '@/components/GuardedButton';
 import { combineLoadStates } from '@/hooks/useLoadProtocol';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
@@ -77,14 +78,23 @@ function Pager({
   const onLastPage = (shownPage + 1) * PAGE_SIZE >= total;
   return (
     <p>
-      Showing {rangeStart}–{rangeEnd} of {total}{' '}
-      <button onClick={() => goToPage(shownPage - 1)} disabled={shownPage === 0 || pageLoading}>
+      {/* Both wrappers must stay mounted: the range re-announces the outcome
+          of a page turn once loading settles. */}
+      <span role="status">
+        Showing {rangeStart}–{rangeEnd} of {total}
+      </span>{' '}
+      <GuardedButton
+        onClick={() => goToPage(shownPage - 1)}
+        unavailable={shownPage === 0 || pageLoading}
+      >
         Previous
-      </button>{' '}
-      <button onClick={() => goToPage(shownPage + 1)} disabled={onLastPage || pageLoading}>
+      </GuardedButton>{' '}
+      <GuardedButton
+        onClick={() => goToPage(shownPage + 1)}
+        unavailable={onLastPage || pageLoading}
+      >
         Next
-      </button>
-      {/* Wrapper must stay mounted. */}
+      </GuardedButton>
       <span role="status">{pageLoading ? ' Loading…' : null}</span>
     </p>
   );
@@ -155,30 +165,35 @@ function AccountView({ accountId }: { accountId: string }) {
       {/* The owning item's warning must reach this page too — it's the one a
           user checks before spending. */}
       {itemError != null && <ErrorNotice error={itemErrorMessage(itemError)} />}
-      {/* Wrapper must stay mounted. */}
-      <p role="status">{view === 'loading' ? 'Loading…' : null}</p>
+      {/* Wrapper must stay mounted; outcome states live here so they announce. */}
+      <p role="status">
+        {view === 'loading' && 'Loading…'}
+        {view === 'not-found' &&
+          'Account not found. It may have been disconnected — check the list on the home page.'}
+        {view === 'unsupported' && (
+          <>
+            <strong>Card not supported.</strong> This account doesn&apos;t match any card
+            definition, so SpendRight can&apos;t show or categorize its transactions. Add its Plaid
+            account name to the right card in <code>src/db/cards.seed.ts</code> and re-run{' '}
+            <code>npm run seed:cards</code>.
+          </>
+        )}
+        {view === 'ready' &&
+          transactionPage.loaded.transactions &&
+          total === 0 &&
+          'No transactions.'}
+      </p>
       {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
-      {view === 'not-found' && (
-        <p>Account not found. It may have been disconnected — check the list on the home page.</p>
-      )}
-      {view === 'unsupported' && (
-        <p>
-          <strong>Card not supported.</strong> This account doesn&apos;t match any card definition,
-          so SpendRight can&apos;t show or categorize its transactions. Add its Plaid account name
-          to the right card in <code>src/db/cards.seed.ts</code> and re-run{' '}
-          <code>npm run seed:cards</code>.
-        </p>
-      )}
       {view === 'ready' && card && (
         <>
           <p>{`Card: ${card.name} (${card.type})`}</p>
           <h2>Transactions</h2>
-          {categoriesMayBeStale && (
-            <p id={CATEGORY_STALE_NOTICE_ID}>
-              Category lists may be out of date — editing is off until they refresh.
-            </p>
-          )}
-          {transactionPage.loaded.transactions && total === 0 && <p>No transactions.</p>}
+          {/* Wrapper must stay mounted; both the stale and back-to-fresh
+              transitions announce. */}
+          <p role="status" id={CATEGORY_STALE_NOTICE_ID}>
+            {categoriesMayBeStale &&
+              'Category lists may be out of date — editing is off until they refresh.'}
+          </p>
           {transactionList.length > 0 && (
             <TransactionTable
               card={card}

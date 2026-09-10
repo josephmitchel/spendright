@@ -127,15 +127,16 @@ interface PlaidFailureShape {
   response?: { status?: number; headers?: Record<string, unknown> };
 }
 
-function isTransientPlaidFailure(err: unknown): boolean {
+export function isTransientPlaidFailure(err: unknown): boolean {
   const maybe = err as PlaidFailureShape;
   if (maybe?.isAxiosError !== true) return false;
   const status = maybe.response?.status;
   return status === undefined || status >= 500 || status === 429;
 }
 
-// Axios lower-cases response header names (Verified-on: axios@1.20.0).
-function retryDelayMs(err: unknown): number {
+// Response header names arrive lower-cased — Node's HTTP parser lower-cases
+// them and axios exposes them as own properties (Verified-on: axios@1.20.0).
+export function retryDelayMs(err: unknown): number {
   const maybe = err as PlaidFailureShape;
   const retryAfter = Number(maybe?.response?.headers?.['retry-after']);
   if (Number.isFinite(retryAfter) && retryAfter > 0) {
@@ -165,14 +166,16 @@ export async function createLinkToken(accessToken?: string): Promise<string> {
     ...(accessToken !== undefined ? { access_token: accessToken } : { products: getProducts() }),
   };
 
-  const response = await getClient().linkTokenCreate(configs);
+  const response = await retryOnce(() => getClient().linkTokenCreate(configs));
   return response.data.link_token;
 }
 
 export async function exchangePublicToken(
   publicToken: string,
 ): Promise<{ accessToken: string; itemId: string }> {
-  const response = await getClient().itemPublicTokenExchange({ public_token: publicToken });
+  const response = await retryOnce(() =>
+    getClient().itemPublicTokenExchange({ public_token: publicToken }),
+  );
   return {
     accessToken: response.data.access_token,
     itemId: response.data.item_id,
@@ -228,11 +231,13 @@ export async function getItem(accessToken: string): Promise<ProviderItem> {
 export async function getInstitutionById(
   institutionId: string,
 ): Promise<{ logo: string | null; primaryColor: string | null; name: string }> {
-  const response = await getClient().institutionsGetById({
-    institution_id: institutionId,
-    country_codes: getCountryCodes(),
-    options: { include_optional_metadata: true },
-  });
+  const response = await retryOnce(() =>
+    getClient().institutionsGetById({
+      institution_id: institutionId,
+      country_codes: getCountryCodes(),
+      options: { include_optional_metadata: true },
+    }),
+  );
   const inst = response.data.institution;
   return {
     logo: inst.logo ?? null,
@@ -247,7 +252,7 @@ export async function getAccounts(accessToken: string): Promise<ProviderAccount[
 }
 
 export async function removeItem(accessToken: string): Promise<string> {
-  const response = await getClient().itemRemove({ access_token: accessToken });
+  const response = await retryOnce(() => getClient().itemRemove({ access_token: accessToken }));
   return response.data.request_id;
 }
 

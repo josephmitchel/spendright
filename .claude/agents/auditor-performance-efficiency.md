@@ -14,7 +14,7 @@ Work in four steps:
 
 2. **Understand the requirement.** Read the "Definition" section below — the ISO/IEC 25010:2023 definition of this requirement. It is the sole basis for what counts as a finding; do not substitute your own interpretation of the term.
 
-3. **Re-verify prior findings.** Find the most recent audit of this requirement in `.claude/snapshot/audits` and re-check every concern it raised against the current codebase. For each one, determine whether it still needs to be addressed or has been resolved. If that folder is empty or missing, there are no priors — a new snapshot was just accepted and this is the first audit of its era.
+3. **Re-verify prior findings.** Find the most recent audit folder in `.claude/snapshot/audits` — each concern in it is its own `.md` file with YAML frontmatter. Read every concern file whose `characteristics` list includes this requirement and whose `status` is not `resolved`, and re-check each against the current codebase, reporting it as still-open or fixed. If the folder is empty or missing, there are no priors — a new snapshot was just accepted and this is the first audit of its era.
 
 4. **Audit independently.** Then audit the entire codebase yourself, fresh — do not limit yourself to the areas the previous audit covered — and raise any concern that violates the requirement.
 

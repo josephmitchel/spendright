@@ -54,16 +54,18 @@ export async function resolveCarriedSelections(
     );
   }
 
-  const liveCardCategoryIds = await liveCategoryIds(
-    tx,
-    categoryKindSources.card,
-    pendingRows.map((row) => row.cardCategoryId),
-  );
-  const liveCreditCategoryIds = await liveCategoryIds(
-    tx,
-    categoryKindSources.credit,
-    pendingRows.map((row) => row.creditCategoryId),
-  );
+  const [liveCardCategoryIds, liveCreditCategoryIds] = await Promise.all([
+    liveCategoryIds(
+      tx,
+      categoryKindSources.card,
+      pendingRows.map((row) => row.cardCategoryId),
+    ),
+    liveCategoryIds(
+      tx,
+      categoryKindSources.credit,
+      pendingRows.map((row) => row.creditCategoryId),
+    ),
+  ]);
 
   for (const row of pendingRows) {
     const cardCategoryExists =

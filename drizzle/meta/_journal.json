@@ -64,6 +64,13 @@
       "when": 1788818475086,
       "tag": "0008_low_wendell_vaughn",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788916734140,
+      "tag": "0009_backfill_reward_rate",
+      "breakpoints": true
     }
   ]
 }

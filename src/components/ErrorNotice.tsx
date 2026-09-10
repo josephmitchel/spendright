@@ -1,5 +1,7 @@
 'use client';
 
+import { GuardedButton } from '@/components/GuardedButton';
+
 export function ErrorNotice({
   error,
   onRetryAction,
@@ -17,9 +19,9 @@ export function ErrorNotice({
       {onRetryAction && (
         <>
           {' '}
-          <button onClick={onRetryAction} disabled={retryPending}>
+          <GuardedButton onClick={onRetryAction} unavailable={retryPending === true}>
             Retry
-          </button>
+          </GuardedButton>
           {/* Wrapper must stay mounted. */}
           <span role="status">{retryPending ? ' Retrying…' : null}</span>
         </>

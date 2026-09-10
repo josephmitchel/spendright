@@ -11,7 +11,17 @@ export async function register(): Promise<void> {
     assertSupportedNode();
     const { assertAxiosErrorRedaction } = await import('@/lib/redaction-check');
     assertAxiosErrorRedaction();
-    const { assertSupportedPostgres, assertSessionModeConnection } = await import('@/lib/db');
+    const { assertPlaidErrorExtraction, assertPlaidRetryShape } =
+      await import('@/lib/plaid-error-check');
+    assertPlaidErrorExtraction();
+    assertPlaidRetryShape();
+    const { assertPgErrorExtraction } = await import('@/lib/pg-error-check');
+    assertPgErrorExtraction();
+    const { assertDateParserPassthrough } = await import('@/lib/pool-config');
+    assertDateParserPassthrough();
+    const { waitForPostgres, assertSupportedPostgres, assertSessionModeConnection } =
+      await import('@/lib/db');
+    await waitForPostgres();
     await assertSupportedPostgres();
     await assertSessionModeConnection();
     const { startSyncScheduler } = await import('@/lib/sync-scheduler');

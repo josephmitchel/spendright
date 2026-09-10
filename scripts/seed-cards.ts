@@ -249,14 +249,6 @@ async function main() {
   const rootDb = drizzle(pool);
 
   try {
-    // Outside the reconcile transaction so its row locks can't deadlock with a sync.
-    await rootDb.execute(sql`
-      update transactions t
-      set reward_rate = cc.rate
-      from card_categories cc
-      where t.card_category_id = cc.id and t.reward_rate is null
-    `);
-
     await rootDb.transaction(async (tx) => {
       const categoryCount = await upsertCards(tx);
       await upsertCreditCategories(tx);

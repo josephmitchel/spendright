@@ -6,26 +6,9 @@ import { db, type DbTransaction } from '@/lib/db';
 import { logError } from '@/lib/log';
 import type { ProviderAccount } from '@/lib/provider-types';
 
-const accountColumns = getTableColumns(accounts);
-
-export const servedAccountColumns = {
-  id: accountColumns.id,
-  accountId: accountColumns.accountId,
-  itemId: accountColumns.itemId,
-  name: accountColumns.name,
-  officialName: accountColumns.officialName,
-  mask: accountColumns.mask,
-  type: accountColumns.type,
-  subtype: accountColumns.subtype,
-  balanceAvailable: accountColumns.balanceAvailable,
-  balanceCurrent: accountColumns.balanceCurrent,
-  balanceLimit: accountColumns.balanceLimit,
-  isoCurrencyCode: accountColumns.isoCurrencyCode,
-  unofficialCurrencyCode: accountColumns.unofficialCurrencyCode,
-  cardId: accountColumns.cardId,
-  createdAt: accountColumns.createdAt,
-  updatedAt: accountColumns.updatedAt,
-} satisfies Partial<typeof accountColumns>;
+// Served in full; a future sensitive column gets destructured out here, same
+// as items.ts/transactions.ts.
+export const servedAccountColumns = getTableColumns(accounts);
 
 export type ServedAccountRow = Pick<
   AccountRow,

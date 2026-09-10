@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
+import { GuardedButton } from '@/components/GuardedButton';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { usePlaidLinkOpen } from '@/hooks/usePlaidLinkOpen';
 import { apiPaths } from '@/lib/api-paths';
@@ -40,13 +41,13 @@ export function RepairConnectionButton({
 
   return (
     <span>
-      <button
+      <GuardedButton
         onClick={connect.run}
-        disabled={connect.pending || opening}
+        unavailable={connect.pending || opening}
         aria-label={`Fix connection for ${institutionName}`}
       >
         Fix connection
-      </button>
+      </GuardedButton>
       {/* Wrapper must stay mounted. */}
       <span role="status">{(connect.pending || opening) && ' Opening Plaid Link…'}</span>
       {repairError && <ErrorNotice error={repairError} inline />}

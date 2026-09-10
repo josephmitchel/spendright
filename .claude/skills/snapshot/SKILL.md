@@ -33,7 +33,7 @@ As soon as the interview is done, write `.claude/snapshot/SNAPSHOT.md` — do no
 
 ### 5. Finish
 
-1. Delete everything under `.claude/snapshot/audits/` — a new snapshot starts a fresh audit era (git history keeps the old eras). The next audit's findings will all be `[new]`.
+1. Delete everything under `.claude/snapshot/audits/` — a new snapshot starts a fresh audit era (git history keeps the old eras). The next audit's concerns will all be `status: new`.
 2. Once the user has had a look (and any raised issues are fixed), invoke the `audit` skill to run a fresh audit against the new snapshot.
 
 Never commit anything — the user handles all commits; leave changes in the working tree.

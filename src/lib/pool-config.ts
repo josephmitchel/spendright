@@ -14,6 +14,19 @@ import { logError } from '@/lib/log';
 // Verified-on: pg@8.23.0, drizzle-orm@0.45.2
 types.setTypeParser(1082, (value) => value);
 
+// A pg bump that changes the parser-registry API could turn the override above
+// into a no-op, silently reintroducing the day shift — assert at startup that
+// the registered parser actually passes the raw string through.
+export function assertDateParserPassthrough(): void {
+  const probe = '2026-01-15';
+  if (types.getTypeParser(1082)(probe) !== probe) {
+    throw new Error(
+      'pg date parser check failed — the OID 1082 override no longer passes the raw string ' +
+        'through; re-verify src/lib/pool-config.ts against the installed pg version',
+    );
+  }
+}
+
 export const POOL_CONFIG = {
   max: 10,
   connectionTimeoutMillis: 10_000,

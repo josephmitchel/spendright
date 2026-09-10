@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useRef, useState } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
+import { GuardedButton } from '@/components/GuardedButton';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
 import { apiPaths } from '@/lib/api-paths';
@@ -87,15 +88,15 @@ function InstitutionSection({
           <img src={apiPaths.itemLogo(item.itemId)} alt="" width={24} height={24} />
         )}{' '}
         {item.institutionName ?? item.itemId}{' '}
-        <button
+        <GuardedButton
           onClick={() => onRemoveAction(item.itemId, item.institutionName ?? item.itemId)}
-          disabled={removePending}
+          unavailable={removePending}
           // The institution context a screen reader's buttons list can't get
           // from the heading alone.
           aria-label={`Remove ${item.institutionName ?? item.itemId}`}
         >
           Remove
-        </button>
+        </GuardedButton>
         {/* Wrapper must stay mounted. */}
         <span role="status">{removePending ? ' Removing…' : null}</span>
         {removeError != null && <ErrorNotice inline error={removeError} />}
@@ -156,9 +157,9 @@ export default function Home() {
           onConnectedAction={() => void refresh()}
           syncSucceededAt={syncSucceededAt}
         />{' '}
-        <button onClick={syncAll} disabled={syncing || view === 'no-institutions'}>
+        <GuardedButton onClick={syncAll} unavailable={syncing || view === 'no-institutions'}>
           Sync all
-        </button>
+        </GuardedButton>
         {/* Wrapper must stay mounted. */}
         <span role="status">{syncStatus ? ` ${syncStatus}` : null}</span>
         {/* Wrapper must stay mounted. */}
@@ -172,7 +173,10 @@ export default function Home() {
       )}
 
       {/* Wrapper must stay mounted. */}
-      <p role="status">{view === 'loading' ? 'Loading…' : null}</p>
+      <p role="status">
+        {view === 'loading' && 'Loading…'}
+        {view === 'no-institutions' && 'No institutions connected yet.'}
+      </p>
       {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
       {lastSync?.error != null && (
         <ErrorNotice
@@ -182,10 +186,11 @@ export default function Home() {
         />
       )}
       {syncError && <ErrorNotice error={syncError} />}
-      {view === 'no-institutions' && <p>No institutions connected yet.</p>}
       {view === 'list' && (
         <>
-          {!loaded.accounts && <p>Accounts couldn&apos;t be loaded — use Retry above.</p>}
+          {!loaded.accounts && (
+            <p role="alert">Accounts couldn&apos;t be loaded — use Retry above.</p>
+          )}
           {itemList.map((item) => (
             <InstitutionSection
               key={item.itemId}

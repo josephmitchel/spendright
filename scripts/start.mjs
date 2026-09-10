@@ -70,6 +70,9 @@ function spawnServer() {
       `start.mjs: the server exited unexpectedly (${signal ?? `code ${code}`}) — restarting in 1s.`,
     );
     setTimeout(() => {
+      // A shutdown signal that arrived during this backoff must win — spawning
+      // here would orphan a server the operator already asked to stop.
+      if (shuttingDown) process.exit(1);
       spawnServer();
       void warmUp();
     }, 1000);
@@ -79,7 +82,10 @@ function spawnServer() {
 for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
   process.on(signal, () => {
     shuttingDown = true;
-    child.kill(signal);
+    // During the crash-restart backoff `child` is already dead: kill() would
+    // no-op and its exit event never re-fires, so exit directly.
+    if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+    else process.exit(1);
   });
 }
 

@@ -22,6 +22,42 @@ export const pool = globalSingleton('pool', () => createBoundedPool(getConnectio
 // first sync.
 const MIN_POSTGRES_VERSION_NUM = 110_000;
 
+// Connection-class failures that resolve on their own when Postgres is still
+// booting (cold start after a reboot, a container coming up). Anything else —
+// bad URL, auth failure, version/proxy assertions — is config and fails fast.
+const TRANSIENT_CONNECT_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  '57P03', // cannot_connect_now: the server is starting up
+]);
+
+function isTransientConnectError(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === 'string' && TRANSIENT_CONNECT_CODES.has(code)) return true;
+  // The pool's connectionTimeoutMillis rejection carries no code, only this
+  // message (Verified-on: pg@8.23.0, thrown from its pg-pool dependency).
+  return err instanceof Error && err.message.includes('timeout exceeded when trying to connect');
+}
+
+// Bounded so a not-ready-yet database doesn't trip start.mjs's crash-loop
+// guard into a permanent stop; kept under the supervisor's 60s warm-up
+// deadline so the specific connection error is what gets reported.
+export async function waitForPostgres(): Promise<void> {
+  const deadline = Date.now() + 45_000;
+  for (;;) {
+    try {
+      await pool.query('select 1');
+      return;
+    } catch (err) {
+      if (!isTransientConnectError(err) || Date.now() >= deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
+
 export async function assertSupportedPostgres(): Promise<void> {
   const { rows } = await pool.query<{ server_version_num: string }>('show server_version_num');
   const version = Number(rows[0]?.server_version_num);

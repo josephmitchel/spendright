@@ -17,6 +17,7 @@ import { knownAccountIdsFor, upsertTransactions } from '@/lib/sync-persist';
 
 export interface SyncItemResult {
   itemId: string;
+  institutionName: string | null;
   added: number;
   modified: number;
   removed: number;
@@ -77,9 +78,11 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
     // Bounds the row locks below, like the category PATCH path.
     await tx.execute(sql`set local lock_timeout = '10s'`);
     const upserts = [...added, ...modified];
-    const knownAccountIds = await knownAccountIdsFor(tx, upserts);
     // The carry must resolve before the pending rows are deleted below.
-    const carried = await resolveCarriedSelections(tx, added);
+    const [knownAccountIds, carried] = await Promise.all([
+      knownAccountIdsFor(tx, upserts),
+      resolveCarriedSelections(tx, added),
+    ]);
     const skippedCount = await upsertTransactions(
       tx,
       item.itemId,
@@ -112,6 +115,7 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
 
   return {
     itemId: item.itemId,
+    institutionName: item.institutionName,
     added: added.length,
     modified: modified.length,
     removed: removed.length,

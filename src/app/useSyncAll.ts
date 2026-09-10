@@ -21,12 +21,15 @@ export function useSyncAll(refresh: () => Promise<unknown>) {
     try {
       const data = await sendJson<SyncResponse>(apiPaths.sync, 'POST', undefined, 'Sync failed');
       const results = data.results;
-      const parts = results.map((result) =>
-        isSyncFailure(result)
-          ? `${result.institutionName ?? result.itemId}: ${result.error}`
-          : `+${result.added} added${
-              result.skipped ? `, ${skippedSyncNotice(result.skipped, result.dropped)}` : ''
-            }${result.accountRefreshFailed ? `, ${ACCOUNT_REFRESH_SYNC_NOTICE}` : ''}`,
+      const parts = results.map(
+        (result) =>
+          `${result.institutionName ?? result.itemId}: ${
+            isSyncFailure(result)
+              ? result.error
+              : `+${result.added} added${
+                  result.skipped ? `, ${skippedSyncNotice(result.skipped, result.dropped)}` : ''
+                }${result.accountRefreshFailed ? `, ${ACCOUNT_REFRESH_SYNC_NOTICE}` : ''}`
+          }`,
       );
       setSyncStatus(`Sync complete. ${parts.join(', ') || 'No items.'}`);
       if (

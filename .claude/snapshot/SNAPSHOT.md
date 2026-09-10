@@ -216,8 +216,12 @@ The app is deliberately unstyled.
   covers every path and the nonce must reach every document.
 - Lint: type-aware `no-floating-promises`/`no-misused-promises` as errors,
   `react-hooks/exhaustive-deps` as error, `max-lines` 400, unused vars as error.
-  `useLoadProtocol`'s memoized-`perform` contract is documented, not enforced —
-  the one contract lint can't reach.
+  Two "Caller contract" protocols are documented, not enforced — contracts
+  lint can't reach: `useLoadProtocol`'s memoized-`perform` requirement, and
+  `CategoryWriteState`'s burst-coalescing call order (`joinBurst` →
+  `recordCommit` → `settleIfDone`; `fetchedRowMerger()` before
+  `releaseSettledHolds()`). Each is honored by its single existing caller;
+  keep that containment when adding callers.
 - Migrations only (`db:generate` + `db:migrate`; `push` is forbidden — 0003
   carries hand-written data statements) and append-only once committed (the old
   comment-only edit to 0003 stands as-is; reverting would be another edit).

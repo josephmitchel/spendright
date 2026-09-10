@@ -73,6 +73,8 @@ export type TransactionPatchResponse = Serialized<TransactionPatchPayload>;
 
 // POST /api/link-token
 export interface LinkTokenResponse {
+  // link_token mirrors Plaid's own field name verbatim (as does the exchange
+  // request's public_token); everything constructed by this app is camelCase.
   link_token: string;
 }
 
@@ -83,11 +85,11 @@ export interface SyncResponse {
 
 // POST /api/exchange
 export interface ExchangeResponse {
-  item_id: LinkResult['itemId'];
-  institution_name: LinkResult['institutionName'];
-  accounts_stored: LinkResult['accountsStored'];
+  itemId: LinkResult['itemId'];
+  institutionName: LinkResult['institutionName'];
+  accountsStored: LinkResult['accountsStored'];
   sync: LinkResult['sync'];
-  sync_error: LinkResult['syncError'];
-  setup_failed: LinkResult['setupFailed'];
-  account_errors: LinkResult['accountErrors'] | null;
+  syncError: LinkResult['syncError'];
+  setupFailed: LinkResult['setupFailed'];
+  accountErrors: LinkResult['accountErrors'] | null;
 }
