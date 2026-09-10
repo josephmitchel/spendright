@@ -5,18 +5,20 @@ description: audit the codebase
 
 Audit the codebase by calling the appropriate subagents and then synthesizing their findings into per-concern records.
 
-## Ground truth
+The codebase itself is the authoritative truth about what the project is — auditors judge the code against the ISO definitions and nothing else. There is no intent document and no suppression list; every genuine deviation from a requirement is a concern, and the prior/new tracking below is what keeps repeat flags legible across audits.
 
-`.claude/snapshot/SNAPSHOT.md` is the authoritative definition of what this codebase is **supposed** to be — what's intended, and what's intentionally absent/deferred. Auditors judge the codebase against it rather than making their own judgment calls about what a "correct" codebase should look like (avoiding too many cooks in the kitchen). If SNAPSHOT.md does not exist, **stop** and tell the user to run `/snapshot` first.
+Audits are **local, per-branch working records**: they live under `.claude/audit/<branch>/`, are gitignored, and are never merged. The branch subfolder matters — gitignored files don't switch with branches, so every branch's audits share one working directory.
 
 ## The concern lifecycle
 
-Every concern is one `.md` file that lives through the era under a stable slug. `/audit` is the **sole author** of concern state — `/audit-fix` implements fixes but never edits concern files.
+Every concern is one `.md` file that lives through the branch's audit history under a stable slug. `/audit` is the **sole author** of concern state — `/audit-fix` implements fixes but never edits concern files.
 
 1. An audit finds a concern → writes its file with `status: new`.
-2. The next audit re-verifies **every** open concern from the most recent audit folder first: still an issue → carried into the new folder with `status: prior`; addressed → carried into the new folder **once** with `status: resolved`, then omitted from all later audits (git history keeps the ledger). Files already `status: resolved` in the previous folder are not carried again.
+2. The next audit on the same branch re-verifies **every** open concern from that branch's most recent audit folder first: still an issue → carried into the new folder with `status: prior`; addressed → carried into the new folder **once** with `status: resolved`, then omitted from all later audits.
 3. If a resolved issue regresses, it reopens under the same slug with its original `first-seen`.
 4. Only after re-verification does the audit hunt for new concerns.
+
+A branch with no audit folder yet simply hasn't been audited: its first audit has no priors and every concern is `status: new`. New branches deliberately do not inherit the audits of the branch they were cut from.
 
 ## Concern file format
 
@@ -58,7 +60,7 @@ Each agent being sent out will be auditing a quality requirement from ISO/IEC 25
 
 ### Step 1
 
-Create a date/time specified audit folder in `.claude/snapshot/audits` (meaning if /audit was called September 7th, 2026 at 1:02pm, create `.claude/snapshot/audits/09-07-2026-130200` and record the audit's results there). Audits in this folder all belong to the current snapshot's era — accepting a new snapshot clears the folder, so if it's empty before this run, this is the first audit of the era and every concern will be `status: new`.
+Determine the current branch (`git branch --show-current`) and create a date/time specified audit folder at `.claude/audit/<branch>/<timestamp>` (meaning if /audit was called on branch `main` on September 7th, 2026 at 1:02pm, create `.claude/audit/main/09-07-2026-130200`; a branch name containing `/` just nests deeper). Record the audit's results there.
 
 ### Step 2
 
@@ -74,14 +76,14 @@ For each of the following agents defined in `.claude/agents`, spin up 3 agents:
 - auditor-flexibility
 - auditor-safety
 
-Remind each agent in its prompt to read `.claude/snapshot/SNAPSHOT.md` before auditing. The agents re-verify the previous audit's concern files for their requirement (reporting each as still-open or fixed) and then audit fresh, labeling their own findings prior or new.
+The agents re-verify the previous audit's concern files for their requirement on this branch (reporting each as still-open or fixed) and then audit fresh, labeling their own findings prior or new.
 
 ### Step 3
 
 Synthesize all agents' findings into concern files in the new audit folder, per the lifecycle and format above:
 
 - **Dedupe across characteristics**: findings from different auditors that describe the same underlying issue become one file whose `characteristics` lists every requirement that flagged it. Pick the highest level any auditor assigned.
-- **Carry forward**: every open concern from the previous audit folder appears in the new one, `status: prior` (still an issue) or `status: resolved` (verified fixed), same slug, `first-seen` untouched.
+- **Carry forward**: every open concern from this branch's previous audit folder appears in the new one, `status: prior` (still an issue) or `status: resolved` (verified fixed), same slug, `first-seen` untouched.
 - **New concerns**: fresh slug, `status: new`, `first-seen` = this folder's timestamp.
 
 ### Step 4

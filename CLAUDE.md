@@ -2,13 +2,11 @@
 
 This repo is for development on SpendRight, a personal finance app primarily centered around credit card spending optimization. It is in very early stages.
 
-# Snapshot
-
-`.claude/snapshot/SNAPSHOT.md` is the authoritative record of what this project is supposed to be — everything intentionally implemented, and everything intentionally absent or deferred. Read it before making code changes. It is refreshed via the `/snapshot` skill, which is required before any branch merges into `main` (enforced by `scripts/git-hooks/pre-merge-commit`; merge with `--no-ff`, since fast-forward merges bypass the hook).
+The code itself is the authoritative truth about what this project is — there is no separate design record or intent document to consult or maintain.
 
 # Comments
 
-Avoid writing long comments in the code -- important information about the code that needs to be described in text belongs in SNAPSHOT.md, captured during the next `/snapshot`. This repo is entirely agent authored/maintained, so no need to optimize heavily for human viewing.
+Avoid writing long comments in the code -- anything worth knowing should be evident from the code itself. This repo is entirely agent authored/maintained, so no need to optimize heavily for human viewing.
 
 # Code Intelligence
 

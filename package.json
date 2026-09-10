@@ -15,7 +15,6 @@
     "build": "next build",
     "postbuild": "node scripts/tighten-next.mjs",
     "start": "node scripts/start.mjs",
-    "prepare": "git config core.hooksPath scripts/git-hooks",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
