@@ -5,7 +5,7 @@ description: audit the codebase
 
 Audit the codebase by calling the appropriate subagents and then synthesizing their findings into per-concern records.
 
-The codebase itself is the authoritative truth about what the project is — auditors judge the code against the ISO definitions and nothing else. There is no intent document and no suppression list; every genuine deviation from a requirement is a concern, and the prior/new tracking below is what keeps repeat flags legible across audits.
+The codebase itself is the authoritative truth about what the project is — auditors judge the code against their requirement definitions and nothing else. There is no intent document and no suppression list; every genuine deviation from a requirement is a concern, and the prior/new tracking below is what keeps repeat flags legible across audits.
 
 Audits are **local, per-branch working records**: they live under `.claude/audit/<branch>/`, are gitignored, and are never merged. The branch subfolder matters — gitignored files don't switch with branches, so every branch's audits share one working directory.
 
@@ -22,7 +22,7 @@ A branch with no audit folder yet simply hasn't been audited: its first audit ha
 
 ## Concern file format
 
-One file per underlying issue, flat in the audit folder, named by a short kebab-case slug (e.g. `dead-pool-config-export.md`). Prior/resolved concerns reuse the previous audit's slug and carry `first-seen` forward; new concerns get `first-seen` = the current audit folder's timestamp.
+One file per underlying issue, named by a short kebab-case slug (e.g. `dead-pool-config-export.md`), placed in a subfolder of the audit folder named for the concern's **primary characteristic** — the first entry in its `characteristics` list, kebab-cased to match the auditor names (`security/`, `maintainability/`, `testing/`, …). Create a characteristic's subfolder only when a concern lands in it; no empty folders. `SUMMARY.md` is the only file at the audit folder's top level. Prior/resolved concerns reuse the previous audit's slug and primary characteristic (so they stay findable across runs) and carry `first-seen` forward; new concerns get `first-seen` = the current audit folder's timestamp. Audits before this layout kept concern files flat at the folder root — when re-verifying such a folder, read them from there.
 
 ```markdown
 ---
@@ -40,11 +40,11 @@ What the concern is, why it matters, and the suggested direction.
 (For status: resolved, a line on how it was verified fixed.)
 ```
 
-`characteristics` is a list: when the same underlying issue is flagged under multiple requirements, it gets **one file** listing all of them, not one file per requirement.
+`characteristics` is a list: when the same underlying issue is flagged under multiple requirements, it gets **one file** listing all of them, not one file per requirement — filed under the first-listed (primary) one.
 
 ## What will be audited
 
-Each agent being sent out will be auditing a quality requirement from ISO/IEC 25010:2023:
+Each agent being sent out will be auditing a quality requirement — nine from ISO/IEC 25010:2023, plus one repo-specific requirement:
 
 - Functional Suitability (3.1)
 - Performance Efficiency (3.2)
@@ -55,6 +55,7 @@ Each agent being sent out will be auditing a quality requirement from ISO/IEC 25
 - Maintainability (3.7)
 - Flexibility (3.8)
 - Safety (3.9)
+- Testing (repo-specific: test coverage and test-suite quality)
 
 ## Instructions
 
@@ -75,6 +76,7 @@ For each of the following agents defined in `.claude/agents`, spin up 3 agents:
 - auditor-maintainability
 - auditor-flexibility
 - auditor-safety
+- auditor-testing
 
 The agents re-verify the previous audit's concern files for their requirement on this branch (reporting each as still-open or fixed) and then audit fresh, labeling their own findings prior or new.
 
@@ -83,8 +85,9 @@ The agents re-verify the previous audit's concern files for their requirement on
 Synthesize all agents' findings into concern files in the new audit folder, per the lifecycle and format above:
 
 - **Dedupe across characteristics**: findings from different auditors that describe the same underlying issue become one file whose `characteristics` lists every requirement that flagged it. Pick the highest level any auditor assigned.
-- **Carry forward**: every open concern from this branch's previous audit folder appears in the new one, `status: prior` (still an issue) or `status: resolved` (verified fixed), same slug, `first-seen` untouched.
+- **Carry forward**: every open concern from this branch's previous audit folder (check all its subfolders; older audits were flat) appears in the new one, `status: prior` (still an issue) or `status: resolved` (verified fixed), same slug and primary characteristic, `first-seen` untouched.
 - **New concerns**: fresh slug, `status: new`, `first-seen` = this folder's timestamp.
+- Every file lands in its primary characteristic's subfolder per the format above; `SUMMARY.md` alone sits at the top level.
 
 ### Step 4
 

@@ -7,7 +7,8 @@ import { GuardedButton } from '@/components/GuardedButton';
 import { combineLoadStates } from '@/hooks/useLoadProtocol';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
-import type { ApiAccount } from '@/lib/api-types';
+import type { ApiAccount, ApiCard } from '@/lib/api-types';
+import { CARD_SEED_FILE, SEED_CARDS_COMMAND } from '@/lib/dev-remedies';
 import { itemErrorMessage } from '@/lib/item-error-message';
 import { formatMoney, rowCurrency } from '@/lib/money';
 import { PAGE_SIZE } from '@/lib/pagination';
@@ -23,6 +24,17 @@ export default function AccountPage({ params }: { params: Promise<{ accountId: s
 }
 
 type View = 'loading' | 'not-found' | 'unsupported' | 'ready' | 'unresolved';
+
+// Issuers change reward terms; past this age the verified-on cue becomes a
+// warning, mirroring how balances carry an "updated" timestamp.
+const RATES_STALE_AFTER_DAYS = 365;
+
+function ratesVerifiedAgeDays(card: ApiCard): number | null {
+  if (!card.ratesVerifiedOn) return null;
+  const verified = new Date(card.ratesVerifiedOn).getTime();
+  if (Number.isNaN(verified)) return null;
+  return Math.floor((Date.now() - verified) / 86_400_000);
+}
 
 function deriveView(inputs: {
   loading: boolean;
@@ -172,10 +184,9 @@ function AccountView({ accountId }: { accountId: string }) {
           'Account not found. It may have been disconnected — check the list on the home page.'}
         {view === 'unsupported' && (
           <>
-            <strong>Card not supported.</strong> This account doesn&apos;t match any card
-            definition, so SpendRight can&apos;t show or categorize its transactions. Add its Plaid
-            account name to the right card in <code>src/db/cards.seed.ts</code> and re-run{' '}
-            <code>npm run seed:cards</code>.
+            <strong>Card not supported.</strong> SpendRight doesn&apos;t recognize this account yet,
+            so its transactions can&apos;t be shown or categorized. Other accounts keep working
+            normally.
           </>
         )}
         {view === 'ready' &&
@@ -183,10 +194,29 @@ function AccountView({ accountId }: { accountId: string }) {
           total === 0 &&
           'No transactions.'}
       </p>
+      {view === 'unsupported' && (
+        // The remedy needs repo access, so it stays out of the primary copy.
+        <details>
+          <summary>Add support for this card (developer)</summary>
+          <p>
+            Add this account&apos;s Plaid account name to the right card in{' '}
+            <code>{CARD_SEED_FILE}</code> and re-run <code>{SEED_CARDS_COMMAND}</code>.
+          </p>
+        </details>
+      )}
       {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
       {view === 'ready' && card && (
         <>
-          <p>{`Card: ${card.name} (${card.type})`}</p>
+          <p>
+            {`Card: ${card.name} (${card.type})`}
+            {card.ratesVerifiedOn && ` — rates verified ${card.ratesVerifiedOn}`}
+          </p>
+          {(ratesVerifiedAgeDays(card) ?? 0) > RATES_STALE_AFTER_DAYS && (
+            <p role="alert">
+              These reward rates were last verified against issuer terms over a year ago (
+              {card.ratesVerifiedOn}) — the issuer may have changed them since.
+            </p>
+          )}
           <h2>Transactions</h2>
           {/* Wrapper must stay mounted; both the stale and back-to-fresh
               transitions announce. */}

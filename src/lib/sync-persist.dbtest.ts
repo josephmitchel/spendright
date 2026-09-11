@@ -6,6 +6,7 @@ import { syncTransactions } from '@/lib/plaid';
 import type { ProviderSyncBatch } from '@/lib/provider-types';
 import { syncItem } from '@/lib/sync';
 import {
+  endPools,
   providerTxn,
   seedAccount,
   seedCardWithCategory,
@@ -23,6 +24,7 @@ const batch = (over: Partial<ProviderSyncBatch> = {}): ProviderSyncBatch => ({
   modified: [],
   removed: [],
   cursor: 'c-next',
+  incomplete: false,
   ...over,
 });
 
@@ -55,8 +57,22 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  await pool.end();
+  await endPools();
 });
+
+// Positive signal that the sync transaction is blocked on the held row lock,
+// instead of a wall-clock sleep.
+async function waitForLockWaiter(): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const { rows } = await pool.query<{ waiting: boolean }>(
+      'select count(*)::int > 0 as waiting from pg_locks where not granted',
+    );
+    if (rows[0]?.waiting) return;
+    if (Date.now() > deadline) throw new Error('no lock waiter appeared');
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 
 describe('bulk upserts', () => {
   it('chunks batches past the bind-parameter cap (600 rows in one sync)', async () => {
@@ -67,6 +83,27 @@ describe('bulk upserts', () => {
     expect(result.added).toBe(600);
     const [row] = await db.select({ n: count() }).from(transactions);
     expect(row?.n).toBe(600);
+  });
+
+  it('dedupes a transactionId repeated within one batch, last entry winning', async () => {
+    // Postgres rejects one statement updating the same row twice; the comment
+    // in batchRows promises deduped last-wins instead of that error.
+    mockSync.mockResolvedValue(
+      batch({
+        added: [
+          providerTxn('dup-1', { amount: 4.5, name: 'FIRST' }),
+          providerTxn('dup-1', { amount: 9.75, name: 'SECOND' }),
+        ],
+      }),
+    );
+    const result = await sync();
+    expect(result.added).toBe(2);
+
+    const row = await transactionRow('dup-1');
+    expect(row?.name).toBe('SECOND');
+    expect(row?.amount).toBe('9.75');
+    const [n] = await db.select({ n: count() }).from(transactions);
+    expect(n?.n).toBe(1);
   });
 
   it('keeps user selections on re-synced rows while updating base columns', async () => {
@@ -146,6 +183,44 @@ describe('pending→posted carry', () => {
     const posted = await transactionRow('post-1');
     expect(posted?.cardCategoryId).toBeNull();
     expect(posted?.rewardRate).toBe('6');
+  });
+
+  it('carries a selection committed by a concurrent PATCH instead of losing it', async () => {
+    const { categoryId } = await seedCardWithCategory();
+    await seedPendingRow();
+
+    // A PATCH transaction holds the pending row's lock; the carry read must
+    // wait for its commit and pick up the selection it wrote.
+    const patchClient = await pool.connect();
+    try {
+      await patchClient.query('begin');
+      await patchClient.query(
+        "select * from spendright.transactions where transaction_id = 'pend-1' for update",
+      );
+
+      mockSync.mockResolvedValue(
+        batch({
+          added: [providerTxn('post-1', { amount: 10, pendingTransactionId: 'pend-1' })],
+          removed: [{ transactionId: 'pend-1' }],
+        }),
+      );
+      const syncing = sync();
+      await waitForLockWaiter();
+      await patchClient.query(
+        "update spendright.transactions set card_category_id = $1, reward_rate = '6' " +
+          "where transaction_id = 'pend-1'",
+        [categoryId],
+      );
+      await patchClient.query('commit');
+      await syncing;
+    } finally {
+      patchClient.release();
+    }
+
+    const posted = await transactionRow('post-1');
+    expect(posted?.cardCategoryId).toBe(categoryId);
+    expect(posted?.rewardRate).toBe('6');
+    expect(await transactionRow('pend-1')).toBeUndefined();
   });
 
   it('carries a credit category onto a posted inflow', async () => {

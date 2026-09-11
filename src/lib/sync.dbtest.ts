@@ -1,11 +1,14 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { accounts } from '@/db/schema';
-import { db, pool } from '@/lib/db';
+import { refreshItemAccounts } from '@/lib/accounts';
+import type * as AccountsModule from '@/lib/accounts';
+import { db } from '@/lib/db';
 import { getAccounts, syncTransactions } from '@/lib/plaid';
 import type { ProviderAccount, ProviderSyncBatch } from '@/lib/provider-types';
 import { syncItem } from '@/lib/sync';
 import {
+  endPools,
   itemRow,
   providerTxn,
   seedAccount,
@@ -16,14 +19,21 @@ import {
 } from '../../test/db-fixtures';
 
 vi.mock('@/lib/plaid', () => ({ getAccounts: vi.fn(), syncTransactions: vi.fn() }));
+// The real refreshItemAccounts, wrapped so single tests can make it throw.
+vi.mock('@/lib/accounts', async (importActual) => {
+  const actual = await importActual<typeof AccountsModule>();
+  return { ...actual, refreshItemAccounts: vi.fn(actual.refreshItemAccounts) };
+});
 const mockSync = vi.mocked(syncTransactions);
 const mockAccounts = vi.mocked(getAccounts);
+const mockRefresh = vi.mocked(refreshItemAccounts);
 
 const batch = (over: Partial<ProviderSyncBatch> = {}): ProviderSyncBatch => ({
   added: [],
   modified: [],
   removed: [],
   cursor: 'c-next',
+  incomplete: false,
   ...over,
 });
 
@@ -57,7 +67,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  await pool.end();
+  await endPools();
 });
 
 describe('a clean sync', () => {
@@ -112,8 +122,8 @@ describe('unknown-account rows', () => {
     const item = await itemRow('itm-1');
     expect(item.cursor).toBe('c0');
     expect(item.skippedSyncs).toBe(1);
-    expect((item.error as { message: string }).message).toContain('held and re-offered');
-    expect((item.error as { message: string }).message).toContain('(1 of 5)');
+    expect((item.error as { message: string }).message).toContain('held and retried');
+    expect((item.error as { message: string }).message).toContain('(1 of 5');
   });
 
   it('drops the rows and advances the cursor on the 5th consecutive skip', async () => {
@@ -134,7 +144,7 @@ describe('unknown-account rows', () => {
 });
 
 describe('the account refresh', () => {
-  it('stores fetched accounts and re-matches the card on every sync', async () => {
+  it('stores fetched accounts and keeps the card link across a provider-side rename', async () => {
     const { cardId } = await seedCardWithCategory();
     mockAccounts.mockResolvedValue([providerAccount()]);
     mockSync.mockResolvedValue(batch());
@@ -144,11 +154,13 @@ describe('the account refresh', () => {
     expect(account?.cardId).toBe(cardId);
     expect(account?.balanceCurrent).toBe('50');
 
-    // A provider-side rename unmatches unconditionally — no keep-existing branch.
+    // A rename that matches nothing must never silently unlink the card;
+    // seed:cards remains the deliberate way to recompute matches.
     mockAccounts.mockResolvedValue([providerAccount({ name: 'Renamed Product' })]);
     await syncItem('itm-1');
     [account] = await db.select().from(accounts).where(eq(accounts.accountId, 'acc-1'));
-    expect(account?.cardId).toBeNull();
+    expect(account?.cardId).toBe(cardId);
+    expect(account?.name).toBe('Renamed Product');
   });
 
   it('records a refresh failure on the item but still syncs transactions', async () => {
@@ -171,7 +183,19 @@ describe('the account refresh', () => {
     const result = await syncItem('itm-1');
     expect(result.accountRefreshFailed).toBe(true);
     expect(((await itemRow('itm-1')).error as { message: string }).message).toContain(
-      'held and re-offered',
+      'held and retried',
     );
+  });
+
+  it('degrades to a refresh failure when the account store path throws outright', async () => {
+    mockAccounts.mockResolvedValue([providerAccount()]);
+    // e.g. a transient DB error on the catalog read inside refreshItemAccounts.
+    mockRefresh.mockRejectedValueOnce(new Error('catalog read failed'));
+    mockSync.mockResolvedValue(batch({ added: [providerTxn('t1')], cursor: 'c1' }));
+
+    const result = await syncItem('itm-1');
+    expect(result.accountRefreshFailed).toBe(true);
+    expect(await transactionRow('t1')).toBeDefined();
+    expect((await itemRow('itm-1')).cursor).toBe('c1');
   });
 });

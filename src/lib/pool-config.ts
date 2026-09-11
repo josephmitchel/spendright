@@ -34,8 +34,8 @@ export const POOL_CONFIG = {
   query_timeout: 35_000,
 } as const;
 
-export function createBoundedPool(connectionString: string): Pool {
-  const created = new Pool({ connectionString, ...POOL_CONFIG });
+export function createBoundedPool(connectionString: string, overrides?: { max?: number }): Pool {
+  const created = new Pool({ connectionString, ...POOL_CONFIG, ...overrides });
   created.on('error', (err) => logError('postgres pool: idle client error', err));
   return created;
 }

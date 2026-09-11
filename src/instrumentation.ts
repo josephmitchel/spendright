@@ -19,11 +19,13 @@ export async function register(): Promise<void> {
     assertPgErrorExtraction();
     const { assertDateParserPassthrough } = await import('@/lib/pool-config');
     assertDateParserPassthrough();
-    const { waitForPostgres, assertSupportedPostgres, assertSessionModeConnection } =
+    const { waitForPostgres, assertSupportedPostgres, assertSessionModeConnection, pool } =
       await import('@/lib/db');
     await waitForPostgres();
     await assertSupportedPostgres();
     await assertSessionModeConnection();
+    const { assertMigrationsApplied } = await import('@/lib/migrations-check');
+    await assertMigrationsApplied(pool);
     const { startSyncScheduler } = await import('@/lib/sync-scheduler');
     startSyncScheduler();
   } catch (err) {

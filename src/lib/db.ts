@@ -18,6 +18,16 @@ function getConnectionString(): string {
 // Inside the factory so bundler module-copies can't stack duplicate listeners.
 export const pool = globalSingleton('pool', () => createBoundedPool(getConnectionString()));
 
+// Item-sync lock sessions are held across an item's Plaid round trips, so they
+// draw from this small dedicated pool: Plaid latency must never pin
+// connections the shared pool serves API routes from (src/lib/sync-lock.ts).
+// Sized for SYNC_CONCURRENCY lock sessions plus one user-initiated
+// removeItemCompletely — sync-all.ts asserts that budget at load.
+export const LOCK_POOL_MAX = 4;
+export const lockPool = globalSingleton('lockPool', () =>
+  createBoundedPool(getConnectionString(), { max: LOCK_POOL_MAX }),
+);
+
 // The supported baseline; a too-old server must fail at startup, not on the
 // first sync.
 const MIN_POSTGRES_VERSION_NUM = 110_000;
@@ -33,7 +43,7 @@ const TRANSIENT_CONNECT_CODES = new Set([
   '57P03', // cannot_connect_now: the server is starting up
 ]);
 
-function isTransientConnectError(err: unknown): boolean {
+export function isTransientConnectError(err: unknown): boolean {
   if (err == null || typeof err !== 'object') return false;
   const code = (err as { code?: unknown }).code;
   if (typeof code === 'string' && TRANSIENT_CONNECT_CODES.has(code)) return true;

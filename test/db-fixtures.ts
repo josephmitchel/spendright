@@ -8,12 +8,37 @@ import {
   transactions,
 } from '@/db/schema';
 import { encrypt } from '@/lib/crypto';
-import { db, pool } from '@/lib/db';
-import type { ProviderTransaction } from '@/lib/provider-types';
+import { db, lockPool, pool } from '@/lib/db';
+import type { ProviderAccount, ProviderTransaction } from '@/lib/provider-types';
+
+export async function endPools(): Promise<void> {
+  await Promise.all([pool.end(), lockPool.end()]);
+}
+
+export function providerAccount(
+  accountId: string,
+  over: Partial<ProviderAccount> = {},
+): ProviderAccount {
+  return {
+    accountId,
+    name: 'Blue Cash Preferred®',
+    officialName: 'Blue Cash Preferred Card',
+    mask: '1234',
+    type: 'credit',
+    subtype: 'credit card',
+    balanceAvailable: 1000,
+    balanceCurrent: 250.5,
+    balanceLimit: 5000,
+    isoCurrencyCode: 'USD',
+    unofficialCurrencyCode: null,
+    ...over,
+  };
+}
 
 export async function truncateAll(): Promise<void> {
   await pool.query(
-    'TRUNCATE transactions, accounts, items, card_categories, credit_categories, cards ' +
+    'TRUNCATE spendright.transactions, spendright.accounts, spendright.items, ' +
+      'spendright.card_categories, spendright.credit_categories, spendright.cards ' +
       'RESTART IDENTITY CASCADE',
   );
 }

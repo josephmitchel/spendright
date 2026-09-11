@@ -1,4 +1,4 @@
-import { eq, getTableColumns, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { items, type ItemRow } from '@/db/schema';
 import { decrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
@@ -7,16 +7,14 @@ import { logError } from '@/lib/log';
 import { removeItem } from '@/lib/plaid';
 import { plaidErrorBody } from '@/lib/plaid-errors';
 import { PublicError } from '@/lib/public-error';
+import { servedItemColumns } from '@/lib/served-columns';
 import { withItemSyncLock } from '@/lib/sync-lock';
 
-// The logo blob would otherwise ride every 60s poll; lists carry a flag and
+// The logo blob would otherwise ride every 60s poll (it is in
+// SENSITIVE_COLUMNS for size, not secrecy); lists carry a flag and
 // GET /api/items/[itemId]/logo serves the bytes. hasLogo mirrors the route's
 // format sniff so a logo the route would 404 is never rendered.
-const {
-  accessToken: _accessToken,
-  institutionLogo: _institutionLogo,
-  ...listedItemColumns
-} = getTableColumns(items);
+const listedItemColumns = servedItemColumns;
 const listedItemSelection = {
   ...listedItemColumns,
   logoPrefix: sql<string | null>`left(${items.institutionLogo}, 8)`,

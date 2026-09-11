@@ -284,13 +284,14 @@ export async function syncTransactions(
   const notReadyBudget = options?.notReadyRetries ?? DEFAULT_NOT_READY_RETRIES;
 
   let pages = 0;
+  let incomplete = false;
   while (hasMore) {
+    // Each page's cursor is a valid resume point, so a backlog larger than
+    // the budget is persisted as far as it got and the next sync continues
+    // from there instead of refetching the same pages forever.
     if (++pages > MAX_SYNC_PAGES) {
-      throw new PublicError(
-        `Plaid kept reporting more transactions after ${MAX_SYNC_PAGES} pulls — stopping this ` +
-          'sync; try again later',
-        { status: 502, code: 'SYNC_PAGE_BUDGET' },
-      );
+      incomplete = true;
+      break;
     }
     const response = await retryOnce(() =>
       client.transactionsSync({
@@ -321,5 +322,5 @@ export async function syncTransactions(
     hasMore = data.has_more;
   }
 
-  return { added, modified, removed, cursor };
+  return { added, modified, removed, cursor, incomplete };
 }

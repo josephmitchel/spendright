@@ -8,7 +8,7 @@ import { usePlaidLinkOpen } from '@/hooks/usePlaidLinkOpen';
 import { apiPaths } from '@/lib/api-paths';
 import type { ExchangeResponse, LinkTokenResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
-import { skippedSyncNotice } from '@/lib/sync-messages';
+import { INCOMPLETE_SYNC_NOTICE, skippedSyncNotice } from '@/lib/sync-messages';
 
 export function PlaidLinkButton({
   onConnectedAction,
@@ -38,6 +38,7 @@ export function PlaidLinkButton({
     const notices = [
       ...(data.syncError ? [data.syncError] : []),
       ...(skipped > 0 ? [skippedSyncNotice(skipped, dropped)] : []),
+      ...(data.sync?.incomplete ? [INCOMPLETE_SYNC_NOTICE] : []),
       ...(accountErrors.length > 0
         ? [`${accountErrors.length} account(s) not stored — ${accountErrors.join('; ')}`]
         : []),

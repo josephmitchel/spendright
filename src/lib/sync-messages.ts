@@ -1,13 +1,19 @@
 // Dependency-free — bundled into client code.
+// Notice copy leads with what happened and what the user can do in the app;
+// operator detail lives in the server log lines below, not in these strings.
 
 export const MAX_SKIPPED_SYNCS = 5;
 
 export const ACCOUNT_REFRESH_FAILED_MESSAGE =
-  'The account refresh failed on the last sync — balances may be stale (check the server ' +
-  'log). Transactions still synced.';
+  'Balances may be out of date — the account refresh failed on the last sync. Transactions ' +
+  'still synced; balances usually recover on the next sync.';
 
 export const ACCOUNT_REFRESH_SYNC_NOTICE =
-  'account refresh failed — balances may be stale (see the server log)';
+  'balances may be out of date (the account refresh failed) — they usually recover on the ' +
+  'next sync';
+
+export const INCOMPLETE_SYNC_NOTICE =
+  'there were more transactions than one sync pulls — sync again to fetch the rest';
 
 export function skippedItemErrorMessage(
   skipped: number,
@@ -15,23 +21,20 @@ export function skippedItemErrorMessage(
   dropped: boolean,
 ): string {
   return dropped
-    ? `${skipped} transaction(s) arrived for accounts that are not stored, for the ` +
-        `${MAX_SKIPPED_SYNCS}th consecutive sync. They have been dropped so this connection ` +
-        'keeps syncing, and they cannot be recovered — check the server log for the accounts ' +
-        'involved.'
-    : `${skipped} transaction(s) arrived for accounts that are not stored — they are being ` +
-        `held and re-offered on every sync (${consecutiveSkippedSyncs} of ${MAX_SKIPPED_SYNCS}). ` +
-        'If this line does not clear, the account cannot be stored: check the server log. ' +
-        `On the ${MAX_SKIPPED_SYNCS}th consecutive sync they are dropped so the connection ` +
-        'keeps working.';
+    ? `${skipped} transaction(s) belonged to an account SpendRight could not store and were ` +
+        `dropped after ${MAX_SKIPPED_SYNCS} consecutive syncs so this connection keeps ` +
+        'working. They cannot be recovered.'
+    : `${skipped} transaction(s) belong to an account SpendRight has not stored — they are ` +
+        `held and retried on every sync (${consecutiveSkippedSyncs} of ${MAX_SKIPPED_SYNCS} ` +
+        'before they are dropped). If this notice keeps coming back, remove this institution ' +
+        'and connect it again.';
 }
 
 export function skippedSyncNotice(skipped: number, dropped: boolean): string {
   return dropped
-    ? `${skipped} transaction(s) dropped after repeated failures — not recoverable ` +
-        '(see the server log)'
-    : `${skipped} transaction(s) held for accounts that are not stored yet — they will be ` +
-        'retried on the next sync (see the server log)';
+    ? `${skipped} transaction(s) dropped after repeated retries — they cannot be recovered`
+    : `${skipped} transaction(s) held for an account that is not stored yet — they will be ` +
+        'retried on the next sync';
 }
 
 export function skippedSyncLogLine(

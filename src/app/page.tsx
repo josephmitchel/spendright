@@ -29,37 +29,40 @@ function deriveView(inputs: { loading: boolean; itemsLoaded: boolean; itemCount:
 
 function AccountsTable({ accounts }: { accounts: ApiAccount[] }) {
   return (
-    <table border={1}>
-      <thead>
-        <tr>
-          <th scope="col">Account</th>
-          <th scope="col">Mask</th>
-          <th scope="col">Type</th>
-          <th scope="col">Current</th>
-          <th scope="col">Available</th>
-          <th scope="col">Limit</th>
-          <th scope="col">Currency</th>
-          <th scope="col">Updated</th>
-        </tr>
-      </thead>
-      <tbody>
-        {accounts.map((account) => (
-          <tr key={account.accountId}>
-            <td>
-              <Link href={`/accounts/${account.accountId}`}>{accountDisplayName(account)}</Link>
-            </td>
-            <td>{account.mask ?? '—'}</td>
-            <td>{accountTypeLabel(account)}</td>
-            <td>{formatMoney(account.balanceCurrent, rowCurrency(account))}</td>
-            <td>{formatMoney(account.balanceAvailable, rowCurrency(account))}</td>
-            <td>{formatMoney(account.balanceLimit, rowCurrency(account))}</td>
-            <td>{rowCurrency(account)}</td>
-            {/* The freshness cue for a balance about to inform a spending decision. */}
-            <td>{new Date(account.updatedAt).toLocaleString()}</td>
+    // The wrapper scrolls on narrow viewports so the page body never does.
+    <div style={{ overflowX: 'auto' }}>
+      <table border={1}>
+        <thead>
+          <tr>
+            <th scope="col">Account</th>
+            <th scope="col">Mask</th>
+            <th scope="col">Type</th>
+            <th scope="col">Current</th>
+            <th scope="col">Available</th>
+            <th scope="col">Limit</th>
+            <th scope="col">Currency</th>
+            <th scope="col">Updated</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {accounts.map((account) => (
+            <tr key={account.accountId}>
+              <td>
+                <Link href={`/accounts/${account.accountId}`}>{accountDisplayName(account)}</Link>
+              </td>
+              <td>{account.mask ?? '—'}</td>
+              <td>{accountTypeLabel(account)}</td>
+              <td>{formatMoney(account.balanceCurrent, rowCurrency(account))}</td>
+              <td>{formatMoney(account.balanceAvailable, rowCurrency(account))}</td>
+              <td>{formatMoney(account.balanceLimit, rowCurrency(account))}</td>
+              <td>{rowCurrency(account)}</td>
+              {/* The freshness cue for a balance about to inform a spending decision. */}
+              <td>{new Date(account.updatedAt).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

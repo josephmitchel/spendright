@@ -85,6 +85,22 @@ function assertSeedIsValid(): void {
             `(${category.rate}) — expected a number greater than 0 and at most ${MAX_PLAUSIBLE_RATE}`,
         );
       }
+      if (category.annualCap) {
+        const { amount, postCapRate } = category.annualCap;
+        if (!Number.isFinite(amount) || amount <= 0) {
+          throw new Error(
+            `cards.seed.ts: "${seed.slug}" category "${category.name}" has an implausible ` +
+              `annualCap.amount (${amount}) — expected a number greater than 0`,
+          );
+        }
+        if (!Number.isFinite(postCapRate) || postCapRate <= 0 || postCapRate >= category.rate) {
+          throw new Error(
+            `cards.seed.ts: "${seed.slug}" category "${category.name}" has an implausible ` +
+              `annualCap.postCapRate (${postCapRate}) — expected a number greater than 0 and ` +
+              `below the pre-cap rate (${category.rate})`,
+          );
+        }
+      }
     }
 
     // An in-range typo passes the bound above, so rates also need human
@@ -164,6 +180,8 @@ async function upsertCards(tx: SeedTransaction): Promise<number> {
       issuer: seed.issuer ?? null,
       type: seed.type,
       plaidAccountNames: seed.plaidAccountNames,
+      ratesVerifiedOn: seed.ratesVerified.on,
+      ratesVerifiedSource: seed.ratesVerified.source,
     };
     const [card] = await tx
       .insert(cards)
@@ -180,13 +198,21 @@ async function upsertCards(tx: SeedTransaction): Promise<number> {
         cardId: card.id,
         name: category.name,
         rate: String(category.rate),
+        annualCapAmount: category.annualCap ? String(category.annualCap.amount) : null,
+        postCapRate: category.annualCap ? String(category.annualCap.postCapRate) : null,
       };
       await tx
         .insert(cardCategories)
         .values(categoryValues)
         .onConflictDoUpdate({
           target: [cardCategories.cardId, cardCategories.name],
-          set: { rate: categoryValues.rate, retiredAt: null, updatedAt: sql`now()` },
+          set: {
+            rate: categoryValues.rate,
+            annualCapAmount: categoryValues.annualCapAmount,
+            postCapRate: categoryValues.postCapRate,
+            retiredAt: null,
+            updatedAt: sql`now()`,
+          },
         });
       categoryCount++;
     }
@@ -227,7 +253,7 @@ async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; 
   const accountList = await tx.select().from(accounts);
   let matched = 0;
   for (const account of accountList) {
-    const card = matchCard(cardList, account.name);
+    const card = matchCard(cardList, account);
     if (card) matched++;
     if ((card?.id ?? null) !== account.cardId) {
       await tx

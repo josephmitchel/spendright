@@ -1,9 +1,8 @@
-import { desc, eq, getTableColumns, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { cardCategories, creditCategories, transactions, type TransactionRow } from '@/db/schema';
 import { db } from '@/lib/db';
+import { servedTransactionColumns } from '@/lib/served-columns';
 
-const { plaidTransaction: _plaidTransaction, ...servedTransactionColumns } =
-  getTableColumns(transactions);
 export { servedTransactionColumns };
 
 export type CategorizedTransaction = Pick<

@@ -27,6 +27,9 @@ export interface SyncItemResult {
   dropped: boolean;
   // True when the pre-sync account/balance refresh failed; transactions still synced.
   accountRefreshFailed: boolean;
+  // True when the drain stopped at its page budget; the cursor advanced as
+  // far as it got and the next sync continues from there.
+  incomplete: boolean;
 }
 
 export interface SyncItemOptions {
@@ -64,15 +67,26 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
     }
     if (plaidAccounts.length > 0) {
       // A failed upsert of an existing row leaves its balances silently stale,
-      // so store failures count as a failed refresh.
-      const storeFailures = await refreshItemAccounts(item.itemId, plaidAccounts);
-      if (storeFailures.length > 0) accountRefreshFailed = true;
+      // so store failures count as a failed refresh — and so does a thrown
+      // catalog read: the whole refresh is soft, transactions still sync.
+      try {
+        const storeFailures = await refreshItemAccounts(item.itemId, plaidAccounts);
+        if (storeFailures.length > 0) accountRefreshFailed = true;
+      } catch (err) {
+        accountRefreshFailed = true;
+        logError(
+          `sync ${item.itemId}: account refresh failed — syncing without an account refresh:`,
+          err,
+        );
+      }
     }
   }
 
-  const { added, modified, removed, cursor } = await syncTransactions(accessToken, item.cursor, {
-    notReadyRetries: options?.notReadyRetries,
-  });
+  const { added, modified, removed, cursor, incomplete } = await syncTransactions(
+    accessToken,
+    item.cursor,
+    { notReadyRetries: options?.notReadyRetries },
+  );
 
   const { skipped, outcome } = await db.transaction(async (tx) => {
     // Bounds the row locks below, like the category PATCH path.
@@ -112,6 +126,9 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
     if (outcome.dropped) logError(line);
     else logWarn(line);
   }
+  if (incomplete) {
+    logWarn(`sync ${item.itemId}: stopped at the page budget — the next sync continues from here`);
+  }
 
   return {
     itemId: item.itemId,
@@ -122,5 +139,6 @@ async function runSyncItem(itemId: string, options?: SyncItemOptions): Promise<S
     skipped,
     dropped: outcome.dropped,
     accountRefreshFailed,
+    incomplete,
   };
 }

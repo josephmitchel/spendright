@@ -8,6 +8,7 @@ const globalStore = globalThis as unknown as {
 // silently type-punned collision.
 export type SingletonKey =
   | 'pool'
+  | 'lockPool'
   | 'db'
   | 'plaidClient'
   | 'processBackstop'

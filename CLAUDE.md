@@ -2,8 +2,6 @@
 
 This repo is for development on SpendRight, a personal finance app primarily centered around credit card spending optimization. It is in very early stages.
 
-The code itself is the authoritative truth about what this project is — there is no separate design record or intent document to consult or maintain.
-
 # Comments
 
 Avoid writing long comments in the code -- anything worth knowing should be evident from the code itself. This repo is entirely agent authored/maintained, so no need to optimize heavily for human viewing.

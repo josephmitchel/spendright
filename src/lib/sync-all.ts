@@ -1,6 +1,6 @@
 import { items } from '@/db/schema';
 import { singleFlight } from '@/lib/async-coordination';
-import { db } from '@/lib/db';
+import { db, LOCK_POOL_MAX } from '@/lib/db';
 import { publicErrorMessage } from '@/lib/errors';
 import { globalSingleton } from '@/lib/global-singleton';
 import { logError } from '@/lib/log';
@@ -24,14 +24,22 @@ export function syncAllItems(trigger: SyncTrigger): Promise<SyncAllResult> {
   return singleFlight(syncAllSlot, () => runSyncAll(trigger));
 }
 
-// Bounded well below the pool max: each in-flight item holds up to two pool
-// connections — its dedicated lock session plus the transaction that commits
-// its batch. Per-item correctness comes from the item locks, not ordering.
+// Each in-flight item holds one lockPool session (held across its Plaid
+// calls) plus a shared-pool connection for the transaction that commits its
+// batch. Per-item correctness comes from the item locks, not ordering.
 const SYNC_CONCURRENCY = 3;
+if (SYNC_CONCURRENCY >= LOCK_POOL_MAX) {
+  throw new Error(
+    `SYNC_CONCURRENCY (${SYNC_CONCURRENCY}) would exhaust the ${LOCK_POOL_MAX}-connection ` +
+      'lock pool, leaving none for a user-initiated item removal — revisit both together',
+  );
+}
+// Sync transactions may take at most half the shared pool; the rest stays
+// free for API reads.
 if (SYNC_CONCURRENCY * 2 > POOL_CONFIG.max) {
   throw new Error(
-    `SYNC_CONCURRENCY (${SYNC_CONCURRENCY}) needs ${SYNC_CONCURRENCY * 2} pool connections but ` +
-      `POOL_CONFIG.max is ${POOL_CONFIG.max} — revisit both together`,
+    `SYNC_CONCURRENCY (${SYNC_CONCURRENCY}) would take more than half of POOL_CONFIG.max ` +
+      `(${POOL_CONFIG.max}) shared-pool connections — revisit both together`,
   );
 }
 
@@ -43,7 +51,10 @@ async function runSyncAll(trigger: SyncTrigger): Promise<SyncAllResult> {
       .from(items);
   } catch (err) {
     // A failure this early has no item row to carry it — record it globally.
-    recordLastSync(publicErrorMessage(err, 'Sync failed — check the server log'), trigger);
+    recordLastSync(
+      publicErrorMessage(err, 'Sync failed — try Sync all again in a moment'),
+      trigger,
+    );
     throw err;
   }
 
@@ -61,7 +72,7 @@ async function runSyncAll(trigger: SyncTrigger): Promise<SyncAllResult> {
         const message = await recordSyncFailure(
           item.itemId,
           err,
-          'Sync failed — check the server log',
+          'Sync failed — try Sync all again in a moment',
         );
         results[index] = {
           itemId: item.itemId,

@@ -12,6 +12,7 @@ import {
   getAccounts,
   getInstitutionById,
   getItem,
+  removeItem,
 } from '@/lib/plaid';
 import type { ProviderAccount, ProviderItem } from '@/lib/provider-types';
 import { PublicError } from '@/lib/public-error';
@@ -116,7 +117,7 @@ async function runInitialSync(
     const error = await recordSyncFailure(
       storedItem.itemId,
       err,
-      'Initial sync failed — check the server log',
+      'The first sync failed — use Sync all on the home page to retry',
     );
     return { result: null, error };
   }
@@ -143,7 +144,24 @@ export async function createRepairLinkToken(itemId: string): Promise<string> {
 
 export async function linkItem(publicToken: string): Promise<LinkResult> {
   const { accessToken, itemId } = await exchangePublicToken(publicToken);
-  const encryptedAccessToken = await storeItemShell(itemId, accessToken);
+  let encryptedAccessToken: string;
+  try {
+    encryptedAccessToken = await storeItemShell(itemId, accessToken);
+  } catch (err) {
+    // The exchange already created a live Item at Plaid; with no stored token
+    // it could never be revoked, so revoke it before surfacing the failure.
+    try {
+      await removeItem(accessToken);
+      logError(`link ${itemId}: storing the item failed — revoked the Plaid item:`, err);
+    } catch (revokeErr) {
+      logError(
+        `link ${itemId}: storing the item failed AND the compensating revoke failed — remove ` +
+          `Plaid item ${itemId} from the Plaid dashboard by hand:`,
+        revokeErr,
+      );
+    }
+    throw err;
+  }
 
   // The shell row is already durable, so an enrichment failure is recorded on
   // it and reported — the home page then explains the new item instead of

@@ -7,7 +7,7 @@ import {
   integer,
   jsonb,
   numeric,
-  pgTable,
+  pgSchema,
   serial,
   text,
   timestamp,
@@ -17,19 +17,27 @@ import { CARD_TYPES } from '@/lib/card-types';
 import type { ItemErrorBody } from '@/lib/plaid-errors';
 import type { RawProviderPayload } from '@/lib/provider-types';
 
-export const cards = pgTable('cards', {
+// Namespaced like the advisory-lock class id in sync-lock.ts: generic table
+// names must not collide with another app's on a shared database.
+export const spendrightSchema = pgSchema('spendright');
+
+export const cards = spendrightSchema.table('cards', {
   id: serial('id').primaryKey(),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   issuer: text('issuer'),
   type: text('type', { enum: CARD_TYPES }).notNull(),
   plaidAccountNames: jsonb('plaid_account_names').$type<string[]>().notNull().default([]),
+  // When and against what source the seed's rates were last checked; the UI
+  // warns once this goes stale.
+  ratesVerifiedOn: date('rates_verified_on'),
+  ratesVerifiedSource: text('rates_verified_source'),
   retiredAt: timestamp('retired_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const cardCategories = pgTable(
+export const cardCategories = spendrightSchema.table(
   'card_categories',
   {
     id: serial('id').primaryKey(),
@@ -38,14 +46,25 @@ export const cardCategories = pgTable(
       .references(() => cards.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     rate: numeric('rate').notNull(),
+    // Real card terms cap elevated categories: past annualCapAmount of
+    // calendar-year spend in this category, postCapRate applies. Both set or
+    // both null.
+    annualCapAmount: numeric('annual_cap_amount'),
+    postCapRate: numeric('post_cap_rate'),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [unique('card_categories_card_id_name_uq').on(table.cardId, table.name)],
+  (table) => [
+    unique('card_categories_card_id_name_uq').on(table.cardId, table.name),
+    check(
+      'card_categories_cap_pair_ck',
+      sql`(${table.annualCapAmount} is null) = (${table.postCapRate} is null)`,
+    ),
+  ],
 );
 
-export const creditCategories = pgTable('credit_categories', {
+export const creditCategories = spendrightSchema.table('credit_categories', {
   id: serial('id').primaryKey(),
   name: text('name').notNull().unique(),
   retiredAt: timestamp('retired_at', { withTimezone: true }),
@@ -53,7 +72,7 @@ export const creditCategories = pgTable('credit_categories', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const items = pgTable('items', {
+export const items = spendrightSchema.table('items', {
   id: serial('id').primaryKey(),
   itemId: text('item_id').notNull().unique(),
   // Encrypted.
@@ -69,7 +88,7 @@ export const items = pgTable('items', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const accounts = pgTable(
+export const accounts = spendrightSchema.table(
   'accounts',
   {
     id: serial('id').primaryKey(),
@@ -94,7 +113,7 @@ export const accounts = pgTable(
   (table) => [index('accounts_item_id_idx').on(table.itemId)],
 );
 
-export const transactions = pgTable(
+export const transactions = spendrightSchema.table(
   'transactions',
   {
     id: serial('id').primaryKey(),

@@ -71,6 +71,13 @@
       "when": 1788916734140,
       "tag": "0009_backfill_reward_rate",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789085272981,
+      "tag": "0010_spendright_schema",
+      "breakpoints": true
     }
   ]
 }

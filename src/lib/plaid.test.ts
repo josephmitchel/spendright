@@ -278,20 +278,19 @@ describe('syncTransactions', () => {
     expect(seam.syncRequests).toHaveLength(5);
   });
 
-  it('stops a drain that exceeds the 200-page budget', async () => {
+  it('stops a drain at the 200-page budget with the resume cursor, marked incomplete', async () => {
     for (let i = 0; i < 200; i++) {
       seam.syncResponses.push(() => page({ next_cursor: `c${i}`, has_more: true }));
     }
 
     const promise = syncTransactions('tok', null);
-    const assertion = expect(promise).rejects.toMatchObject({
-      code: 'SYNC_PAGE_BUDGET',
-      status: 502,
-    });
     await vi.runAllTimersAsync();
-    await assertion;
-    // The budget check throws before a 201st request is made.
+    const batch = await promise;
+    // The budget check stops before a 201st request is made; the last page's
+    // cursor comes back so the next sync resumes instead of refetching.
     expect(seam.syncRequests).toHaveLength(200);
+    expect(batch.incomplete).toBe(true);
+    expect(batch.cursor).toBe('c199');
   });
 
   it('retries a transient failure mid-drain and keeps the accumulated pages', async () => {

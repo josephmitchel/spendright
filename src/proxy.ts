@@ -22,7 +22,7 @@ function buildCsp(nonce: string): string {
   ].join('; ');
 }
 
-function headerHostname(hostHeader: string): string | null {
+export function headerHostname(hostHeader: string): string | null {
   // new URL() would parse "evil.com@localhost" or "localhost/evil" into a
   // loopback hostname, so illegal Host structure is refused before parsing.
   if (/[/\\@?#\s]/.test(hostHeader)) return null;
@@ -33,7 +33,7 @@ function headerHostname(hostHeader: string): string | null {
   }
 }
 
-function isSameOrigin(origin: string, hostHeader: string): boolean {
+export function isSameOrigin(origin: string, hostHeader: string): boolean {
   try {
     const url = new URL(origin);
     return url.protocol === 'http:' && url.host === hostHeader.toLowerCase();
@@ -42,14 +42,14 @@ function isSameOrigin(origin: string, hostHeader: string): boolean {
   }
 }
 
-function isLoopbackIp(entry: string): boolean {
+export function isLoopbackIp(entry: string): boolean {
   const ip = entry.trim().replace(/^::ffff:/i, '');
   return ip === '::1' || ip === '[::1]' || /^127(\.\d{1,3}){3}$/.test(ip);
 }
 
 // Next fills x-forwarded-host/-for with ??= (Verified-on: next@16.3.4), so a
 // forwarding proxy's values survive and must be checked.
-function isLocalRequest(req: NextRequest): boolean {
+export function isLocalRequest(req: { headers: Headers }): boolean {
   const host = req.headers.get('host');
   if (!host) return false;
   const hostname = headerHostname(host);

@@ -1,14 +1,13 @@
-import { getTableColumns, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { accounts, type AccountRow, type CardRow } from '@/db/schema';
 import { loadCardCatalog } from '@/lib/card-catalog';
 import { matchCard } from '@/lib/cards';
 import { db, type DbTransaction } from '@/lib/db';
-import { logError } from '@/lib/log';
+import { logError, logWarn } from '@/lib/log';
 import type { ProviderAccount } from '@/lib/provider-types';
+import { servedAccountColumns } from '@/lib/served-columns';
 
-// Served in full; a future sensitive column gets destructured out here, same
-// as items.ts/transactions.ts.
-export const servedAccountColumns = getTableColumns(accounts);
+export { servedAccountColumns };
 
 export type ServedAccountRow = Pick<
   AccountRow,
@@ -43,7 +42,22 @@ async function upsertAccount(
   itemId: string,
   cardList: CardRow[],
 ): Promise<void> {
-  const cardId = matchCard(cardList, plaidAccount.name)?.id ?? null;
+  const matched = matchCard(cardList, plaidAccount);
+  const [existing] = await tx
+    .select({ cardId: accounts.cardId })
+    .from(accounts)
+    .where(eq(accounts.accountId, plaidAccount.accountId));
+  // A name drift must never silently unlink a matched card (the account page
+  // would fall back to the unsupported view and hide its history); matches
+  // only ever add or move a link. `npm run seed:cards` remains the deliberate
+  // way to recompute matches from scratch.
+  const cardId = matched?.id ?? existing?.cardId ?? null;
+  if (matched === null && existing?.cardId != null) {
+    logWarn(
+      `account ${plaidAccount.accountId} ("${plaidAccount.name}") no longer matches any card's ` +
+        'account names — keeping its existing card link',
+    );
+  }
   const accountValues = toAccountRow(plaidAccount, itemId, cardId);
 
   await tx
