@@ -4,7 +4,6 @@ import { badRequest, withErrorResponse } from '@/lib/errors';
 import { linkItem } from '@/lib/link';
 import { readJsonBody } from '@/lib/request-body';
 
-// Design: single-user-localhost-no-auth, inline-initial-sync.
 export const POST = withErrorResponse(async (req: NextRequest) => {
   const body = await readJsonBody(req);
   const publicToken = (body as { public_token?: unknown } | null)?.public_token;
@@ -14,11 +13,12 @@ export const POST = withErrorResponse(async (req: NextRequest) => {
 
   const result = await linkItem(publicToken);
   return NextResponse.json<ExchangeResponse>({
-    item_id: result.itemId,
-    institution_name: result.institutionName,
-    accounts_stored: result.accountsStored,
+    itemId: result.itemId,
+    institutionName: result.institutionName,
+    accountsStored: result.accountsStored,
     sync: result.sync,
-    sync_error: result.syncError,
-    account_errors: result.accountErrors.length > 0 ? result.accountErrors : null,
+    syncError: result.syncError,
+    setupFailed: result.setupFailed,
+    accountErrors: result.accountErrors.length > 0 ? result.accountErrors : null,
   });
 });

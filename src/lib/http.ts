@@ -1,10 +1,7 @@
-// Design: single-response-reader.
-
 export function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
 }
 
-// Design: requests-have-deadlines.
 const REQUEST_TIMEOUT_MS = 120_000;
 
 export async function getJson<T>(url: string, failureMessage: string): Promise<T> {
@@ -38,7 +35,6 @@ async function requestJson<T>(url: string, init: RequestInit, failureMessage: st
   return readJson<T>(res, failureMessage);
 }
 
-// Design: single-response-reader.
 async function readJson<T>(res: Response, failureMessage: string): Promise<T> {
   const data = await res.json().catch(() => undefined);
   if (!res.ok) {

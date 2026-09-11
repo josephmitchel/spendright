@@ -22,6 +22,10 @@ not mount them.
 
 ## Database
 
+PostgreSQL **11 or newer** is required — the supported baseline the app is
+verified against. The server checks this at startup and refuses to run against
+anything older.
+
 Schema lives in `src/db/schema.ts`; migrations are the source of truth for
 applying it:
 
@@ -97,8 +101,7 @@ where the UI surfaces them.
 
 Nothing about syncing is internet-reachable: every route answers loopback
 callers only. Do not put a tunnel or any other forwarder in front of this
-app — the webhook-plus-tunnel design was retired over exactly that exposure
-(see `.claude/design/retired/webhook-triggered-sync.md` for the history),
+app — the webhook-plus-tunnel design was retired over exactly that exposure,
 and it is also why production mode is the everyday mode (the `/__nextjs_*`
 warning under Getting Started).
 
@@ -121,3 +124,11 @@ reachable from anywhere else.
   host with a tight request timeout (Vercel's hobby limit is 10s) can fail a
   link that actually succeeded. Finishing the job means running the first sync
   as a background job the client polls.
+- **Session-mode Postgres only.** Per-item sync locks are session-scoped
+  advisory locks plus session-level `SET`s, and startup deliberately fails fast
+  behind any transaction-pooling proxy (PgBouncer transaction mode, and the
+  pooled endpoints hosted providers like Neon/Supabase/RDS Proxy hand out by
+  default). Point `DATABASE_URL` at the database's direct or session-mode port.
+  Deploying onto pooled/serverless Postgres would first need an alternate lock
+  backend (e.g. a row-lock table with `FOR UPDATE SKIP LOCKED`) — a redesign,
+  not a config change.

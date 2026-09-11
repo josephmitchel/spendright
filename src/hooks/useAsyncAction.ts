@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '@/lib/http';
 
-// Design: shared-mutation-protocol.
+// Errors and pending state are both tracked per run key so concurrent actions
+// on different targets can't clear each other's failure or claim each other's
+// in-flight status.
 export function useAsyncAction<Args extends unknown[]>(
   action: (...args: Args) => Promise<void>,
   failureMessage: string,
   options?: { key?: (...args: Args) => string },
 ) {
-  const [pendingCount, setPendingCount] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [pendingKeys, setPendingKeys] = useState<ReadonlySet<string>>(new Set());
+  const [errors, setErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const inFlight = useRef(new Set<string>());
   const currentRef = useRef({ action, key: options?.key });
   useEffect(() => {
@@ -22,23 +24,40 @@ export function useAsyncAction<Args extends unknown[]>(
       const key = currentRef.current.key?.(...args) ?? '';
       if (inFlight.current.has(key)) return;
       inFlight.current.add(key);
-      setPendingCount((count) => count + 1);
-      setError(null);
+      setPendingKeys((previous) => new Set(previous).add(key));
+      setErrors((previous) => {
+        if (!previous.has(key)) return previous;
+        const next = new Map(previous);
+        next.delete(key);
+        return next;
+      });
       void (async () => {
         try {
           await currentRef.current.action(...args);
         } catch (err) {
-          setError(errorMessage(err, failureMessage));
+          const message = errorMessage(err, failureMessage);
+          setErrors((previous) => new Map(previous).set(key, message));
         } finally {
           inFlight.current.delete(key);
-          setPendingCount((count) => count - 1);
+          setPendingKeys((previous) => {
+            const next = new Set(previous);
+            next.delete(key);
+            return next;
+          });
         }
       })();
     },
     [failureMessage],
   );
 
-  const clearError = useCallback(() => setError(null), []);
+  const clearError = useCallback(() => setErrors(new Map()), []);
 
-  return { run, pending: pendingCount > 0, error, clearError };
+  return {
+    run,
+    pending: pendingKeys.size > 0,
+    pendingKeys,
+    error: errors.size > 0 ? [...errors.values()].join('; ') : null,
+    errors,
+    clearError,
+  };
 }

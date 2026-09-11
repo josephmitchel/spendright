@@ -6,7 +6,10 @@ interface RowWriteState {
   hold: 'held' | 'releasing';
 }
 
-// Design: optimistic-category-writes.
+// Caller contract: each PATCH calls joinBurst before sending, then
+// recordCommit (success only) followed by settleIfDone after the reply; every
+// fetch calls fetchedRowMerger() then releaseSettledHolds(), in that order —
+// otherwise a settled burst's hold is never released.
 export class CategoryWriteState {
   private rows = new Map<string, RowWriteState>();
 

@@ -4,7 +4,6 @@ import { pgErrorCode } from '@/lib/pg-errors';
 import { plaidErrorBody, plaidErrorMessage } from '@/lib/plaid-errors';
 import { PublicError } from '@/lib/public-error';
 
-// Design: error-message-allow-list.
 export function jsonError(code: string, message: string, status: number): NextResponse {
   return NextResponse.json({ error: { code, message } }, { status });
 }
@@ -13,7 +12,6 @@ export function badRequest(message: string): NextResponse {
   return jsonError('BAD_REQUEST', message, 400);
 }
 
-// Design: error-message-allow-list.
 function allowListedError(
   err: unknown,
 ): { code: string; message: string; status: number; expected: boolean } | null {
@@ -40,7 +38,6 @@ function errorResponse(err: unknown): NextResponse {
   const known = allowListedError(err);
   if (known?.expected) return jsonError(known.code, known.message, known.status);
 
-  // Design: plaid-error-log-redaction.
   logError('request failed:', err);
   if (known) return jsonError(known.code, known.message, known.status);
 

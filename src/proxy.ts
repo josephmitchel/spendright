@@ -1,10 +1,28 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-// Design: non-local-request-guard, single-user-localhost-no-auth.
-
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-function headerHostname(hostHeader: string): string | null {
+// cdn.plaid.com serves the Plaid Link script and iframe (kept for browsers
+// that ignore 'strict-dynamic'); connect-src covers its telemetry and API
+// calls. Dev-mode React needs eval() for debugging features (never in
+// production), so 'unsafe-eval' is dev-only.
+function buildCsp(nonce: string): string {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://cdn.plaid.com` +
+      (process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''),
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "connect-src 'self' https://cdn.plaid.com https://*.plaid.com",
+    'frame-src https://cdn.plaid.com',
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+}
+
+export function headerHostname(hostHeader: string): string | null {
   // new URL() would parse "evil.com@localhost" or "localhost/evil" into a
   // loopback hostname, so illegal Host structure is refused before parsing.
   if (/[/\\@?#\s]/.test(hostHeader)) return null;
@@ -15,7 +33,7 @@ function headerHostname(hostHeader: string): string | null {
   }
 }
 
-function isSameOrigin(origin: string, hostHeader: string): boolean {
+export function isSameOrigin(origin: string, hostHeader: string): boolean {
   try {
     const url = new URL(origin);
     return url.protocol === 'http:' && url.host === hostHeader.toLowerCase();
@@ -24,14 +42,14 @@ function isSameOrigin(origin: string, hostHeader: string): boolean {
   }
 }
 
-function isLoopbackIp(entry: string): boolean {
+export function isLoopbackIp(entry: string): boolean {
   const ip = entry.trim().replace(/^::ffff:/i, '');
   return ip === '::1' || ip === '[::1]' || /^127(\.\d{1,3}){3}$/.test(ip);
 }
 
 // Next fills x-forwarded-host/-for with ??= (Verified-on: next@16.3.4), so a
 // forwarding proxy's values survive and must be checked.
-function isLocalRequest(req: NextRequest): boolean {
+export function isLocalRequest(req: { headers: Headers }): boolean {
   const host = req.headers.get('host');
   if (!host) return false;
   const hostname = headerHostname(host);
@@ -64,5 +82,14 @@ export function proxy(req: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  // The nonce rides the request's CSP header so Next stamps it onto the
+  // scripts it renders; the response carries the same policy to the browser.
+  const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
+  const csp = buildCsp(nonce);
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set('x-nonce', nonce);
+  requestHeaders.set('content-security-policy', csp);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set('content-security-policy', csp);
+  return response;
 }

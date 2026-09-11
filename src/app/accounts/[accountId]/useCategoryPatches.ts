@@ -47,7 +47,6 @@ function kindSelection(
   }
 }
 
-// Design: optimistic-category-writes.
 export function useCategoryPatches(
   card: ApiCard | null,
   creditCategories: ApiCreditCategory[],

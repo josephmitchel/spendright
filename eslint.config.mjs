@@ -5,12 +5,7 @@ import nextTs from 'eslint-config-next/typescript';
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  globalIgnores([
-    '.next/**',
-    'out/**',
-    'build/**',
-    'next-env.d.ts',
-  ]),
+  globalIgnores(['.next/**', 'out/**', 'build/**', 'next-env.d.ts']),
   // Type-aware linting scoped to TS files so the .mjs config and scripts need no project entry.
   {
     files: ['**/*.ts', '**/*.tsx'],
@@ -18,16 +13,20 @@ const eslintConfig = defineConfig([
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
     rules: {
-      // Design: promise-discipline-linted.
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
+    },
+  },
+  {
+    files: ['src/**/*.ts', 'src/**/*.tsx', 'scripts/**/*.mjs', 'scripts/**/*.ts'],
+    rules: {
+      'max-lines': ['error', { max: 400, skipBlankLines: false, skipComments: false }],
     },
   },
   {
     rules: {
       // Load-bearing for useLoadProtocol; the preset's default warn exits 0.
       'react-hooks/exhaustive-deps': 'error',
-      // Design: client-server-boundary-enforced.
       '@typescript-eslint/consistent-type-imports': [
         'error',
         { prefer: 'type-imports', fixStyle: 'inline-type-imports' },

@@ -5,22 +5,33 @@ import { apiPaths } from '@/lib/api-paths';
 import type { ItemDeleteResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
 
-// Design: item-delete-plaid-first, shared-mutation-protocol.
-export function useItemRemoval(refresh: () => Promise<unknown>) {
-  const failure = 'Failed to remove item';
-  const { run, error: removeError } = useAsyncAction(
-    async (itemId: string) => {
-      await sendJson<ItemDeleteResponse>(apiPaths.item(itemId), 'DELETE', undefined, failure);
+export function useItemRemoval(
+  refresh: () => Promise<unknown>,
+  onRemovedAction?: (institutionName: string) => void,
+) {
+  const {
+    run,
+    pendingKeys: removingItems,
+    errors: removeErrors,
+  } = useAsyncAction(
+    async (itemId: string, institutionName: string) => {
+      await sendJson<ItemDeleteResponse>(
+        apiPaths.item(itemId),
+        'DELETE',
+        undefined,
+        `Failed to remove ${institutionName}`,
+      );
       void refresh();
+      onRemovedAction?.(institutionName);
     },
-    failure,
+    'Failed to remove item',
     { key: (itemId) => itemId },
   );
 
-  const removeItem = (itemId: string) => {
-    if (!confirm('Remove this institution and all of its accounts and transactions?')) return;
-    run(itemId);
+  const removeItem = (itemId: string, institutionName: string) => {
+    if (!confirm(`Remove ${institutionName} and all of its accounts and transactions?`)) return;
+    run(itemId, institutionName);
   };
 
-  return { removeItem, removeError };
+  return { removeItem, removingItems, removeErrors };
 }

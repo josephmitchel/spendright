@@ -1,5 +1,3 @@
-// Design: error-message-allow-list, plaid-error-log-redaction.
-
 export interface PlaidErrorFields {
   error_type?: string;
   error_code?: string;
@@ -10,10 +8,15 @@ export interface PlaidErrorFields {
 
 export type ItemErrorBody = PlaidErrorFields | { message: string };
 
+// { message } bodies are app-internal notices; only Plaid-reported errors are
+// candidates for Link update-mode repair.
+export function isPlaidItemError(error: ItemErrorBody): error is PlaidErrorFields {
+  return !('message' in error);
+}
+
 const asString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
-// Design: error-message-allow-list.
 export function plaidErrorBody(err: unknown): PlaidErrorFields | null {
   const data = (err as { response?: { data?: PlaidErrorFields } })?.response?.data;
   if (typeof data?.error_code !== 'string' || !data.error_code) return null;

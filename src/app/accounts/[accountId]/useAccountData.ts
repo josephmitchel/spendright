@@ -12,9 +12,9 @@ import type {
 } from '@/lib/api-types';
 import { getJson } from '@/lib/http';
 
-// Design: partial-load-rendering, stale-lists-disable-editing.
 export function useAccountData(accountId: string) {
   const [account, setAccount] = useState<ApiAccount | null>(null);
+  const [itemError, setItemError] = useState<AccountResponse['itemError']>(null);
   const [card, setCard] = useState<ApiCard | null>(null);
   const [creditCategories, setCreditCategories] = useState<ApiCreditCategory[]>([]);
   const protocol = useLoadProtocol(
@@ -31,7 +31,10 @@ export function useAccountData(accountId: string) {
           },
           (bodies) => {
             const loadedAccount = bodies.account ? bodies.account.account : null;
-            if (bodies.account) setAccount(loadedAccount);
+            if (bodies.account) {
+              setAccount(loadedAccount);
+              setItemError(bodies.account.itemError);
+            }
             if (bodies.cards) setCreditCategories(bodies.cards.creditCategories);
             if (bodies.account && bodies.cards) {
               setCard(bodies.cards.cards.find((c) => c.id === loadedAccount?.cardId) ?? null);
@@ -40,7 +43,10 @@ export function useAccountData(accountId: string) {
         ),
       [accountId],
     ),
+    // Sticky: the not-found and unsupported-card views must survive a transient
+    // poll failure instead of dropping to a generic error until the next poll.
+    { stickyKeys: ['account', 'cards'] },
   );
 
-  return { account, card, creditCategories, ...protocol };
+  return { account, itemError, card, creditCategories, ...protocol };
 }

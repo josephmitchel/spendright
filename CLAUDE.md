@@ -2,13 +2,9 @@
 
 This repo is for development on SpendRight, a personal finance app primarily centered around credit card spending optimization. It is in very early stages.
 
-# Design
-
-Current design information about the project is available in `.claude/design`. Familiarize yourself with the project's current design direction before making code changes.
-
 # Comments
 
-Avoid writing long comments in the code -- important information about the code that needs to be described in text should live in the design folder. This repo is entirely agent authored/maintained, so no need to optimize heavily for human viewing.
+Avoid writing long comments in the code -- anything worth knowing should be evident from the code itself. This repo is entirely agent authored/maintained, so no need to optimize heavily for human viewing.
 
 # Code Intelligence
 

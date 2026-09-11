@@ -4,7 +4,6 @@ import { syncAllItems } from '@/lib/sync-all';
 import { isSyncFailure } from '@/lib/sync-failure';
 
 // No webhook — the app has no internet-reachable origin.
-// Design: scheduled-sync, automatic-sync.
 
 const STARTUP_DELAY_MS = 10 * 1000;
 const INTERVAL_MS = 60 * 60 * 1000;
@@ -17,7 +16,7 @@ export function startSyncScheduler(): void {
 
   const run = async () => {
     try {
-      const results = await syncAllItems();
+      const results = await syncAllItems('scheduled');
       const failures = results.filter((result) => isSyncFailure(result)).length;
       logInfo(
         `scheduled sync: ${results.length} item(s)${failures > 0 ? `, ${failures} failed` : ''}`,

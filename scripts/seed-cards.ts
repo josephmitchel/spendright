@@ -4,7 +4,6 @@ import './load-env';
 import { and, eq, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { Pool } from 'pg';
 import { cardSeeds, creditCategorySeeds } from '../src/db/cards.seed';
 import { accounts, cardCategories, cards, creditCategories } from '../src/db/schema';
 import { loadCardCatalog } from '../src/lib/card-catalog';
@@ -12,8 +11,10 @@ import { matchCard, normalizeAccountName } from '../src/lib/cards';
 import type { DrizzleTransaction } from '../src/lib/db';
 import { requireDatabaseUrl } from '../src/lib/env';
 import { logFatalAndExit, logInfo } from '../src/lib/log';
+import { createBoundedPool } from '../src/lib/pool-config';
 
-// Design: seed-validation.
+const MAX_PLAUSIBLE_RATE = 20;
+
 function assertUniqueKeys(
   entries: Array<{ value: string; owner: string }>,
   describe: {
@@ -43,6 +44,14 @@ function assertSeedIsValid(): void {
   );
 
   assertUniqueKeys(
+    cardSeeds.map((seed) => ({ value: seed.name, owner: seed.slug })),
+    {
+      blank: (owner) => `cards.seed.ts: "${owner}" has a blank name`,
+      duplicate: (value) => `cards.seed.ts: name "${value}" is used by more than one card`,
+    },
+  );
+
+  assertUniqueKeys(
     cardSeeds.flatMap((seed) =>
       seed.plaidAccountNames.map((name) => ({ value: name, owner: seed.slug })),
     ),
@@ -62,6 +71,53 @@ function assertSeedIsValid(): void {
           `cards.seed.ts: "${owner}" lists the category "${value}" more than once`,
       },
     );
+
+    // A typo'd rate would ship straight to the UI as authoritative reward
+    // guidance; no real card pays more than MAX_PLAUSIBLE_RATE.
+    for (const category of seed.categories) {
+      if (
+        !Number.isFinite(category.rate) ||
+        category.rate <= 0 ||
+        category.rate > MAX_PLAUSIBLE_RATE
+      ) {
+        throw new Error(
+          `cards.seed.ts: "${seed.slug}" category "${category.name}" has an implausible rate ` +
+            `(${category.rate}) — expected a number greater than 0 and at most ${MAX_PLAUSIBLE_RATE}`,
+        );
+      }
+      if (category.annualCap) {
+        const { amount, postCapRate } = category.annualCap;
+        if (!Number.isFinite(amount) || amount <= 0) {
+          throw new Error(
+            `cards.seed.ts: "${seed.slug}" category "${category.name}" has an implausible ` +
+              `annualCap.amount (${amount}) — expected a number greater than 0`,
+          );
+        }
+        if (!Number.isFinite(postCapRate) || postCapRate <= 0 || postCapRate >= category.rate) {
+          throw new Error(
+            `cards.seed.ts: "${seed.slug}" category "${category.name}" has an implausible ` +
+              `annualCap.postCapRate (${postCapRate}) — expected a number greater than 0 and ` +
+              `below the pre-cap rate (${category.rate})`,
+          );
+        }
+      }
+    }
+
+    // An in-range typo passes the bound above, so rates also need human
+    // provenance: when they were checked and against what.
+    if (!seed.ratesVerified.source.trim()) {
+      throw new Error(`cards.seed.ts: "${seed.slug}" ratesVerified.source is blank`);
+    }
+    const verifiedOn = new Date(seed.ratesVerified.on);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(seed.ratesVerified.on) || Number.isNaN(verifiedOn.getTime())) {
+      throw new Error(
+        `cards.seed.ts: "${seed.slug}" ratesVerified.on (${seed.ratesVerified.on}) must be a ` +
+          'YYYY-MM-DD date',
+      );
+    }
+    if (verifiedOn.getTime() > Date.now()) {
+      throw new Error(`cards.seed.ts: "${seed.slug}" ratesVerified.on is in the future`);
+    }
   }
 
   assertUniqueKeys(
@@ -91,7 +147,6 @@ const retireTargets = {
 };
 
 // Empty keptKeys omits the clause — same as the `true` drizzle renders notInArray([]) into (Verified-on: drizzle-orm@0.45.2).
-// Design: seed-reconcile-is-destructive, categories-retired-not-deleted.
 async function retireMissing<Table extends SeedTable>(
   tx: SeedTransaction,
   { table, keyColumn }: RetireTarget<Table>,
@@ -125,6 +180,8 @@ async function upsertCards(tx: SeedTransaction): Promise<number> {
       issuer: seed.issuer ?? null,
       type: seed.type,
       plaidAccountNames: seed.plaidAccountNames,
+      ratesVerifiedOn: seed.ratesVerified.on,
+      ratesVerifiedSource: seed.ratesVerified.source,
     };
     const [card] = await tx
       .insert(cards)
@@ -141,13 +198,21 @@ async function upsertCards(tx: SeedTransaction): Promise<number> {
         cardId: card.id,
         name: category.name,
         rate: String(category.rate),
+        annualCapAmount: category.annualCap ? String(category.annualCap.amount) : null,
+        postCapRate: category.annualCap ? String(category.annualCap.postCapRate) : null,
       };
       await tx
         .insert(cardCategories)
         .values(categoryValues)
         .onConflictDoUpdate({
           target: [cardCategories.cardId, cardCategories.name],
-          set: { rate: categoryValues.rate, retiredAt: null, updatedAt: sql`now()` },
+          set: {
+            rate: categoryValues.rate,
+            annualCapAmount: categoryValues.annualCapAmount,
+            postCapRate: categoryValues.postCapRate,
+            retiredAt: null,
+            updatedAt: sql`now()`,
+          },
         });
       categoryCount++;
     }
@@ -188,7 +253,7 @@ async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; 
   const accountList = await tx.select().from(accounts);
   let matched = 0;
   for (const account of accountList) {
-    const card = matchCard(cardList, account.name);
+    const card = matchCard(cardList, account);
     if (card) matched++;
     if ((card?.id ?? null) !== account.cardId) {
       await tx
@@ -204,20 +269,12 @@ async function rematchAccounts(tx: SeedTransaction): Promise<{ matched: number; 
 async function main() {
   assertSeedIsValid();
 
-  // Own pool, not src/lib/db's singleton — the script must end() it so the process can exit.
-  const pool = new Pool({ connectionString: requireDatabaseUrl() });
+  // Own pool, not src/lib/db's singleton (that module is server-only) — the
+  // script must end() it so the process can exit.
+  const pool = createBoundedPool(requireDatabaseUrl());
   const rootDb = drizzle(pool);
 
   try {
-    // Outside the reconcile transaction so its row locks can't deadlock with a sync.
-    // Design: categorization-is-a-historical-snapshot.
-    await rootDb.execute(sql`
-      update transactions t
-      set reward_rate = cc.rate
-      from card_categories cc
-      where t.card_category_id = cc.id and t.reward_rate is null
-    `);
-
     await rootDb.transaction(async (tx) => {
       const categoryCount = await upsertCards(tx);
       await upsertCreditCategories(tx);

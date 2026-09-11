@@ -1,5 +1,12 @@
-import { eq, sql } from 'drizzle-orm';
-import { accounts, cardCategories, creditCategories, transactions } from '@/db/schema';
+import { and, eq, ne, sql } from 'drizzle-orm';
+import {
+  accounts,
+  cardCategories,
+  creditCategories,
+  transactions,
+  type CardCategoryRow,
+  type TransactionRow,
+} from '@/db/schema';
 import { categoryKindSources } from '@/lib/category-kind-sources';
 import { assertNeverKind, kindForAmount, type CategoryKind } from '@/lib/category-kinds';
 import { db, type DbTransaction } from '@/lib/db';
@@ -9,7 +16,6 @@ import { servedTransactionColumns, type CategorizedTransaction } from '@/lib/tra
 
 const badPick = (message: string) => new PublicError(message, { status: 400, code: 'BAD_REQUEST' });
 
-// Design: category-kind-sign-rule.
 const wrongKindMessage = {
   card: 'Non-negative-amount transactions take a card category, not a credit category',
   credit: 'Negative-amount transactions take a credit category, not a card category',
@@ -21,13 +27,39 @@ interface CategoryPick {
   creditCategoryName: string | null;
 }
 
-// Design: category-kind-sign-rule, categorization-is-a-historical-snapshot.
+// The snapshot honors the category's annual cap: once the calendar year of
+// the transaction's date already holds >= annualCapAmount of categorized
+// spend (this transaction excluded), postCapRate applies. A transaction that
+// straddles the boundary still gets the pre-cap rate.
+async function effectiveCardRate(
+  tx: DbTransaction,
+  category: CardCategoryRow,
+  transaction: Pick<TransactionRow, 'transactionId' | 'date'>,
+): Promise<string> {
+  if (category.annualCapAmount === null || category.postCapRate === null) return category.rate;
+  const year = Number(transaction.date.slice(0, 4));
+  const [row] = await tx
+    .select({ spent: sql<string>`coalesce(sum(${transactions.amount}), 0)` })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.cardCategoryId, category.id),
+        sql`extract(year from ${transactions.date}) = ${year}`,
+        ne(transactions.transactionId, transaction.transactionId),
+      ),
+    );
+  return Number(row?.spent ?? 0) >= Number(category.annualCapAmount)
+    ? category.postCapRate
+    : category.rate;
+}
+
 async function resolveCategoryPick(
   tx: DbTransaction,
   kind: CategoryKind,
   categoryId: number,
   expectedKind: CategoryKind,
   cardId: number,
+  transaction: Pick<TransactionRow, 'transactionId' | 'date'>,
 ): Promise<CategoryPick> {
   if (kind !== expectedKind) {
     throw badPick(wrongKindMessage[expectedKind]);
@@ -42,12 +74,14 @@ async function resolveCategoryPick(
       if (!category || category.cardId !== cardId) {
         throw badPick("cardCategoryId does not belong to this account's card");
       }
-      // Design: categories-retired-not-deleted.
       if (category.retiredAt !== null) {
         throw badPick(categoryKindSources.card.retiredPickMessage);
       }
       return {
-        updateSet: { cardCategoryId: category.id, rewardRate: category.rate },
+        updateSet: {
+          cardCategoryId: category.id,
+          rewardRate: await effectiveCardRate(tx, category, transaction),
+        },
         cardCategoryName: category.name,
         creditCategoryName: null,
       };
@@ -74,7 +108,6 @@ async function resolveCategoryPick(
   }
 }
 
-// Design: category-write-contract, no-category-clear.
 export async function setTransactionCategory(
   transactionId: string,
   kind: CategoryKind,
@@ -97,7 +130,6 @@ export async function setTransactionCategory(
       .from(accounts)
       .where(eq(accounts.accountId, transaction.accountId))
       .for('share');
-    // Design: supported-account-rule.
     if (!account?.cardId) {
       throw badPick('This account has no matched card definition');
     }
@@ -108,6 +140,7 @@ export async function setTransactionCategory(
       categoryId,
       kindForAmount(transaction.amount),
       account.cardId,
+      transaction,
     );
 
     const [updated] = await tx

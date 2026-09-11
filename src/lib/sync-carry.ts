@@ -1,10 +1,10 @@
-// Design: pending-to-posted-carry.
 import { inArray } from 'drizzle-orm';
-import type { Transaction as PlaidTransaction } from 'plaid';
 import { transactions } from '@/db/schema';
 import { categoryKindSources, type CategoryKindSource } from '@/lib/category-kind-sources';
 import { assertNeverKind, type CategoryKind } from '@/lib/category-kinds';
+import { chunkArray, DB_CHUNK_SIZE } from '@/lib/chunk';
 import type { DbTransaction } from '@/lib/db';
+import type { ProviderTransaction } from '@/lib/provider-types';
 
 export interface CarriedSelection {
   cardCategoryId: number | null;
@@ -25,40 +25,47 @@ async function liveCategoryIds(
 }
 
 // Plaid reposts a pending transaction under a new id, carrying the old one
-// in pending_transaction_id. Design: pending-to-posted-carry.
+// in pending_transaction_id.
 export async function resolveCarriedSelections(
   tx: DbTransaction,
-  added: PlaidTransaction[],
+  added: ProviderTransaction[],
 ): Promise<Map<string, CarriedSelection>> {
   const carried = new Map<string, CarriedSelection>();
   const pendingIds = added
-    .map((txn) => txn.pending_transaction_id)
+    .map((txn) => txn.pendingTransactionId)
     .filter((id): id is string => Boolean(id));
   if (pendingIds.length === 0) return carried;
 
   // Locked: a concurrent PATCH could otherwise commit a selection after this
   // read and lose it when the pending row is deleted.
-  const pendingRows = await tx
-    .select({
-      transactionId: transactions.transactionId,
-      cardCategoryId: transactions.cardCategoryId,
-      rewardRate: transactions.rewardRate,
-      creditCategoryId: transactions.creditCategoryId,
-    })
-    .from(transactions)
-    .where(inArray(transactions.transactionId, pendingIds))
-    .for('update');
+  const pendingRows = [];
+  for (const ids of chunkArray(pendingIds, DB_CHUNK_SIZE)) {
+    pendingRows.push(
+      ...(await tx
+        .select({
+          transactionId: transactions.transactionId,
+          cardCategoryId: transactions.cardCategoryId,
+          rewardRate: transactions.rewardRate,
+          creditCategoryId: transactions.creditCategoryId,
+        })
+        .from(transactions)
+        .where(inArray(transactions.transactionId, ids))
+        .for('update')),
+    );
+  }
 
-  const liveCardCategoryIds = await liveCategoryIds(
-    tx,
-    categoryKindSources.card,
-    pendingRows.map((row) => row.cardCategoryId),
-  );
-  const liveCreditCategoryIds = await liveCategoryIds(
-    tx,
-    categoryKindSources.credit,
-    pendingRows.map((row) => row.creditCategoryId),
-  );
+  const [liveCardCategoryIds, liveCreditCategoryIds] = await Promise.all([
+    liveCategoryIds(
+      tx,
+      categoryKindSources.card,
+      pendingRows.map((row) => row.cardCategoryId),
+    ),
+    liveCategoryIds(
+      tx,
+      categoryKindSources.credit,
+      pendingRows.map((row) => row.creditCategoryId),
+    ),
+  ]);
 
   for (const row of pendingRows) {
     const cardCategoryExists =
@@ -77,7 +84,6 @@ export async function resolveCarriedSelections(
   return carried;
 }
 
-// Design: category-kind-sign-rule.
 export function carriedColumns(
   carry: CarriedSelection | undefined,
   kind: CategoryKind,

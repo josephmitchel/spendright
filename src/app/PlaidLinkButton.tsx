@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { usePlaidLink } from 'react-plaid-link';
+import { useState } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
+import { GuardedButton } from '@/components/GuardedButton';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
+import { usePlaidLinkOpen } from '@/hooks/usePlaidLinkOpen';
 import { apiPaths } from '@/lib/api-paths';
 import type { ExchangeResponse, LinkTokenResponse } from '@/lib/api-types';
 import { sendJson } from '@/lib/http';
-import { skippedSyncNotice } from '@/lib/sync-messages';
+import { INCOMPLETE_SYNC_NOTICE, skippedSyncNotice } from '@/lib/sync-messages';
 
-// Design: shared-mutation-protocol.
 export function PlaidLinkButton({
   onConnectedAction,
   syncSucceededAt,
@@ -17,17 +17,13 @@ export function PlaidLinkButton({
   onConnectedAction: () => void;
   syncSucceededAt: number | null;
 }) {
-  const [linkToken, setLinkToken] = useState<string | null>(null);
-  // Design: initial-sync-reported-not-thrown.
   const [syncNotice, setSyncNotice] = useState<{
     message: string;
     at: number;
   } | null>(null);
 
-  // Design: link-notice-expires-on-clean-sync.
   const noticeIsCurrent =
     syncNotice != null && (syncSucceededAt == null || syncSucceededAt < syncNotice.at);
-  const pendingOpen = useRef(false);
 
   const exchange = useAsyncAction(async (publicToken: string) => {
     const data = await sendJson<ExchangeResponse>(
@@ -36,20 +32,29 @@ export function PlaidLinkButton({
       { public_token: publicToken },
       'Exchange failed',
     );
-    const accountErrors = data.account_errors ?? [];
-    // Design: bounded-cursor-hold.
+    const accountErrors = data.accountErrors ?? [];
     const skipped = data.sync?.skipped ?? 0;
     const dropped = data.sync?.dropped === true;
     const notices = [
-      ...(data.sync_error ? [data.sync_error] : []),
+      ...(data.syncError ? [data.syncError] : []),
       ...(skipped > 0 ? [skippedSyncNotice(skipped, dropped)] : []),
+      ...(data.sync?.incomplete ? [INCOMPLETE_SYNC_NOTICE] : []),
       ...(accountErrors.length > 0
         ? [`${accountErrors.length} account(s) not stored — ${accountErrors.join('; ')}`]
         : []),
     ];
-    setSyncNotice(notices.length > 0 ? { message: notices.join(' · '), at: Date.now() } : null);
+    // Only an actual sync failure may claim the sync didn't finish — skipped
+    // rows and account-store notices can ride a fully successful sync, and a
+    // setup failure's message is already a complete sentence.
+    const prefix =
+      data.syncError && !data.setupFailed ? "Connected, but the first sync didn't finish: " : '';
+    setSyncNotice(
+      notices.length > 0 ? { message: `${prefix}${notices.join(' · ')}`, at: Date.now() } : null,
+    );
     onConnectedAction();
   }, 'Exchange failed');
+
+  const { openWithToken, opening, openError } = usePlaidLinkOpen(exchange.run);
 
   const connect = useAsyncAction(async () => {
     exchange.clearError();
@@ -60,39 +65,26 @@ export function PlaidLinkButton({
       undefined,
       'Failed to create link token',
     );
-    pendingOpen.current = true;
-    setLinkToken(data.link_token);
+    openWithToken(data.link_token);
   }, 'Failed to create link token');
 
-  const linkConfig = useMemo(
-    () => ({ token: linkToken, onSuccess: exchange.run }),
-    [linkToken, exchange.run],
-  );
-  const { open, ready } = usePlaidLink(linkConfig);
-
-  // usePlaidLink only becomes ready after it has the token, so defer opening.
-  useEffect(() => {
-    if (ready && pendingOpen.current) {
-      pendingOpen.current = false;
-      open();
-    }
-  }, [ready, open]);
-
-  const linkError = connect.error ?? exchange.error;
+  const linkError = connect.error ?? exchange.error ?? openError;
 
   return (
     <span>
-      <button onClick={connect.run} disabled={connect.pending || exchange.pending}>
+      <GuardedButton
+        onClick={connect.run}
+        unavailable={connect.pending || opening || exchange.pending}
+      >
         Connect a bank
-      </button>
-      {connect.pending && <span> Opening Plaid Link…</span>}
-      {exchange.pending && (
-        <span> Connecting and syncing transactions… (this can take a minute)</span>
-      )}
+      </GuardedButton>
+      {/* Wrapper must stay mounted. */}
+      <span role="status">
+        {(connect.pending || opening) && ' Opening Plaid Link…'}
+        {exchange.pending && ' Connecting and syncing transactions… (this can take a minute)'}
+        {syncNotice && noticeIsCurrent && ` ${syncNotice.message}`}
+      </span>
       {linkError && <ErrorNotice error={linkError} inline />}
-      {syncNotice && noticeIsCurrent && (
-        <span> Connected, but the first sync didn&apos;t finish: {syncNotice.message}</span>
-      )}
     </span>
   );
 }

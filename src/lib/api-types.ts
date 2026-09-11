@@ -1,11 +1,13 @@
 // *Payload is what a handler serves, *Response what a client reads after
-// JSON serialization. Design: typed-api-contract, single-response-reader.
+// JSON serialization.
 import type { CreditCategoryRow } from '@/db/schema';
 import type { ServedAccountRow } from '@/lib/accounts';
 import type { CardWithCategories } from '@/lib/card-catalog';
 import type { PublicItemRow } from '@/lib/items';
 import type { LinkResult } from '@/lib/link';
+import type { ItemErrorBody } from '@/lib/plaid-errors';
 import type { SyncAllResult } from '@/lib/sync-all';
+import type { LastSyncStatus } from '@/lib/sync-status';
 import type { CategorizedTransaction } from '@/lib/transactions';
 
 type Serialized<T> = T extends Date
@@ -29,15 +31,18 @@ export interface AccountsPayload {
 export type AccountsResponse = Serialized<AccountsPayload>;
 
 // GET /api/accounts/[accountId] — null account is a 200, not a 404.
-// Design: account-fetched-by-id.
+// The owning item's error rides along so the detail page can warn about
+// staleness.
 export interface AccountPayload {
   account: ServedAccountRow | null;
+  itemError: ItemErrorBody | null;
 }
 export type AccountResponse = Serialized<AccountPayload>;
 
 // GET /api/items
 export interface ItemsPayload {
   items: PublicItemRow[];
+  lastSync: LastSyncStatus | null;
 }
 export type ItemsResponse = Serialized<ItemsPayload>;
 
@@ -68,6 +73,8 @@ export type TransactionPatchResponse = Serialized<TransactionPatchPayload>;
 
 // POST /api/link-token
 export interface LinkTokenResponse {
+  // link_token mirrors Plaid's own field name verbatim (as does the exchange
+  // request's public_token); everything constructed by this app is camelCase.
   link_token: string;
 }
 
@@ -78,10 +85,11 @@ export interface SyncResponse {
 
 // POST /api/exchange
 export interface ExchangeResponse {
-  item_id: LinkResult['itemId'];
-  institution_name: LinkResult['institutionName'];
-  accounts_stored: LinkResult['accountsStored'];
+  itemId: LinkResult['itemId'];
+  institutionName: LinkResult['institutionName'];
+  accountsStored: LinkResult['accountsStored'];
   sync: LinkResult['sync'];
-  sync_error: LinkResult['syncError'];
-  account_errors: LinkResult['accountErrors'] | null;
+  syncError: LinkResult['syncError'];
+  setupFailed: LinkResult['setupFailed'];
+  accountErrors: LinkResult['accountErrors'] | null;
 }

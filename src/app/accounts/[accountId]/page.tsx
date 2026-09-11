@@ -3,19 +3,20 @@
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
+import { GuardedButton } from '@/components/GuardedButton';
 import { combineLoadStates } from '@/hooks/useLoadProtocol';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
-import type { ApiAccount } from '@/lib/api-types';
+import type { ApiAccount, ApiCard } from '@/lib/api-types';
+import { CARD_SEED_FILE, SEED_CARDS_COMMAND } from '@/lib/dev-remedies';
+import { itemErrorMessage } from '@/lib/item-error-message';
+import { formatMoney, rowCurrency } from '@/lib/money';
 import { PAGE_SIZE } from '@/lib/pagination';
 import { CategoryWriteState } from './category-write-state';
-import { TransactionTable } from './TransactionTable';
+import { CATEGORY_STALE_NOTICE_ID, TransactionTable } from './TransactionTable';
 import { useAccountData } from './useAccountData';
 import { useCategoryPatches } from './useCategoryPatches';
 import { useTransactionPage } from './useTransactionPage';
-
-// Design: supported-account-rule, selections-are-user-owned,
-// categorization-is-a-historical-snapshot.
 
 export default function AccountPage({ params }: { params: Promise<{ accountId: string }> }) {
   const { accountId } = use(params);
@@ -23,6 +24,17 @@ export default function AccountPage({ params }: { params: Promise<{ accountId: s
 }
 
 type View = 'loading' | 'not-found' | 'unsupported' | 'ready' | 'unresolved';
+
+// Issuers change reward terms; past this age the verified-on cue becomes a
+// warning, mirroring how balances carry an "updated" timestamp.
+const RATES_STALE_AFTER_DAYS = 365;
+
+function ratesVerifiedAgeDays(card: ApiCard): number | null {
+  if (!card.ratesVerifiedOn) return null;
+  const verified = new Date(card.ratesVerifiedOn).getTime();
+  if (Number.isNaN(verified)) return null;
+  return Math.floor((Date.now() - verified) / 86_400_000);
+}
 
 function deriveView(inputs: {
   loading: boolean;
@@ -33,15 +45,14 @@ function deriveView(inputs: {
 }): View {
   const { loading, accountLoaded, cardsLoaded, account, hasCard } = inputs;
   if (loading) return 'loading';
-  // Design: partial-load-rendering.
   if (accountLoaded && !account) return 'not-found';
-  // Design: supported-account-rule.
   if (accountLoaded && cardsLoaded && account && !hasCard) return 'unsupported';
   if (hasCard) return 'ready';
   return 'unresolved';
 }
 
 function AccountIdentity({ account }: { account: ApiAccount }) {
+  const currency = rowCurrency(account);
   return (
     <p>
       {account.officialName && account.officialName !== account.name
@@ -50,16 +61,17 @@ function AccountIdentity({ account }: { account: ApiAccount }) {
       {account.mask ? `••${account.mask} — ` : ''}
       {accountTypeLabel(account)}
       {' — current: '}
-      {account.balanceCurrent ?? '—'}
+      {formatMoney(account.balanceCurrent, currency)}
       {', available: '}
-      {account.balanceAvailable ?? '—'}
-      {account.balanceLimit != null ? `, limit: ${account.balanceLimit}` : ''}
-      {account.isoCurrencyCode ? ` ${account.isoCurrencyCode}` : ''}
+      {formatMoney(account.balanceAvailable, currency)}
+      {account.balanceLimit != null
+        ? `, limit: ${formatMoney(account.balanceLimit, currency)}`
+        : ''}
+      {` — updated ${new Date(account.updatedAt).toLocaleString()}`}
     </p>
   );
 }
 
-// Design: pager-keeps-stale-rows.
 function Pager({
   shownPage,
   shownCount,
@@ -78,24 +90,33 @@ function Pager({
   const onLastPage = (shownPage + 1) * PAGE_SIZE >= total;
   return (
     <p>
-      Showing {rangeStart}–{rangeEnd} of {total}{' '}
-      <button onClick={() => goToPage(shownPage - 1)} disabled={shownPage === 0 || pageLoading}>
+      {/* Both wrappers must stay mounted: the range re-announces the outcome
+          of a page turn once loading settles. */}
+      <span role="status">
+        Showing {rangeStart}–{rangeEnd} of {total}
+      </span>{' '}
+      <GuardedButton
+        onClick={() => goToPage(shownPage - 1)}
+        unavailable={shownPage === 0 || pageLoading}
+      >
         Previous
-      </button>{' '}
-      <button onClick={() => goToPage(shownPage + 1)} disabled={onLastPage || pageLoading}>
+      </GuardedButton>{' '}
+      <GuardedButton
+        onClick={() => goToPage(shownPage + 1)}
+        unavailable={onLastPage || pageLoading}
+      >
         Next
-      </button>
-      {pageLoading && <span> Loading…</span>}
+      </GuardedButton>
+      <span role="status">{pageLoading ? ' Loading…' : null}</span>
     </p>
   );
 }
 
 function AccountView({ accountId }: { accountId: string }) {
   const accountData = useAccountData(accountId);
-  // Design: optimistic-category-writes.
   const [categoryWrites] = useState(() => new CategoryWriteState());
   const transactionPage = useTransactionPage(accountId, categoryWrites);
-  const { account, card, creditCategories, refresh: refreshAccount } = accountData;
+  const { account, itemError, card, creditCategories, refresh: refreshAccount } = accountData;
   const {
     transactionList,
     total,
@@ -111,14 +132,12 @@ function AccountView({ accountId }: { accountId: string }) {
     categoryWrites,
   );
 
-  // Design: optimistic-category-writes.
   useEffect(() => {
     clearPatchErrors();
   }, [shownPage, clearPatchErrors]);
 
-  const { settled, error, retry } = combineLoadStates([accountData, transactionPage]);
+  const { settled, error, retry, reloading } = combineLoadStates([accountData, transactionPage]);
 
-  // Design: home-reflects-background-sync.
   useVisiblePoll(
     useCallback(() => {
       void refreshAccount();
@@ -126,8 +145,19 @@ function AccountView({ accountId }: { accountId: string }) {
     }, [refreshAccount, refreshTransactions]),
   );
 
-  // Design: stale-lists-disable-editing.
-  const categoriesMayBeStale = !accountData.loaded.cards || !accountData.loaded.account;
+  // A 'use client' page can't export route metadata, so the tab title (the cue
+  // that tells account tabs and history entries apart) is set here.
+  useEffect(() => {
+    if (!account) return;
+    document.title = `${accountDisplayName(account)} — SpendRight`;
+    return () => {
+      document.title = 'SpendRight';
+    };
+  }, [account]);
+
+  // `fresh`, not `loaded`: the sticky loaded flags never revert, so they can't
+  // gate write safety — a failed poll must re-disable the pickers.
+  const categoriesMayBeStale = !accountData.fresh.cards || !accountData.fresh.account;
 
   const view = deriveView({
     loading: !settled,
@@ -144,27 +174,56 @@ function AccountView({ accountId }: { accountId: string }) {
       </p>
       <h1>{account ? accountDisplayName(account) : 'Account'}</h1>
       {account && <AccountIdentity account={account} />}
-      {view === 'loading' && <p>Loading…</p>}
-      {error && <ErrorNotice error={error} onRetryAction={retry} />}
-      {view === 'not-found' && (
-        <p>Account not found. It may have been disconnected — check the list on the home page.</p>
-      )}
+      {/* The owning item's warning must reach this page too — it's the one a
+          user checks before spending. */}
+      {itemError != null && <ErrorNotice error={itemErrorMessage(itemError)} />}
+      {/* Wrapper must stay mounted; outcome states live here so they announce. */}
+      <p role="status">
+        {view === 'loading' && 'Loading…'}
+        {view === 'not-found' &&
+          'Account not found. It may have been disconnected — check the list on the home page.'}
+        {view === 'unsupported' && (
+          <>
+            <strong>Card not supported.</strong> SpendRight doesn&apos;t recognize this account yet,
+            so its transactions can&apos;t be shown or categorized. Other accounts keep working
+            normally.
+          </>
+        )}
+        {view === 'ready' &&
+          transactionPage.loaded.transactions &&
+          total === 0 &&
+          'No transactions.'}
+      </p>
       {view === 'unsupported' && (
-        <p>
-          <strong>Card not supported.</strong> This account doesn&apos;t match any card definition,
-          so SpendRight can&apos;t show or categorize its transactions. Add its Plaid account name
-          to the right card in <code>src/db/cards.seed.ts</code> and re-run{' '}
-          <code>npm run seed:cards</code>.
-        </p>
+        // The remedy needs repo access, so it stays out of the primary copy.
+        <details>
+          <summary>Add support for this card (developer)</summary>
+          <p>
+            Add this account&apos;s Plaid account name to the right card in{' '}
+            <code>{CARD_SEED_FILE}</code> and re-run <code>{SEED_CARDS_COMMAND}</code>.
+          </p>
+        </details>
       )}
+      {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
       {view === 'ready' && card && (
         <>
-          <p>{`Card: ${card.name} (${card.type})`}</p>
-          <h2>Transactions</h2>
-          {categoriesMayBeStale && (
-            <p>Category lists may be out of date — editing is off until they refresh.</p>
+          <p>
+            {`Card: ${card.name} (${card.type})`}
+            {card.ratesVerifiedOn && ` — rates verified ${card.ratesVerifiedOn}`}
+          </p>
+          {(ratesVerifiedAgeDays(card) ?? 0) > RATES_STALE_AFTER_DAYS && (
+            <p role="alert">
+              These reward rates were last verified against issuer terms over a year ago (
+              {card.ratesVerifiedOn}) — the issuer may have changed them since.
+            </p>
           )}
-          {transactionPage.loaded.transactions && total === 0 && <p>No transactions.</p>}
+          <h2>Transactions</h2>
+          {/* Wrapper must stay mounted; both the stale and back-to-fresh
+              transitions announce. */}
+          <p role="status" id={CATEGORY_STALE_NOTICE_ID}>
+            {categoriesMayBeStale &&
+              'Category lists may be out of date — editing is off until they refresh.'}
+          </p>
           {transactionList.length > 0 && (
             <TransactionTable
               card={card}

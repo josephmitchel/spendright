@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '@/lib/http';
 import { logError } from '@/lib/log';
 
-// Design: partial-load-rendering.
 async function settleReads<T extends Record<string, unknown>>(
   reads: T,
 ): Promise<{
@@ -40,8 +39,6 @@ export type LoadReads<K extends string> = <T extends Record<K, unknown>>(
 
 // Caller contract: `perform` is memoized (the load effect re-runs on its
 // identity); `initialLoaded` and `stickyKeys` are read once.
-// Design: partial-load-rendering, superseded-loads-write-nothing,
-// home-reflects-background-sync.
 export function useLoadProtocol<K extends string>(
   initialLoaded: Record<K, boolean>,
   perform: (load: LoadReads<K>) => Promise<void>,
@@ -50,8 +47,10 @@ export function useLoadProtocol<K extends string>(
   const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<Record<K, boolean>>(initialLoaded);
+  // `fresh` is never sticky: it reports the latest settled load's reads only,
+  // so write-safety gates see a failed poll that sticky view state ignores.
+  const [fresh, setFresh] = useState<Record<K, boolean>>(initialLoaded);
   const [reloading, setReloading] = useState(false);
-  // Design: superseded-loads-write-nothing.
   const latestTicket = useRef(0);
   const stickyKeys = useRef(options?.stickyKeys).current;
 
@@ -62,7 +61,6 @@ export function useLoadProtocol<K extends string>(
     ): Promise<void> => {
       const ticket = ++latestTicket.current;
       const { bodies, succeeded, error: failureMessage } = await settleReads(reads);
-      // Design: superseded-loads-write-nothing.
       if (ticket !== latestTicket.current) return;
       // A throwing `apply` must not skip the settlement writes below.
       let applyFailure: string | null = null;
@@ -77,6 +75,13 @@ export function useLoadProtocol<K extends string>(
         for (const key of Object.keys(previous) as K[]) {
           const nowSucceeded = (succeeded as Record<K, boolean>)[key];
           next[key] = stickyKeys?.includes(key) ? previous[key] || nowSucceeded : nowSucceeded;
+        }
+        return next;
+      });
+      setFresh((previous) => {
+        const next = { ...previous };
+        for (const key of Object.keys(previous) as K[]) {
+          next[key] = (succeeded as Record<K, boolean>)[key];
         }
         return next;
       });
@@ -112,12 +117,12 @@ export function useLoadProtocol<K extends string>(
     clearError();
     reload();
   }, [clearError, reload]);
-  return { settled, error, loaded, clearError, refresh, reload, retry, reloading };
+  return { settled, error, loaded, fresh, clearError, refresh, reload, retry, reloading };
 }
 
 type LoadState = Pick<
   ReturnType<typeof useLoadProtocol>,
-  'settled' | 'error' | 'clearError' | 'reload' | 'retry'
+  'settled' | 'error' | 'clearError' | 'reload' | 'retry' | 'reloading'
 >;
 
 export function combineLoadStates(states: readonly LoadState[]): LoadState {
@@ -131,5 +136,6 @@ export function combineLoadStates(states: readonly LoadState[]): LoadState {
     clearError: () => states.forEach((state) => state.clearError()),
     reload: () => states.forEach((state) => state.reload()),
     retry: () => states.forEach((state) => state.retry()),
+    reloading: states.some((state) => state.reloading),
   };
 }

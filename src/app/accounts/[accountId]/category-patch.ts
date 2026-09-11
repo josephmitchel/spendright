@@ -1,7 +1,6 @@
 import type { ApiTransaction } from '@/lib/api-types';
 import type { categoryKindKeys, CategoryKind } from '@/lib/category-kinds';
 
-// Design: optimistic-category-writes.
 export type CategoryPatch = Partial<
   Pick<
     ApiTransaction,
@@ -10,7 +9,6 @@ export type CategoryPatch = Partial<
   >
 >;
 
-// Design: category-kind-exhaustive.
 export function categoryFields(row: ApiTransaction): Required<CategoryPatch> {
   return {
     cardCategoryId: row.cardCategoryId,

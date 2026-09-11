@@ -5,32 +5,45 @@
   "engines": {
     "node": "24.x"
   },
+  "overrides": {
+    "axios": "$axios"
+  },
   "scripts": {
     "predev": "node scripts/tighten-next.mjs",
     "dev": "next dev -H 127.0.0.1",
-    "prebuild": "node scripts/tighten-next.mjs",
+    "prebuild": "node scripts/tighten-next.mjs && npm run lint && npm run typecheck && npm run format:check && npm test",
     "build": "next build",
     "postbuild": "node scripts/tighten-next.mjs",
     "start": "node scripts/start.mjs",
-    "lint": "eslint && node scripts/check-design-refs.mjs && node scripts/check-record-tags.mjs && node scripts/check-verified-claims.mjs",
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:db": "vitest run --config vitest.config.db.mts",
+    "test:supervisor": "vitest run --config vitest.config.supervisor.mts",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "seed:cards": "tsx scripts/seed-cards.ts"
+    "audit:gate": "node scripts/audit-gate.mjs",
+    "seed:cards": "tsx scripts/seed-cards.ts",
+    "rotate:key": "tsx --conditions=react-server scripts/rotate-encryption-key.ts"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.2",
+    "axios": "1.20.0",
+    "drizzle-orm": "0.45.2",
     "next": "16.3.4",
-    "pg": "^8.23.0",
-    "plaid": "^41.4.0",
+    "pg": "8.23.0",
+    "plaid": "41.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-plaid-link": "^4.2.0",
+    "react-plaid-link": "4.2.0",
     "server-only": "^0.0.1"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/node": "^24",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
@@ -39,8 +52,10 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "jsdom": "^29.1.1",
     "prettier": "3.9.6",
     "tsx": "^4.23.13",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.0"
   }
 }

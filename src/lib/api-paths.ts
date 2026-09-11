@@ -1,4 +1,3 @@
-// Design: client-pages-fetch-api.
 export const apiPaths = {
   accounts: '/api/accounts',
   account: (accountId: string) => `/api/accounts/${encodeURIComponent(accountId)}`,
@@ -6,6 +5,8 @@ export const apiPaths = {
   exchange: '/api/exchange',
   items: '/api/items',
   item: (itemId: string) => `/api/items/${encodeURIComponent(itemId)}`,
+  itemLinkToken: (itemId: string) => `/api/items/${encodeURIComponent(itemId)}/link-token`,
+  itemLogo: (itemId: string) => `/api/items/${encodeURIComponent(itemId)}/logo`,
   linkToken: '/api/link-token',
   sync: '/api/sync',
   transactions: (accountId: string, limit: number, offset: number) =>

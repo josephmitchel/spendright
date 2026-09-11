@@ -1,5 +1,4 @@
 // Message is user-safe; never construct one from a caught error's message.
-// Design: error-message-allow-list.
 export class PublicError extends Error {
   status: number;
   code: string;

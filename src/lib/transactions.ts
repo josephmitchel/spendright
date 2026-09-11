@@ -1,10 +1,8 @@
-import { desc, eq, getTableColumns, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { cardCategories, creditCategories, transactions, type TransactionRow } from '@/db/schema';
 import { db } from '@/lib/db';
+import { servedTransactionColumns } from '@/lib/served-columns';
 
-// Design: raw-plaid-payload-stored-not-served.
-const { plaidTransaction: _plaidTransaction, ...servedTransactionColumns } =
-  getTableColumns(transactions);
 export { servedTransactionColumns };
 
 export type CategorizedTransaction = Pick<
@@ -15,30 +13,30 @@ export type CategorizedTransaction = Pick<
   creditCategoryName: string | null;
 };
 
-// Design: transaction-list-ordering, transactions-paginated.
 export async function listTransactions(
   accountId: string,
   limit: number,
   offset: number,
 ): Promise<{ transactions: CategorizedTransaction[]; total: number }> {
-  const rows = await db
-    .select({
-      ...servedTransactionColumns,
-      cardCategoryName: cardCategories.name,
-      creditCategoryName: creditCategories.name,
-    })
-    .from(transactions)
-    .leftJoin(cardCategories, eq(transactions.cardCategoryId, cardCategories.id))
-    .leftJoin(creditCategories, eq(transactions.creditCategoryId, creditCategories.id))
-    .where(eq(transactions.accountId, accountId))
-    .orderBy(desc(transactions.date), desc(transactions.id))
-    .limit(limit)
-    .offset(offset);
-
-  const [countRow] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(transactions)
-    .where(eq(transactions.accountId, accountId));
+  const [rows, [countRow]] = await Promise.all([
+    db
+      .select({
+        ...servedTransactionColumns,
+        cardCategoryName: cardCategories.name,
+        creditCategoryName: creditCategories.name,
+      })
+      .from(transactions)
+      .leftJoin(cardCategories, eq(transactions.cardCategoryId, cardCategories.id))
+      .leftJoin(creditCategories, eq(transactions.creditCategoryId, creditCategories.id))
+      .where(eq(transactions.accountId, accountId))
+      .orderBy(desc(transactions.date), desc(transactions.id))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(transactions)
+      .where(eq(transactions.accountId, accountId)),
+  ]);
 
   return { transactions: rows, total: countRow?.total ?? 0 };
 }

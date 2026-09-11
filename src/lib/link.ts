@@ -1,19 +1,26 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { items, type ItemRow } from '@/db/schema';
 import { accountDisplayName } from '@/lib/account-display';
 import { refreshItemAccounts, type StoreFailure } from '@/lib/accounts';
-import { encrypt } from '@/lib/crypto';
+import { decrypt, encrypt } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { publicErrorMessage } from '@/lib/errors';
 import { logError } from '@/lib/log';
-import { exchangePublicToken, getAccounts, getInstitutionById, getItem } from '@/lib/plaid';
+import {
+  createLinkToken,
+  exchangePublicToken,
+  getAccounts,
+  getInstitutionById,
+  getItem,
+  removeItem,
+} from '@/lib/plaid';
+import type { ProviderAccount, ProviderItem } from '@/lib/provider-types';
+import { PublicError } from '@/lib/public-error';
 import { syncItem, type SyncItemResult } from '@/lib/sync';
 import { recordSyncFailure } from '@/lib/sync-outcome';
 
-type PlaidItem = Awaited<ReturnType<typeof getItem>>;
 type Institution = Awaited<ReturnType<typeof getInstitutionById>>;
 
-// Design: not-ready-poll-budgets.
 const INITIAL_SYNC_NOT_READY_RETRIES = 3;
 
 export interface LinkResult {
@@ -22,10 +29,12 @@ export interface LinkResult {
   accountsStored: number;
   sync: SyncItemResult | null;
   syncError: string | null;
+  // True when enrichment failed before any sync attempt, so callers don't
+  // describe syncError as a sync failure.
+  setupFailed: boolean;
   accountErrors: string[];
 }
 
-// Design: relink-preserves-institution-metadata.
 async function fetchInstitution(
   institutionId: string | null | undefined,
 ): Promise<Institution | null> {
@@ -38,7 +47,6 @@ async function fetchInstitution(
   }
 }
 
-// Design: token-stored-before-enrichment.
 async function storeItemShell(itemId: string, accessToken: string): Promise<string> {
   const encrypted = encrypt(accessToken);
   await db
@@ -54,17 +62,16 @@ async function storeItemShell(itemId: string, accessToken: string): Promise<stri
 async function storeItem(
   itemId: string,
   encryptedAccessToken: string,
-  plaidItem: PlaidItem,
+  plaidItem: ProviderItem,
   institution: Institution | null,
 ): Promise<ItemRow> {
-  // Design: relink-preserves-institution-metadata.
   const alwaysUpdated = {
     itemId,
     accessToken: encryptedAccessToken,
   };
   const institutionValues = {
-    institutionId: plaidItem.institution_id ?? null,
-    institutionName: institution?.name ?? plaidItem.institution_name ?? null,
+    institutionId: plaidItem.institutionId,
+    institutionName: institution?.name ?? plaidItem.institutionName,
     institutionLogo: institution?.logo ?? null,
     institutionPrimaryColor: institution?.primaryColor ?? null,
   };
@@ -96,12 +103,11 @@ async function storeItem(
   return storedItem;
 }
 
-// Design: initial-sync-reported-not-thrown.
 async function runInitialSync(
   storedItem: ItemRow,
 ): Promise<{ result: SyncItemResult | null; error: string | null }> {
   try {
-    const result = await syncItem(storedItem, {
+    const result = await syncItem(storedItem.itemId, {
       accountsAlreadyStored: true,
       notReadyRetries: INITIAL_SYNC_NOT_READY_RETRIES,
     });
@@ -111,7 +117,7 @@ async function runInitialSync(
     const error = await recordSyncFailure(
       storedItem.itemId,
       err,
-      'Initial sync failed — check the server log',
+      'The first sync failed — use Sync all on the home page to retry',
     );
     return { result: null, error };
   }
@@ -120,24 +126,73 @@ async function runInitialSync(
 function accountFailureMessages(failures: StoreFailure[]): string[] {
   return failures.map((failure) => {
     const name = accountDisplayName({
-      name: failure.account.name ?? null,
-      officialName: failure.account.official_name ?? null,
-      accountId: failure.account.account_id,
+      name: failure.account.name,
+      officialName: failure.account.officialName,
+      accountId: failure.account.accountId,
     });
     return `${name}: ${publicErrorMessage(failure.error, 'could not be stored')}`;
   });
 }
 
-// Design: inline-initial-sync, initial-sync-reported-not-thrown.
+export async function createRepairLinkToken(itemId: string): Promise<string> {
+  const [item] = await db.select().from(items).where(eq(items.itemId, itemId));
+  if (!item) {
+    throw new PublicError('Item not found', { status: 404, code: 'NOT_FOUND' });
+  }
+  return createLinkToken(decrypt(item.accessToken));
+}
+
 export async function linkItem(publicToken: string): Promise<LinkResult> {
   const { accessToken, itemId } = await exchangePublicToken(publicToken);
-  const encryptedAccessToken = await storeItemShell(itemId, accessToken);
-  const [plaidItem, plaidAccounts] = await Promise.all([
-    getItem(accessToken),
-    getAccounts(accessToken),
-  ]);
-  const institution = await fetchInstitution(plaidItem.institution_id);
-  const storedItem = await storeItem(itemId, encryptedAccessToken, plaidItem, institution);
+  let encryptedAccessToken: string;
+  try {
+    encryptedAccessToken = await storeItemShell(itemId, accessToken);
+  } catch (err) {
+    // The exchange already created a live Item at Plaid; with no stored token
+    // it could never be revoked, so revoke it before surfacing the failure.
+    try {
+      await removeItem(accessToken);
+      logError(`link ${itemId}: storing the item failed — revoked the Plaid item:`, err);
+    } catch (revokeErr) {
+      logError(
+        `link ${itemId}: storing the item failed AND the compensating revoke failed — remove ` +
+          `Plaid item ${itemId} from the Plaid dashboard by hand:`,
+        revokeErr,
+      );
+    }
+    throw err;
+  }
+
+  // The shell row is already durable, so an enrichment failure is recorded on
+  // it and reported — the home page then explains the new item instead of
+  // showing an unlabeled orphan.
+  let plaidItem: ProviderItem;
+  let plaidAccounts: ProviderAccount[];
+  let storedItem: ItemRow;
+  try {
+    [plaidItem, plaidAccounts] = await Promise.all([
+      getItem(accessToken),
+      getAccounts(accessToken),
+    ]);
+    const institution = await fetchInstitution(plaidItem.institutionId);
+    storedItem = await storeItem(itemId, encryptedAccessToken, plaidItem, institution);
+  } catch (err) {
+    logError(`Link enrichment failed for item ${itemId}:`, err);
+    const error = await recordSyncFailure(
+      itemId,
+      err,
+      'Linking finished but account setup failed — sync again, or remove the institution',
+    );
+    return {
+      itemId,
+      institutionName: null,
+      accountsStored: 0,
+      sync: null,
+      syncError: error,
+      setupFailed: true,
+      accountErrors: [],
+    };
+  }
 
   const storeFailures = await refreshItemAccounts(itemId, plaidAccounts);
   const sync = await runInitialSync(storedItem);
@@ -149,6 +204,7 @@ export async function linkItem(publicToken: string): Promise<LinkResult> {
     accountsStored: plaidAccounts.length - accountErrors.length,
     sync: sync.result,
     syncError: sync.error,
+    setupFailed: false,
     accountErrors,
   };
 }

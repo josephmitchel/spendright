@@ -1,29 +1,27 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ErrorNotice } from '@/components/ErrorNotice';
+import { GuardedButton } from '@/components/GuardedButton';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { accountDisplayName, accountTypeLabel } from '@/lib/account-display';
+import { apiPaths } from '@/lib/api-paths';
 import type { ApiAccount, ApiItem } from '@/lib/api-types';
-import { plaidErrorMessage } from '@/lib/plaid-errors';
+import { itemErrorMessage } from '@/lib/item-error-message';
+import { formatMoney, rowCurrency } from '@/lib/money';
+import { isPlaidItemError } from '@/lib/plaid-errors';
 import { PlaidLinkButton } from './PlaidLinkButton';
+import { RepairConnectionButton } from './RepairConnectionButton';
 import { useHomeData } from './useHomeData';
 import { useItemRemoval } from './useItemRemoval';
 import { useSyncAll } from './useSyncAll';
-
-// Design: error-message-allow-list.
-function itemErrorMessage(error: NonNullable<ApiItem['error']>): string {
-  const fallback = JSON.stringify(error);
-  return 'message' in error ? error.message || fallback : plaidErrorMessage(error, fallback);
-}
 
 type View = 'loading' | 'no-institutions' | 'list' | 'unresolved';
 
 function deriveView(inputs: { loading: boolean; itemsLoaded: boolean; itemCount: number }): View {
   const { loading, itemsLoaded, itemCount } = inputs;
   if (loading) return 'loading';
-  // Design: partial-load-rendering.
   if (itemsLoaded && itemCount === 0) return 'no-institutions';
   if (itemCount > 0) return 'list';
   return 'unresolved';
@@ -31,32 +29,40 @@ function deriveView(inputs: { loading: boolean; itemsLoaded: boolean; itemCount:
 
 function AccountsTable({ accounts }: { accounts: ApiAccount[] }) {
   return (
-    <table border={1}>
-      <thead>
-        <tr>
-          <th>Account</th>
-          <th>Mask</th>
-          <th>Type</th>
-          <th>Current</th>
-          <th>Available</th>
-          <th>Limit</th>
-        </tr>
-      </thead>
-      <tbody>
-        {accounts.map((account) => (
-          <tr key={account.accountId}>
-            <td>
-              <Link href={`/accounts/${account.accountId}`}>{accountDisplayName(account)}</Link>
-            </td>
-            <td>{account.mask}</td>
-            <td>{accountTypeLabel(account)}</td>
-            <td>{account.balanceCurrent}</td>
-            <td>{account.balanceAvailable}</td>
-            <td>{account.balanceLimit}</td>
+    // The wrapper scrolls on narrow viewports so the page body never does.
+    <div style={{ overflowX: 'auto' }}>
+      <table border={1}>
+        <thead>
+          <tr>
+            <th scope="col">Account</th>
+            <th scope="col">Mask</th>
+            <th scope="col">Type</th>
+            <th scope="col">Current</th>
+            <th scope="col">Available</th>
+            <th scope="col">Limit</th>
+            <th scope="col">Currency</th>
+            <th scope="col">Updated</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {accounts.map((account) => (
+            <tr key={account.accountId}>
+              <td>
+                <Link href={`/accounts/${account.accountId}`}>{accountDisplayName(account)}</Link>
+              </td>
+              <td>{account.mask ?? '—'}</td>
+              <td>{accountTypeLabel(account)}</td>
+              <td>{formatMoney(account.balanceCurrent, rowCurrency(account))}</td>
+              <td>{formatMoney(account.balanceAvailable, rowCurrency(account))}</td>
+              <td>{formatMoney(account.balanceLimit, rowCurrency(account))}</td>
+              <td>{rowCurrency(account)}</td>
+              {/* The freshness cue for a balance about to inform a spending decision. */}
+              <td>{new Date(account.updatedAt).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -64,41 +70,74 @@ function InstitutionSection({
   item,
   accounts,
   accountsLoaded,
+  removePending,
+  removeError,
   onRemoveAction,
+  onRepairedAction,
 }: {
   item: ApiItem;
   accounts: ApiAccount[];
   accountsLoaded: boolean;
-  onRemoveAction: (itemId: string) => void;
+  removePending: boolean;
+  removeError: string | null;
+  onRemoveAction: (itemId: string, institutionName: string) => void;
+  onRepairedAction: () => void;
 }) {
   return (
     <section>
       <h2>
-        {item.institutionLogo && (
+        {item.hasLogo && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={`data:image/png;base64,${item.institutionLogo}`}
-            alt=""
-            width={24}
-            height={24}
-          />
+          <img src={apiPaths.itemLogo(item.itemId)} alt="" width={24} height={24} />
         )}{' '}
         {item.institutionName ?? item.itemId}{' '}
-        <button onClick={() => onRemoveAction(item.itemId)}>Remove</button>
+        <GuardedButton
+          onClick={() => onRemoveAction(item.itemId, item.institutionName ?? item.itemId)}
+          unavailable={removePending}
+          // The institution context a screen reader's buttons list can't get
+          // from the heading alone.
+          aria-label={`Remove ${item.institutionName ?? item.itemId}`}
+        >
+          Remove
+        </GuardedButton>
+        {/* Wrapper must stay mounted. */}
+        <span role="status">{removePending ? ' Removing…' : null}</span>
+        {removeError != null && <ErrorNotice inline error={removeError} />}
       </h2>
-      {item.error != null && <p>Item error: {itemErrorMessage(item.error)}</p>}
+      {item.error != null && (
+        <p>
+          <ErrorNotice inline error={itemErrorMessage(item.error)} />{' '}
+          {isPlaidItemError(item.error) && (
+            <RepairConnectionButton
+              itemId={item.itemId}
+              institutionName={item.institutionName ?? item.itemId}
+              onRepairedAction={onRepairedAction}
+            />
+          )}
+        </p>
+      )}
       {accountsLoaded && <AccountsTable accounts={accounts} />}
     </section>
   );
 }
 
-// Design: client-pages-fetch-api.
 export default function Home() {
-  const { itemList, accountList, settled, error, loaded, refresh, retry } = useHomeData();
+  const { itemList, accountList, lastSync, settled, error, loaded, refresh, retry, reloading } =
+    useHomeData();
   const { syncAll, syncing, syncStatus, syncError, syncSucceededAt } = useSyncAll(refresh);
-  const { removeItem, removeError } = useItemRemoval(refresh);
+  // A successful removal unmounts the whole institution section, so the
+  // confirmation must live in a permanently-mounted region and focus must land
+  // somewhere real instead of vanishing with the button.
+  const [removalStatus, setRemovalStatus] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const { removeItem, removingItems, removeErrors } = useItemRemoval(
+    refresh,
+    useCallback((institutionName: string) => {
+      setRemovalStatus(`Removed ${institutionName}.`);
+      headingRef.current?.focus();
+    }, []),
+  );
 
-  // Design: home-reflects-background-sync.
   useVisiblePoll(
     useCallback(() => {
       void refresh();
@@ -113,33 +152,58 @@ export default function Home() {
 
   return (
     <main>
-      <h1>SpendRight</h1>
+      <h1 tabIndex={-1} ref={headingRef}>
+        SpendRight
+      </h1>
       <p>
         <PlaidLinkButton
           onConnectedAction={() => void refresh()}
           syncSucceededAt={syncSucceededAt}
         />{' '}
-        <button onClick={syncAll} disabled={syncing || view === 'no-institutions'}>
+        <GuardedButton onClick={syncAll} unavailable={syncing || view === 'no-institutions'}>
           Sync all
-        </button>
-        {syncStatus && <span> {syncStatus}</span>}
+        </GuardedButton>
+        {/* Wrapper must stay mounted. */}
+        <span role="status">{syncStatus ? ` ${syncStatus}` : null}</span>
+        {/* Wrapper must stay mounted. */}
+        <span role="status">{removalStatus ? ` ${removalStatus}` : null}</span>
       </p>
+      {lastSync && (
+        <p>
+          Last {lastSync.trigger === 'manual' ? 'manual' : 'automatic'} sync finished{' '}
+          {new Date(lastSync.finishedAt).toLocaleString()}.
+        </p>
+      )}
 
-      {view === 'loading' && <p>Loading…</p>}
-      {error && <ErrorNotice error={error} onRetryAction={retry} />}
+      {/* Wrapper must stay mounted. */}
+      <p role="status">
+        {view === 'loading' && 'Loading…'}
+        {view === 'no-institutions' && 'No institutions connected yet.'}
+      </p>
+      {error && <ErrorNotice error={error} onRetryAction={retry} retryPending={reloading} />}
+      {lastSync?.error != null && (
+        <ErrorNotice
+          error={`The last ${
+            lastSync.trigger === 'manual' ? 'manual' : 'automatic'
+          } sync failed: ${lastSync.error}`}
+        />
+      )}
       {syncError && <ErrorNotice error={syncError} />}
-      {removeError && <ErrorNotice error={removeError} />}
-      {view === 'no-institutions' && <p>No institutions connected yet.</p>}
       {view === 'list' && (
         <>
-          {!loaded.accounts && <p>Accounts couldn&apos;t be loaded — use Retry above.</p>}
+          {!loaded.accounts && (
+            <p role="alert">Accounts couldn&apos;t be loaded — use Retry above.</p>
+          )}
           {itemList.map((item) => (
             <InstitutionSection
               key={item.itemId}
               item={item}
               accounts={accountList.filter((account) => account.itemId === item.itemId)}
               accountsLoaded={loaded.accounts}
+              removePending={removingItems.has(item.itemId)}
+              removeError={removeErrors.get(item.itemId) ?? null}
               onRemoveAction={removeItem}
+              onRepairedAction={syncAll}
             />
           ))}
         </>
