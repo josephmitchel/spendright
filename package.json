@@ -25,6 +25,7 @@
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "audit:gate": "node scripts/audit-gate.mjs",
     "seed:cards": "tsx scripts/seed-cards.ts",
     "rotate:key": "tsx --conditions=react-server scripts/rotate-encryption-key.ts"
   },

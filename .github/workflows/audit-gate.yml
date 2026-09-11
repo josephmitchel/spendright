@@ -1,0 +1,41 @@
+name: audit-gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-stamp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate audit-gate stamp
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          STAMP=.claude/audit-gate.json
+
+          if [ ! -f "$STAMP" ]; then
+            echo "::error::$STAMP not found — run 'npm run audit:gate' after /audit and /audit-fix, then commit the stamp"
+            exit 1
+          fi
+
+          BRANCH=$(jq -er '.branch' "$STAMP")
+          AUDIT_TS=$(jq -er '.auditTimestamp' "$STAMP")
+          STAMP_SHA=$(jq -er '.headSha' "$STAMP")
+          jq -er '.gatedConcerns.total' "$STAMP" > /dev/null
+
+          if [ "$BRANCH" != "$HEAD_REF" ]; then
+            echo "::error::stamp is for branch '$BRANCH' but this PR is from '$HEAD_REF' — re-run 'npm run audit:gate' on the PR branch"
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$STAMP_SHA" "$GITHUB_SHA" 2>/dev/null; then
+            echo "::error::stamp headSha $STAMP_SHA is not part of this PR's history — re-run 'npm run audit:gate' and commit the fresh stamp"
+            exit 1
+          fi
+
+          echo "audit-gate stamp valid: audit $AUDIT_TS on '$BRANCH' (attested at $STAMP_SHA)"
