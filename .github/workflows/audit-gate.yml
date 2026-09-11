@@ -26,7 +26,7 @@ jobs:
           BRANCH=$(jq -er '.branch' "$STAMP")
           AUDIT_TS=$(jq -er '.auditTimestamp' "$STAMP")
           STAMP_SHA=$(jq -er '.headSha' "$STAMP")
-          jq -er '.gatedConcerns.total' "$STAMP" > /dev/null
+          jq -er '.majorModerate.resolved, .majorModerate.ignored' "$STAMP" > /dev/null
 
           if [ "$BRANCH" != "$HEAD_REF" ]; then
             echo "::error::stamp is for branch '$BRANCH' but this PR is from '$HEAD_REF' — re-run 'npm run audit:gate' on the PR branch"

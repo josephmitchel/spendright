@@ -26,6 +26,8 @@ function parseFrontmatter(fileContent) {
   return fields;
 }
 
+const NON_CONCERN_FILES = new Set(['SUMMARY.md', 'FIXLOG.md', 'TESTS.md']);
+
 function collectConcernFiles(auditDir) {
   const files = [];
   for (const entry of fs.readdirSync(auditDir, { withFileTypes: true })) {
@@ -34,11 +36,7 @@ function collectConcernFiles(auditDir) {
       for (const sub of fs.readdirSync(full)) {
         if (sub.endsWith('.md')) files.push(path.join(full, sub));
       }
-    } else if (
-      entry.name.endsWith('.md') &&
-      entry.name !== 'SUMMARY.md' &&
-      entry.name !== 'FIXLOG.md'
-    ) {
+    } else if (entry.name.endsWith('.md') && !NON_CONCERN_FILES.has(entry.name)) {
       files.push(full);
     }
   }
@@ -84,11 +82,15 @@ const auditDir = path.join(branchAuditDir, latestRun);
 const { exists: fixlogExists, addressed } = parseFixlog(auditDir);
 
 const gated = [];
+let resolvedCount = 0;
 for (const file of collectConcernFiles(auditDir)) {
   const fields = parseFrontmatter(fs.readFileSync(file, 'utf8'));
   if (!fields) fail(`no frontmatter in ${path.relative(repoRoot, file)}`);
-  if (fields.status === 'resolved') continue;
   if (!GATED_LEVELS.has(fields.level)) continue;
+  if (fields.status === 'resolved') {
+    resolvedCount++;
+    continue;
+  }
   const slug = path.basename(file, '.md');
   gated.push({ slug, level: fields.level, decision: addressed.get(slug) ?? null });
 }
@@ -111,9 +113,8 @@ const stamp = {
   auditTimestamp: latestRun,
   headSha: git('rev-parse HEAD'),
   generatedAt: new Date().toISOString(),
-  gatedConcerns: {
-    total: gated.length,
-    fixed: gated.filter((c) => c.decision === 'fixed').length,
+  majorModerate: {
+    resolved: resolvedCount + gated.filter((c) => c.decision === 'fixed').length,
     ignored: gated.filter((c) => c.decision === 'ignored').length,
   },
 };
@@ -121,7 +122,7 @@ fs.writeFileSync(STAMP_PATH, JSON.stringify(stamp, null, 2) + '\n');
 
 console.log(
   `audit-gate: PASS — audit ${latestRun} on '${branch}': ` +
-    `${stamp.gatedConcerns.total} major/moderate concern(s) addressed ` +
-    `(${stamp.gatedConcerns.fixed} fixed, ${stamp.gatedConcerns.ignored} ignored)`,
+    `${stamp.majorModerate.resolved} major/moderate concern(s) resolved, ` +
+    `${stamp.majorModerate.ignored} ignored`,
 );
 console.log(`stamp written to ${path.relative(repoRoot, STAMP_PATH)} — commit it with the branch`);

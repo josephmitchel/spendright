@@ -15,7 +15,7 @@ Ask the user what concern level they want to address (just major, major & modera
 
 Then walk the user through the selected concerns **one at a time** (AskUserQuestion, one concern per prompt). Every prompt must name the concern's characteristics (e.g. `[security, reliability]`) alongside its title so the user can locate the concern file. For each concern, briefly state what it is and offer a few genuinely distinct fix approaches — grounded in the actual code, with the concern file's suggested direction as one option and your recommended option marked — plus an **Ignore** option that skips the concern this session (it stays open for the next audit). Don't fix anything during this walkthrough: collect a decision for every concern first, then apply all the chosen fixes in one pass so related changes land coherently. If, while implementing, a chosen approach turns out not to work as presented, come back and ask rather than silently substituting another. Never assume, no stupid questions.
 
-Once the pass is complete, record every decision in `FIXLOG.md` at the run folder's top level (create it if absent), appending one line per concern:
+Once the pass is complete, for each concern whose fix was actually applied, edit its concern file: set `status: resolved` in the frontmatter and append a brief line describing the fix (what changed, in which files, and how it was verified — tests run, behavior checked). Ignored concerns are never edited — they stay open for the next audit. Then record every decision in `FIXLOG.md` at the run folder's top level (create it if absent), appending one line per concern:
 
 ```markdown
 - <slug> [<primary characteristic>] — fixed | ignored — MM-DD-YYYY
@@ -25,4 +25,4 @@ Log `fixed` only for fixes actually applied and `ignored` for Ignore decisions; 
 
 After logging, if every open major/moderate concern in this audit now has a fixlog entry, run `npm run audit:gate` — it writes the committed `.claude/audit-gate.json` stamp that the `audit-gate` CI check requires before a PR can merge. Remind the user to commit the stamp with the branch.
 
-**Never edit the concern files themselves** — not to mark progress, not to record a fix. `FIXLOG.md` is the only file audit-fix writes inside an audit folder; `/audit` is the sole author of concern state: the next audit re-verifies every concern against the codebase (not the fixlog) and marks it `resolved` only after confirming the fix in the code.
+The only concern-file edit audit-fix ever makes is the resolved-marking above, and only for fixes it actually applied — never for ignores, never to mark partial progress. Everything else about concern state belongs to `/audit`; if a claimed fix didn't hold, the next audit reopens the concern under the same slug with its original `first-seen`.
